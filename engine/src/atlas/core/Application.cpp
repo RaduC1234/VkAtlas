@@ -4,10 +4,11 @@
 
 namespace Atlas {
     Application::Application(ApplicationSpecification specification) : specification(specification) {
-
+        
     }
 
     void Application::run() {
+
         while (!window.shouldClose()) {
             glfwPollEvents();
         }

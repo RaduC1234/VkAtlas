@@ -1,11 +1,11 @@
 #pragma once
 
-#include <memory>
 #include <string>
 
 #include "Window.hpp"
 #include "renderer/Device.hpp"
-#include "renderer/Renderer.hpp"
+#include "renderer/Pipeline.hpp"
+#include "renderer/SwapChain.hpp"
 
 namespace Atlas {
     struct ApplicationSpecification {
@@ -25,6 +25,12 @@ namespace Atlas {
 
         Window window{{720, 680}};
         Device device{window};
-        Renderer renderer{window, device};
+        Pipeline pipeline{
+            device,
+            "shaders/simple_shader.vert.spv",
+            "shaders/simple_shader.frag.spv",
+            Pipeline::defaultPipelineConfigInfo()};
+        // SwapChain swapChain{device, window.getExtent()};
+        //Renderer renderer{window, device};
     };
 }

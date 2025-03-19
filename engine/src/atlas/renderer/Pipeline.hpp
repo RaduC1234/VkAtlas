@@ -1,15 +1,14 @@
 #pragma once
 
+#include <fstream>
+
 #include "Device.hpp"
 
-#include <string>
-#include <vector>
-
 namespace Atlas {
-    struct PipelineConfigInfo {
-        PipelineConfigInfo(const PipelineConfigInfo &) = delete;
 
-        PipelineConfigInfo &operator=(const PipelineConfigInfo &) = delete;
+    struct PipelineConfigInfo {
+        PipelineConfigInfo(const PipelineConfigInfo&) = delete;
+        PipelineConfigInfo& operator=(const PipelineConfigInfo&) = delete;
 
         VkPipelineViewportStateCreateInfo viewportInfo;
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo;
@@ -27,29 +26,32 @@ namespace Atlas {
 
     class Pipeline {
     public:
-
-        Pipeline(
-            Device &device,
-            const std::string &vertexShaderPath,
-            const std::string &fragmentShaderPath,
-            const PipelineConfigInfo &configInfo
-        );
+        Pipeline(Device& device,
+            const std::string &vertexVertCode,
+            const std::string &fragmentVertCode,
+            const PipelineConfigInfo& configInfo);
 
         ~Pipeline();
 
+        Pipeline(const Pipeline&) = delete;
+        Pipeline& operator=(const Pipeline&) = delete;
+
         void bind(VkCommandBuffer commandBuffer);
-        static void defaultPipelineConfigInfo(PipelineConfigInfo& configInfo);
+        static void defaultPipelineConfigInfo(PipelineConfigInfo& pipelineConfig);
 
     private:
-        static std::vector<char> readFile(const std::string &path);
+        static std::vector<char> readFile(const std::string& filename);
 
-        void createGraphicsPipeline(const std::string & vertexPath, const std::string & fragPath, const PipelineConfigInfo & configInfo);
+        void createGraphicsPipeline(
+            const std::string &vertFilepath,
+            const std::string &fragFilepath,
+            const PipelineConfigInfo &configInfo);
 
-        void createShaderModule(const std::vector<char> &code, VkShaderModule *shaderModule);
+        void createShaderModule(const std::vector<char> &code, VkShaderModule* shaderModule);
 
-        Device &device;
-        VkPipeline graphicsPipeline;
-        VkShaderModule vertexShaderModule;
+        Device& device;
+        VkPipeline pipeline;
+        VkShaderModule vertShaderModule;
         VkShaderModule fragShaderModule;
     };
-} // Atlas
+}
