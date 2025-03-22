@@ -46,6 +46,17 @@ elseif (WIN32)
             "${CMAKE_BINARY_DIR}/windows"
             COMMENT "Copying atlas_engine.dll to windows folder"
     )
+
+    add_custom_target(compile_shaders ALL
+            COMMAND ${CMAKE_COMMAND} -E echo "Running shader batch script"
+            COMMAND "${CMAKE_SOURCE_DIR}/scripts/compile_shaders.bat"
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    )
+
+    add_dependencies(atlas_engine compile_shaders)
+
 endif ()
 
 target_include_directories(atlas_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/atlas)
+
+
