@@ -18,12 +18,12 @@ namespace Atlas {
     }
 
     void Application::run() {
-        while (!window.shouldClose()) {
-            glfwPollEvents();
+        while (!window->shouldClose()) {
+            window->pollEvents();
             drawFrame();
         }
 
-        vkDeviceWaitIdle(device.device());
+        vkDeviceWaitIdle(device);
     }
 
     void Application::loadModels() {

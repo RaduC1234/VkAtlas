@@ -27,17 +27,26 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
     buildFeatures {
         prefab = true
     }
+
     externalNativeBuild {
         cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
+            path = file("../CMakeLists.txt")
             version = "3.22.1"
+        }
+    }
+
+    sourceSets {
+        named("main") {
+            assets.srcDirs("../assets")
         }
     }
 }

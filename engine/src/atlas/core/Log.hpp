@@ -6,8 +6,6 @@
 
 #include <fmt/color.h>
 
-
-
 namespace Atlas {
     enum class LogLevel {
         Trace = 0, // White
@@ -37,6 +35,8 @@ namespace Atlas {
         void setLogLevel(LogLevel level) {
             logLevel = level;
         }
+
+        void platformLog(LogLevel level, const std::string &prefix, const std::string &message);
 
         void log(LogLevel level, const std::string &message);
 

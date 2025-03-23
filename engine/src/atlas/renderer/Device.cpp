@@ -238,10 +238,7 @@ namespace Atlas {
     }
 
     std::vector<const char *> Device::getRequiredExtensions() {
-        uint32_t glfwExtensionCount = 0;
-        const auto glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-        std::vector extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+        auto extensions = window.getRequiredExtensions();
 
         if constexpr (enableValidationLayers) {
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);

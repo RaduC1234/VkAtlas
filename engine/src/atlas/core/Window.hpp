@@ -2,15 +2,14 @@
 
 #include <cstdint>
 #include <string>
+#include <memory>
+#include <vector>
 
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
 #include "Core.hpp"
 
 namespace Atlas {
-
     enum : uint32_t {
         ATLAS_PROPERTIES_WINDOW_UNDECORATED = BIT(0),
         ATLAS_PROPERTIES_WINDOW_DECORATED = BIT(1),
@@ -18,7 +17,8 @@ namespace Atlas {
         ATLAS_PROPERTIES_WINDOW_NON_RESIZEABLE = BIT(3),
     };
 
-    struct WindowProperties {
+    struct WindowSpecification {
+        void *pNativeApp = nullptr;
         uint32_t width = 1080;
         uint32_t height = 720;
         std::string title = "Atlas Window";
@@ -27,21 +27,21 @@ namespace Atlas {
 
     class Window {
     public:
-        Window(const WindowProperties &properties);
-        ~Window();
-
-        Window(const Window &) = delete;
+        virtual ~Window() = default;
         Window &operator=(const Window &) = delete;
 
+        virtual bool shouldClose() = 0;
+        virtual void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const = 0;
+        virtual void pollEvents() = 0;
+        virtual std::vector<const char*> getRequiredExtensions() = 0;
+
         VkExtent2D getExtent() const { return {width, height}; }
+        int32_t getWidth() const { return width; }
+        int32_t getHeight() const { return height; }
 
-        bool shouldClose() const { return glfwWindowShouldClose(window); }
-        void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const;
+        static std::unique_ptr<Window> create(const WindowSpecification& specification);
 
-    private:
-        GLFWwindow *window;
-        uint32_t width, height;
-
-        static void framebufferResizeCallback(GLFWwindow *glfwWindow, uint32_t width, uint32_t height);
+    protected:
+        uint32_t width{}, height{};
     };
 }

@@ -6,7 +6,7 @@ import com.google.androidgamesdk.GameActivity;
 
 public class MainActivity extends GameActivity {
     static {
-        System.loadLibrary("atlas");
+        System.loadLibrary("atlas_engine");
     }
 
     @Override

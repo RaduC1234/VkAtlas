@@ -36,9 +36,9 @@ namespace Atlas {
             vertexBufferMemory);
 
         void *data;
-        vkMapMemory(device.device(), vertexBufferMemory, 0, bufferSize, 0, &data);
-        std::memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
-        vkUnmapMemory(device.device(), vertexBufferMemory);
+        vkMapMemory(device, vertexBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
+        vkUnmapMemory(device, vertexBufferMemory);
     }
 
     // vertex

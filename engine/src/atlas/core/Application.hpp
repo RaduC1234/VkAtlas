@@ -6,9 +6,13 @@
 #include "renderer/Pipeline.hpp"
 #include "renderer/SwapChain.hpp"
 
+#include <memory>
+
 namespace Atlas {
+
     struct ApplicationSpecification {
         std::string name = "Atlas Engine";
+        void* pNativeApp = nullptr;
     };
 
     class Application {
@@ -30,9 +34,9 @@ namespace Atlas {
 
         ApplicationSpecification specification;
 
-        Window window{{720, 680}};
-        Device device{window};
-        SwapChain swapChain{device, window.getExtent()};
+        std::unique_ptr<Window> window = Window::create({specification.pNativeApp, 720, 680});
+        Device device{*window};
+        SwapChain swapChain{device, window->getExtent()};
 
         std::unique_ptr<Pipeline> pipeline;
         VkPipelineLayout pipelineLayout;

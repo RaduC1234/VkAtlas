@@ -7,8 +7,8 @@
 #include "vk_mem_alloc.h"
 
 namespace Atlas {
-#ifdef NDEBUG
-  constexpr bool enableValidationLayers = false;
+#if defined(NDEBUG) || defined(__ANDROID__)
+    constexpr bool enableValidationLayers = false;
 #else
     constexpr bool enableValidationLayers = true;
 #endif
@@ -31,6 +31,8 @@ namespace Atlas {
     public:
         Device(Atlas::Window &window);
         ~Device();
+
+        operator VkDevice() const { return this->device_; }
 
         // Not copyable or movable
         Device(const Device &) = delete;

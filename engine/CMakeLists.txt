@@ -6,27 +6,40 @@ file(GLOB_RECURSE ENGINE_SOURCES "src/*.cpp" "src/*.hpp")
 
 add_library(atlas_engine SHARED ${ENGINE_SOURCES})
 
+add_subdirectory(dependencies/fmt)
+add_subdirectory(dependencies/glm)
+add_subdirectory(dependencies/entt)
+add_subdirectory(dependencies/VulkanMemoryAllocator)
+
 if (ANDROID)
     target_compile_definitions(atlas_engine PUBLIC AVALON_PLATFORM_ANDROID)
 
+    # Find and link GameActivity
     find_package(game-activity REQUIRED CONFIG)
+
+    # Vulkan support via Android NDK
+    # Vulkan headers come with the NDK, and loader is on device
+    find_library(VULKAN_LIB vulkan REQUIRED)
+
+    add_library(stb_image INTERFACE)
+    target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
 
     target_link_libraries(atlas_engine PUBLIC
             game-activity::game-activity
-            EGL
-            GLESv3
-            jnigraphics
+            ${VULKAN_LIB}
             android
             log
+
+            glm::glm-header-only
+            stb_image
+            fmt::fmt-header-only
+            EnTT::EnTT
+            GPUOpen::VulkanMemoryAllocator
     )
 elseif (WIN32)
 
     find_package(Vulkan REQUIRED)
-    add_subdirectory(dependencies/fmt)
     add_subdirectory(dependencies/glfw)
-    add_subdirectory(dependencies/glm)
-    add_subdirectory(dependencies/entt)
-    add_subdirectory(dependencies/VulkanMemoryAllocator)
 
     add_library(stb_image INTERFACE)
     target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
@@ -34,6 +47,7 @@ elseif (WIN32)
     target_link_libraries(atlas_engine PUBLIC
             glfw
             Vulkan::Vulkan
+
             glm::glm-header-only
             stb_image
             fmt::fmt-header-only
@@ -60,5 +74,7 @@ elseif (WIN32)
 endif ()
 
 target_include_directories(atlas_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/atlas)
+target_include_directories(atlas_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
+
 
 
