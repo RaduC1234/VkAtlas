@@ -33,7 +33,7 @@ namespace Atlas {
         Window(const Window &) = delete;
         Window &operator=(const Window &) = delete;
 
-        VkExtent2D getExtent() { return {width, height}; }
+        VkExtent2D getExtent() const { return {width, height}; }
 
         bool shouldClose() const { return glfwWindowShouldClose(window); }
         void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const;
@@ -42,6 +42,6 @@ namespace Atlas {
         GLFWwindow *window;
         uint32_t width, height;
 
-        static void framebufferResizeCallback(GLFWwindow *windows, uint32_t width, uint32_t height);
+        static void framebufferResizeCallback(GLFWwindow *glfwWindow, uint32_t width, uint32_t height);
     };
 }

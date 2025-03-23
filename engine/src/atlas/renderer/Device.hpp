@@ -4,6 +4,8 @@
 
 #include "core/Window.hpp"
 
+#include "vk_mem_alloc.h"
+
 namespace Atlas {
 #ifdef NDEBUG
   constexpr bool enableValidationLayers = false;
@@ -52,12 +54,15 @@ namespace Atlas {
 
         VkPhysicalDeviceProperties properties;
 
+        VmaAllocator allocator() const { return this->allocator_; }
+
     private:
         void createInstance();
         void setupDebugMessenger();
         void createSurface();
         void pickPhysicalDevice();
         void createLogicalDevice();
+        void createVmaAllocator();
         void createCommandPool();
 
         // helper functions
@@ -84,5 +89,7 @@ namespace Atlas {
 
         const std::vector<const char *> validationLayers = {"VK_LAYER_KHRONOS_validation"};
         const std::vector<const char *> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+        VmaAllocator allocator_;
     };
 }

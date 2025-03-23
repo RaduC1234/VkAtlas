@@ -8,14 +8,8 @@
 #include "core/Log.hpp"
 
 namespace Atlas {
-
     SwapChain::SwapChain(Device &deviceRef, VkExtent2D extent) : device{deviceRef}, windowExtent{extent} {
-        createSwapChain();
-        createImageViews();
-        createRenderPass();
-        createDepthResources();
-        createFramebuffers();
-        createSyncObjects();
+        init();
     }
 
     SwapChain::~SwapChain() {
@@ -114,6 +108,15 @@ namespace Atlas {
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 
         return result;
+    }
+
+    void SwapChain::init() {
+        createSwapChain();
+        createImageViews();
+        createRenderPass();
+        createDepthResources();
+        createFramebuffers();
+        createSyncObjects();
     }
 
     void SwapChain::createSwapChain() {
@@ -370,19 +373,19 @@ namespace Atlas {
 
     VkPresentModeKHR SwapChain::chooseSwapPresentMode(
         const std::vector<VkPresentModeKHR> &availablePresentModes) {
-        for (const auto &availablePresentMode: availablePresentModes) {
+        /*for (const auto &availablePresentMode: availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
                 AT_INFO("Swapchain present mode: Mailbox");
                 return availablePresentMode;
             }
-        }
+        }*/
 
-        // for (const auto &availablePresentMode : availablePresentModes) {
-        //   if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
-        //     std::cout << "Present mode: Immediate" << std::endl;
-        //     return availablePresentMode;
-        //   }
-        // }
+        /*for (const auto &availablePresentMode: availablePresentModes) {
+            if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+                AT_INFO("Present mode: Immediate");
+                return availablePresentMode;
+            }
+        }*/
 
         AT_INFO("Swapchain present mode: V-Sync")
 

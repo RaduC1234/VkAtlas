@@ -7,6 +7,9 @@
 
 #include "core/Log.hpp"
 
+#define VMA_IMPLEMENTATION
+#include "vk_mem_alloc.h"
+
 namespace Atlas {
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
         AT_ERROR("Error: Validation layer: {0}", pCallbackData->pMessage);
@@ -36,6 +39,7 @@ namespace Atlas {
         createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
+        createVmaAllocator();
         createCommandPool();
     }
 
@@ -58,11 +62,11 @@ namespace Atlas {
 
         VkApplicationInfo appInfo = {};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pApplicationName = "LittleVulkanEngine App";
+        appInfo.pApplicationName = "Atlas App";
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 1, 0);
         appInfo.pEngineName = "No Engine";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 1, 0);
-        appInfo.apiVersion = VK_API_VERSION_1_0;
+        appInfo.apiVersion = VK_API_VERSION_1_2;
 
         VkInstanceCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -73,7 +77,7 @@ namespace Atlas {
         createInfo.ppEnabledExtensionNames = extensions.data();
 
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
-        if (enableValidationLayers) {
+        if constexpr (enableValidationLayers) {
             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
             createInfo.ppEnabledLayerNames = validationLayers.data();
 
@@ -182,6 +186,17 @@ namespace Atlas {
 
         vkGetDeviceQueue(device_, indices.graphicsFamily, 0, &graphicsQueue_);
         vkGetDeviceQueue(device_, indices.presentFamily, 0, &presentQueue_);
+    }
+
+    void Device::createVmaAllocator() {
+        VmaAllocatorCreateInfo allocatorInfo{};
+        allocatorInfo.physicalDevice = this->physicalDevice;
+        allocatorInfo.device = this->device_;
+        allocatorInfo.instance = this->instance;
+
+        if (vmaCreateAllocator(&allocatorInfo, &allocator_) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create VMA allocator.");
+        }
     }
 
     void Device::createCommandPool() {

@@ -26,6 +26,7 @@ elseif (WIN32)
     add_subdirectory(dependencies/glfw)
     add_subdirectory(dependencies/glm)
     add_subdirectory(dependencies/entt)
+    add_subdirectory(dependencies/VulkanMemoryAllocator)
 
     add_library(stb_image INTERFACE)
     target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
@@ -37,6 +38,7 @@ elseif (WIN32)
             stb_image
             fmt::fmt-header-only
             EnTT::EnTT
+            GPUOpen::VulkanMemoryAllocator
     )
 
     target_compile_definitions(atlas_engine PUBLIC AVALON_PLATFORM_WINDOWS)

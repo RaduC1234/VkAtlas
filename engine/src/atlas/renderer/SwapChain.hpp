@@ -10,20 +10,22 @@ namespace Atlas {
         SwapChain(Device &device, VkExtent2D windowExtent);
         ~SwapChain();
 
-        VkResult acquireNextImage(uint32_t *imageIndex);
+        SwapChain(const SwapChain &) = delete;
+        SwapChain &operator=(const SwapChain &) = delete;
 
+        VkResult acquireNextImage(uint32_t *imageIndex);
         VkResult submitCommandBuffers(const VkCommandBuffer *buffers, uint32_t *imageIndex);
 
         VkFormat findDepthFormat();
-        VkFormat getSwapChainImageFormat() {return swapChainImageFormat; }
-        VkExtent2D getSwapChainExtent() { return swapChainExtent; }
-        size_t imageCount() { return swapChainImages.size(); }
+        VkFormat getSwapChainImageFormat() const {return swapChainImageFormat; }
+        VkExtent2D getSwapChainExtent() const { return swapChainExtent; }
+        size_t imageCount() const { return swapChainImages.size(); }
 
         uint32_t width() const { return swapChainExtent.width; }
         uint32_t height() const { return swapChainExtent.height; }
 
-        VkRenderPass getRenderPass() { return renderPass; }
-        VkFramebuffer getFrameBuffer(int index) { return swapChainFramebuffers[index]; }
+        VkRenderPass getRenderPass() const { return renderPass; }
+        VkFramebuffer getFrameBuffer(int32_t index) const { return swapChainFramebuffers[index]; }
 
     private:
         Device &device;
@@ -51,7 +53,6 @@ namespace Atlas {
         std::vector<VkFence> imagesInFlight;
         size_t currentFrame = 0;
 
-
         void init();
         void createSwapChain();
         void createImageViews();
@@ -61,10 +62,7 @@ namespace Atlas {
         void createSyncObjects();
 
         VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats);
-
         VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes);
-
-        VkPresentModeKHR choosePresentMode(const std::vector<VkPresentModeKHR> &availableFormats);
         VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities);
     };
 }
