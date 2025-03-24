@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 :: Directory where shaders are stored
-set SHADER_DIR=shaders
+set SHADER_DIR=assets/shaders
 
 where glslc >nul 2>nul
 if %errorlevel% neq 0 (

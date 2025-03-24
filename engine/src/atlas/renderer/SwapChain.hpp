@@ -8,6 +8,7 @@ namespace Atlas {
         static constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 
         SwapChain(Device &device, VkExtent2D windowExtent);
+        SwapChain(Device &device, VkExtent2D windowExtent, std::shared_ptr<SwapChain> oldSwapChain);
         ~SwapChain();
 
         SwapChain(const SwapChain &) = delete;
@@ -39,6 +40,7 @@ namespace Atlas {
         std::vector<VkImageView> depthImageViews;
 
         VkSwapchainKHR swapChain;
+        std::shared_ptr<SwapChain> oldSwapChain;
 
         VkFormat swapChainImageFormat;
         VkFormat swapChainDepthFormat;

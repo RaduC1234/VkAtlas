@@ -6,9 +6,12 @@
 
 namespace Atlas {
     DesktopWindow::DesktopWindow(const WindowSpecification &properties) {
+        this->width = properties.width;
+        this->height = properties.height;
+
         glfwInit();
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-        glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
         assert(
             !(properties.properties & ATLAS_PROPERTIES_WINDOW_DECORATED &&
@@ -34,6 +37,7 @@ namespace Atlas {
         );
 
         glfwSetWindowUserPointer(glfwWindow, this);
+        glfwSetFramebufferSizeCallback(glfwWindow, framebufferResizeCallback);
     }
 
     bool DesktopWindow::shouldClose() {
@@ -50,6 +54,10 @@ namespace Atlas {
         glfwPollEvents();
     }
 
+    void DesktopWindow::waitEvents() {
+        glfwWaitEvents();
+    }
+
     std::vector<const char *> DesktopWindow::getRequiredExtensions() {
         uint32_t glfwExtensionCount = 0;
         const auto glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
@@ -57,11 +65,12 @@ namespace Atlas {
         return {glfwExtensions, glfwExtensions + glfwExtensionCount};
     }
 
-    void DesktopWindow::framebufferResizeCallback(GLFWwindow *glfwWindow, uint32_t width, uint32_t height) {
+    void DesktopWindow::framebufferResizeCallback(GLFWwindow *glfwWindow, int width, int height) {
         auto *window = static_cast<DesktopWindow *>(glfwGetWindowUserPointer(glfwWindow));
 
         window->width = width;
         window->height = height;
+        window->framebufferResized = true;
     }
 }
 

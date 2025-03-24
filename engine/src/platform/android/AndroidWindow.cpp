@@ -39,6 +39,10 @@ namespace Atlas {
         }
     }
 
+    void AndroidWindow::waitEvents() {
+
+    }
+
     std::vector<const char*> AndroidWindow::getRequiredExtensions() {
         return {
                 "VK_KHR_surface",

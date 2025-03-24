@@ -17,7 +17,7 @@ namespace Atlas {
 
     class Application {
     public:
-        Application(ApplicationSpecification specification);
+        Application(const ApplicationSpecification& specification);
         ~Application();
 
         Application(const Application&) = delete;
@@ -30,15 +30,20 @@ namespace Atlas {
         void createPipelineLayout();
         void createPipeline();
         void createCommandBuffers();
+
+        void freeCommandBuffers();
+
         void drawFrame();
+        void recreateSwapChain();
+        void recordCommandBuffer(int imageIndex);
 
         ApplicationSpecification specification;
 
-        std::unique_ptr<Window> window = Window::create({specification.pNativeApp, 720, 680});
+        std::unique_ptr<Window> window = Window::create({specification.pNativeApp, 1200, 800});
         Device device{*window};
-        SwapChain swapChain{device, window->getExtent()};
-
+        std::unique_ptr<SwapChain> swapChain;
         std::unique_ptr<Pipeline> pipeline;
+
         VkPipelineLayout pipelineLayout;
         std::vector<VkCommandBuffer> commandBuffers;
         std::unique_ptr<Model> model;

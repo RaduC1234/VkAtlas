@@ -14,12 +14,14 @@ namespace Atlas {
         bool shouldClose() override;
         void createWindowSurface(VkInstance instance, VkSurfaceKHR*surface) const override;
         void pollEvents() override;
+        void waitEvents() override;
+
         std::vector<const char *> getRequiredExtensions() override;
 
     private:
         GLFWwindow* glfwWindow;
 
-        static void framebufferResizeCallback(GLFWwindow *glfwWindow, uint32_t width, uint32_t height);
+        static void framebufferResizeCallback(GLFWwindow *glfwWindow, int width, int height);
     };
 }
 

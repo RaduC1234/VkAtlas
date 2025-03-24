@@ -1,8 +1,5 @@
 #include "Window.hpp"
 
-#include <cassert>
-#include <stdexcept>
-
 #include "desktop/DesktopWindow.hpp"
 #include "android/AndroidWindow.hpp"
 

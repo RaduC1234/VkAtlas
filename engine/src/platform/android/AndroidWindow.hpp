@@ -13,6 +13,7 @@ namespace Atlas {
         bool shouldClose() override;
         void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const override;
         void pollEvents() override;
+        void waitEvents() override;
         std::vector<const char *> getRequiredExtensions() override;
     private:
         android_app* app;

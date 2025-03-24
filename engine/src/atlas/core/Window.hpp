@@ -33,7 +33,11 @@ namespace Atlas {
         virtual bool shouldClose() = 0;
         virtual void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const = 0;
         virtual void pollEvents() = 0;
+        virtual void waitEvents() = 0;
         virtual std::vector<const char*> getRequiredExtensions() = 0;
+
+        bool wasWindowResized() const { return framebufferResized; }
+        void resetWindowResizedFlag() { this->framebufferResized = false; }
 
         VkExtent2D getExtent() const { return {width, height}; }
         int32_t getWidth() const { return width; }
@@ -43,5 +47,6 @@ namespace Atlas {
 
     protected:
         uint32_t width{}, height{};
+        bool framebufferResized{false};
     };
 }
