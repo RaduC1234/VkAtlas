@@ -186,6 +186,8 @@ namespace Atlas {
 
         vkGetDeviceQueue(device_, indices.graphicsFamily, 0, &graphicsQueue_);
         vkGetDeviceQueue(device_, indices.presentFamily, 0, &presentQueue_);
+
+        AT_INFO("MaxPushConstantSize: {}", properties.limits.maxPushConstantsSize);
     }
 
     void Device::createVmaAllocator() {
@@ -273,6 +275,8 @@ namespace Atlas {
                 continue; // Skip unsuitable devices
             }
 
+            //TODO: Switch to discrete GPU when renderer is complete
+
             // **Scoring System for Best GPU Selection**
             if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
                 score += 1000; // Prioritize discrete GPUs
@@ -281,7 +285,7 @@ namespace Atlas {
             }
 
             // Additional scoring criteria:
-            score += deviceProperties.limits.maxImageDimension2D; // Prefer GPUs with higher texture resolution support
+           // score += deviceProperties.limits.maxImageDimension2D; // Prefer GPUs with higher texture resolution support
 
             // Select the best device
             if (score > bestScore) {

@@ -2,73 +2,73 @@
 
 #if defined(__ANDROID__)
 #include <android/asset_manager.h>
-#include <stdexcept>
+#include <game-activity/native_app_glue/android_native_app_glue.h>
 
-AAssetManager* Atlas::AssetManager::sharedAssetManager = nullptr;
-
-#else
+#elif defined(_WIN32)
 #include <fstream>
-#include <stdexcept>
+#include <filesystem>
 #endif
 
 namespace Atlas {
 
-#if defined(__ANDROID__)
-    void AssetManager::init(AAssetManager* mgr) {
-        if (!mgr) {
-            throw std::runtime_error("AssetManager::init: asset manager is null!");
-        }
-        sharedAssetManager = mgr;
-    }
-#else
-    void AssetManager::init() {
-        // No-op on non-Android
-    }
-#endif
+    std::shared_ptr<AssetManager> AssetManager::assetManager = nullptr;
 
-    std::unique_ptr<AssetManager> AssetManager::create() {
-        auto instance = std::make_unique<AssetManager>();
-
-#if defined(__ANDROID__)
-        if (!sharedAssetManager) {
-            throw std::runtime_error("AssetManager::create: asset manager not initialized!");
-        }
-        instance->assetManager = sharedAssetManager;
-#endif
-
-        return instance;
-    }
-
-    std::vector<char> AssetManager::load(const std::string& path) {
-#if defined(__ANDROID__)
+    void AssetManager::init(void* nativeApp) {
         if (!assetManager) {
-            throw std::runtime_error("AssetManager::load: no asset manager bound to this instance!");
-        }
+            assetManager = std::make_shared<AssetManager>();
 
-        AAsset* asset = AAssetManager_open(assetManager, path.c_str(), AASSET_MODE_STREAMING);
-        if (!asset) {
-            throw std::runtime_error("AssetManager: Failed to open asset: " + path);
-        }
+#if defined(__ANDROID__)
+            auto* app = reinterpret_cast<android_app*>(nativeApp);
+            assetManager->androidAssetManager = app->activity->assetManager;
 
-        off_t length = AAsset_getLength(asset);
-        std::vector<char> buffer(length);
-        AAsset_read(asset, buffer.data(), length);
+#elif defined(_WIN32)
+            assetManager->assetsPath = std::filesystem::current_path() / "assets";
+#endif
+        }
+    }
+
+    AssetManager AssetManager::get() {
+        return *assetManager;
+    }
+
+    std::vector<char> AssetManager::load(const std::string& resource) {
+#if defined(__ANDROID__)
+        if (!androidAssetManager) return {};
+
+        AAsset* asset = AAssetManager_open(androidAssetManager, resource.c_str(), AASSET_MODE_STREAMING);
+        if (!asset) return {};
+
+        off_t size = AAsset_getLength(asset);
+        std::vector<char> buffer(size);
+        AAsset_read(asset, buffer.data(), size);
         AAsset_close(asset);
+
         return buffer;
 
-#else
-        std::ifstream file(path, std::ios::ate | std::ios::binary);
-        if (!file.is_open()) {
-            throw std::runtime_error("AssetManager: Failed to open file: " + path);
-        }
+#elif defined(_WIN32)
+        std::filesystem::path filePath = assetsPath / resource;
+        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) return {};
 
-        size_t size = static_cast<size_t>(file.tellg());
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+
         std::vector<char> buffer(size);
-        file.seekg(0);
         file.read(buffer.data(), size);
         file.close();
+
         return buffer;
+
+#else
+        return {};
 #endif
     }
 
-}
+#if defined(__ANDROID__)
+    // Android-specific member
+    AAssetManager* AssetManager::androidAssetManager = nullptr;
+#elif defined(_WIN32)
+    std::filesystem::path AssetManager::assetsPath;
+#endif
+
+} // namespace Atlas

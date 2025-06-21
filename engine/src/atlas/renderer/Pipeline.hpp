@@ -40,8 +40,6 @@ namespace Atlas {
         static void defaultPipelineConfigInfo(PipelineConfigInfo &configInfo);
 
     private:
-        static std::vector<char> readFile(const std::string& filename);
-
         void createGraphicsPipeline(
             const std::string &vertFilepath,
             const std::string &fragFilepath,

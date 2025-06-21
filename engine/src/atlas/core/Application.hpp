@@ -23,6 +23,7 @@ namespace Atlas {
         Application(const Application&) = delete;
         Application& operator=(const Application&) = delete;
 
+        void init();
         void run();
 
     private:

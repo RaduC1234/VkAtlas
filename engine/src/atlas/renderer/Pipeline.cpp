@@ -4,6 +4,8 @@
 
 #include <cassert>
 
+#include "core/AssetManager.hpp"
+
 namespace Atlas {
     Pipeline::Pipeline(Device &device, const std::string &vertexVertCode, const std::string &fragmentVertCode, const PipelineConfigInfo &configInfo): device{device} {
         createGraphicsPipeline(vertexVertCode, fragmentVertCode, configInfo);
@@ -95,24 +97,6 @@ namespace Atlas {
         configInfo.dynamicStateInfo.flags = 0;
     }
 
-    std::vector<char> Pipeline::readFile(const std::string &filename) {
-        std::ifstream file(filename, std::ios::ate | std::ios::binary);
-
-        if (!file.is_open()) {
-            throw std::runtime_error("Failed to open file" + filename);
-        }
-
-        size_t fileSize = file.tellg();
-        std::vector<char> buffer(fileSize);
-
-        file.seekg(0);
-        file.read(buffer.data(), fileSize);
-
-        file.close();
-
-        return buffer;
-    }
-
     void Pipeline::createGraphicsPipeline(const std::string &vertFilepath, const std::string &fragFilepath, const PipelineConfigInfo &configInfo) {
         assert(
             configInfo.pipelineLayout != VK_NULL_HANDLE &&
@@ -121,8 +105,8 @@ namespace Atlas {
             configInfo.renderPass != VK_NULL_HANDLE &&
             "Cannot create graphics pipeline: no renderPass provided in configInfo");
 
-        const auto fragCode = readFile(fragFilepath);
-        const auto vertCode = readFile(vertFilepath);
+        const auto fragCode = AssetManager::get().load(fragFilepath);
+        const auto vertCode = AssetManager::get().load(vertFilepath);
 
         createShaderModule(vertCode, &vertShaderModule);
         createShaderModule(fragCode, &fragShaderModule);

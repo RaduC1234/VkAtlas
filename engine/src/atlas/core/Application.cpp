@@ -5,8 +5,23 @@
 #include <cassert>
 #include <stdexcept>
 
+#include "AssetManager.hpp"
+#include "Log.hpp"
+
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+
 namespace Atlas {
-    Application::Application(const ApplicationSpecification &spec) {
+    struct SimplePushConstantData {
+        glm::vec2 offset;
+        alignas(16) glm::vec3 color;
+    };
+
+    Application::Application(const ApplicationSpecification &spec) : specification(spec) {
+        // Load Systems
+        AssetManager::init(spec.pNativeApp);
+
         loadModels();
         createPipelineLayout();
         recreateSwapChain();
@@ -34,14 +49,20 @@ namespace Atlas {
     }
 
     void Application::createPipelineLayout() {
+        VkPushConstantRange pushConstantRange{};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(SimplePushConstantData);
+
+
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 0;
         pipelineLayoutInfo.pSetLayouts = nullptr;
-        pipelineLayoutInfo.pushConstantRangeCount = 0;
-        pipelineLayoutInfo.pPushConstantRanges = nullptr;
-        if (vkCreatePipelineLayout(device.device(), &pipelineLayoutInfo, nullptr, &pipelineLayout) !=
-            VK_SUCCESS) {
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+        if (vkCreatePipelineLayout(device.device(), &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout!");
         }
     }
@@ -50,7 +71,7 @@ namespace Atlas {
         auto extent = window->getExtent();
         while (extent.width == 0 || extent.height == 0) {
             extent = window->getExtent();
-            window->waitEvents();
+            //window->waitEvents();
         }
         vkDeviceWaitIdle(device.device());
 
@@ -68,8 +89,8 @@ namespace Atlas {
     }
 
     void Application::createPipeline() {
-        assert(swapChain != nullptr && "Cannot create pipeline before swap chain");
-        assert(pipelineLayout != nullptr && "Cannot create pipeline before pipeline layout");
+        assert(swapChain != VK_NULL_HANDLE && "Cannot create pipeline before swap chain");
+        assert(pipelineLayout != VK_NULL_HANDLE && "Cannot create pipeline before pipeline layout");
 
         PipelineConfigInfo pipelineConfig{};
         Pipeline::defaultPipelineConfigInfo(pipelineConfig);
@@ -123,7 +144,7 @@ namespace Atlas {
         renderPassInfo.renderArea.extent = swapChain->getSwapChainExtent();
 
         std::array<VkClearValue, 2> clearValues{};
-        clearValues[0].color = {0.0f, 0.0f, 0.0f, 1.0f};
+        clearValues[0].color = {0.0151f, 0.0151f, 0.0151f, 1.0f};
         clearValues[1].depthStencil = {1.0f, 0};
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
         renderPassInfo.pClearValues = clearValues.data();
@@ -143,8 +164,22 @@ namespace Atlas {
 
         pipeline->bind(commandBuffers[imageIndex]);
         model->bind(commandBuffers[imageIndex]);
-        model->draw(commandBuffers[imageIndex]);
 
+        for (int j = 0; j < 4; j++) {
+            SimplePushConstantData data{};
+            data.offset = {0.0f, -0.4f + j * 0.25f};
+            data.color = {0.0f, 0.0f, 0.2f + 0.2f * j};
+
+            vkCmdPushConstants(
+                commandBuffers[imageIndex],
+                pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                sizeof(SimplePushConstantData),
+                &data
+            );
+
+            model->draw(commandBuffers[imageIndex]);
+        }
         vkCmdEndRenderPass(commandBuffers[imageIndex]);
         if (vkEndCommandBuffer(commandBuffers[imageIndex]) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");

@@ -34,9 +34,9 @@ namespace Atlas {
         }
         swapChainImageViews.clear();
 
-        if (swapChain != nullptr) {
+        if (swapChain != VK_NULL_HANDLE) {
             vkDestroySwapchainKHR(device.device(), swapChain, nullptr);
-            swapChain = nullptr;
+            swapChain = VK_NULL_HANDLE;
         }
 
         for (int i = 0; i < depthImages.size(); i++) {
@@ -376,12 +376,12 @@ namespace Atlas {
 
     VkPresentModeKHR SwapChain::chooseSwapPresentMode(
         const std::vector<VkPresentModeKHR> &availablePresentModes) {
-        for (const auto &availablePresentMode: availablePresentModes) {
+        /*for (const auto &availablePresentMode: availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
                 //std::cout << "Present mode: Mailbox" << std::endl;
                 return availablePresentMode;
             }
-        }
+        }*/
 
         for (const auto &availablePresentMode: availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {

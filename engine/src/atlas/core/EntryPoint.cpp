@@ -1,13 +1,11 @@
 #include "Application.hpp"
-#include "AssetManager.hpp"
 #include "Log.hpp"
 
 #ifdef _WIN32
 extern "C" __declspec(dllexport) void runAtlas() {
     Atlas::Log::init();
-    Atlas::AssetManager::init();
-    AT_INFO("Starting Engine...")
-    Atlas::Application app{{}};
+    Atlas::ApplicationSpecification specification{};
+    Atlas::Application app{specification};
     app.run();
 }
 
@@ -21,16 +19,13 @@ extern "C" {
 
 void android_main(android_app *app) {
 
-    // Android glue expects this for threading
-    //app->onAppCmd = handle_cmd;
-    app->userData = nullptr;
-
     bool isInitialized = false;
 
     while (true) {
         int events;
         android_poll_source *source;
 
+        // Wait for android to initialize
         // This blocks until an event or timeout occurs
         while (ALooper_pollOnce(0, nullptr, &events, (void **) &source) >= 0) {
             if (source) source->process(app, source);
@@ -45,7 +40,7 @@ void android_main(android_app *app) {
             isInitialized = true;
 
             Atlas::Log::init();
-            Atlas::ApplicationSpecification specification;
+            Atlas::ApplicationSpecification specification{};
             specification.pNativeApp = reinterpret_cast<void*>(app);
 
             Atlas::Application application(specification);
