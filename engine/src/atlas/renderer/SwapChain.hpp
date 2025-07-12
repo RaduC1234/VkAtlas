@@ -14,7 +14,7 @@ namespace Atlas {
         SwapChain(const SwapChain &) = delete;
         SwapChain &operator=(const SwapChain &) = delete;
 
-        VkResult acquireNextImage(uint32_t *imageIndex);
+        VkResult acquireNextImage(uint32_t *imageIndex) const;
         VkResult submitCommandBuffers(const VkCommandBuffer *buffers, uint32_t *imageIndex);
 
         VkFormat findDepthFormat();
@@ -27,6 +27,11 @@ namespace Atlas {
 
         VkRenderPass getRenderPass() const { return renderPass; }
         VkFramebuffer getFrameBuffer(int32_t index) const { return swapChainFramebuffers[index]; }
+
+        bool compareSwapFormats(const SwapChain& swapChain) const {
+            return swapChain.swapChainDepthFormat == swapChainDepthFormat &&
+                swapChain.swapChainImageFormat == swapChainImageFormat;
+        }
 
     private:
         Device &device;

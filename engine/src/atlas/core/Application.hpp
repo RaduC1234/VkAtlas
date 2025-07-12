@@ -2,9 +2,9 @@
 
 #include "Window.hpp"
 #include "renderer/Device.hpp"
-#include "renderer/Model.hpp"
-#include "renderer/Pipeline.hpp"
-#include "renderer/SwapChain.hpp"
+#include "renderer/Renderer.hpp"
+
+#include <entt/entt.hpp>
 
 #include <memory>
 
@@ -23,30 +23,17 @@ namespace Atlas {
         Application(const Application&) = delete;
         Application& operator=(const Application&) = delete;
 
-        void init();
         void run();
 
     private:
-        void loadModels();
-        void createPipelineLayout();
-        void createPipeline();
-        void createCommandBuffers();
-
-        void freeCommandBuffers();
-
-        void drawFrame();
-        void recreateSwapChain();
-        void recordCommandBuffer(int imageIndex);
+        void loadGameObjects();
 
         ApplicationSpecification specification;
 
         std::unique_ptr<Window> window = Window::create({specification.pNativeApp, 1200, 800});
         Device device{*window};
-        std::unique_ptr<SwapChain> swapChain;
-        std::unique_ptr<Pipeline> pipeline;
+        Renderer renderer{*window, device};
 
-        VkPipelineLayout pipelineLayout;
-        std::vector<VkCommandBuffer> commandBuffers;
-        std::unique_ptr<Model> model;
+        entt::registry registry;
     };
 }

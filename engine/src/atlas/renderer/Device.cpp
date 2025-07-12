@@ -272,22 +272,17 @@ namespace Atlas {
             }
 
             if (!indices.isComplete() || !extensionsSupported || !swapChainAdequate || !supportedFeatures.samplerAnisotropy) {
-                continue; // Skip unsuitable devices
+                continue;
             }
 
-            //TODO: Switch to discrete GPU when renderer is complete
-
-            // **Scoring System for Best GPU Selection**
             if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
                 score += 1000; // Prioritize discrete GPUs
             } else if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
                 score += 500;
             }
 
-            // Additional scoring criteria:
-           // score += deviceProperties.limits.maxImageDimension2D; // Prefer GPUs with higher texture resolution support
+            score += deviceProperties.limits.maxImageDimension2D; // Prefer GPUs with higher texture resolution support
 
-            // Select the best device
             if (score > bestScore) {
                 bestScore = score;
                 bestDevice = device;

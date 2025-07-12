@@ -59,21 +59,20 @@ namespace Atlas {
         }
     }
 
-    VkResult SwapChain::acquireNextImage(uint32_t *imageIndex) {
-        vkWaitForFences(
-            device.device(),
-            1,
-            &inFlightFences[currentFrame],
-            VK_TRUE,
-            std::numeric_limits<uint64_t>::max());
+
+    VkResult SwapChain::acquireNextImage(uint32_t *imageIndex) const {
+        vkWaitForFences(device.device(), 1, &inFlightFences[currentFrame],VK_TRUE, std::numeric_limits<uint64_t>::max());
 
         VkResult result = vkAcquireNextImageKHR(
-            device.device(),
-            swapChain,
+            device.device(), swapChain,
             std::numeric_limits<uint64_t>::max(),
-            imageAvailableSemaphores[currentFrame], // must be a not signaled semaphore
+            imageAvailableSemaphores[currentFrame],
             VK_NULL_HANDLE,
             imageIndex);
+
+        if (imagesInFlight[*imageIndex] != VK_NULL_HANDLE) {
+            vkWaitForFences(device.device(), 1,&imagesInFlight[*imageIndex], VK_TRUE, UINT64_MAX);
+        }
 
         return result;
     }
@@ -374,8 +373,7 @@ namespace Atlas {
         return availableFormats[0];
     }
 
-    VkPresentModeKHR SwapChain::chooseSwapPresentMode(
-        const std::vector<VkPresentModeKHR> &availablePresentModes) {
+    VkPresentModeKHR SwapChain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
         /*for (const auto &availablePresentMode: availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
                 //std::cout << "Present mode: Mailbox" << std::endl;
