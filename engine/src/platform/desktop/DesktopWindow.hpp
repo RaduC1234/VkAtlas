@@ -18,10 +18,22 @@ namespace Atlas {
 
         std::vector<const char *> getRequiredExtensions() override;
 
+        void setCursorMode(CursorMode cursorMode) override;
+
     private:
         GLFWwindow* glfwWindow;
 
         static void framebufferResizeCallback(GLFWwindow *glfwWindow, int width, int height);
+
+        // mouse callbacks
+        static void mouseCursorPositionCallback(GLFWwindow *glfwWindow, double xPos, double yPos);
+        static void mouseButtonCallback(GLFWwindow *glfwWindow, int button, int action, int mods);
+        static void mouseScrollCallback(GLFWwindow *glfwWindow, double xOffset, double yOffset);
+
+        // keyboard callbacks
+        static void keyboardKeyCallback(GLFWwindow *glfwWindow, int key, int scancode, int action, int mods);
+        static void keyboardTextCallback(GLFWwindow *glfwWindow, unsigned int codepoint);
+
     };
 }
 

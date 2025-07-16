@@ -2,7 +2,7 @@
 #include <entt/entt.hpp>
 
 #include "renderer/Pipeline.hpp"
-#include "renderer/Renderer.hpp"
+#include "renderer/Camera.hpp"
 
 namespace Atlas {
     class RenderSystem {
@@ -13,7 +13,7 @@ namespace Atlas {
         RenderSystem(const RenderSystem&) = delete;
         RenderSystem &operator=(const RenderSystem&) = delete;
 
-        void update(entt::registry &registry, VkCommandBuffer commandBuffer) const;
+        void update(entt::registry &registry, VkCommandBuffer commandBuffer, const Camera &camera) const;
     private:
         void createPipelineLayout();
         void createPipeline(VkRenderPass renderPass);

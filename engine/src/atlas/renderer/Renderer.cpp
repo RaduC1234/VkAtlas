@@ -29,7 +29,7 @@ namespace Atlas {
             std::shared_ptr oldOldSwapChain = std::move(swapChain);
             swapChain = std::make_unique<SwapChain>(device, extent, oldOldSwapChain);
 
-            if (!oldOldSwapChain->compareSwapFormats(*swapChain.get())) {
+            if (!oldOldSwapChain->compareSwapFormats(*swapChain)) {
                 throw std::runtime_error("Swap chain image(or depth) format has changed!");
             }
         }

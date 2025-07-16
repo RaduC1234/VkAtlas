@@ -2,7 +2,9 @@
 
 #include <memory>
 
-#include "renderer/Model.hpp"
+#include "renderer/Mesh.hpp"
+#include "renderer/Color.hpp"
+#include "renderer/Camera.hpp"
 
 #include <glm/glm.hpp>
 
@@ -46,38 +48,15 @@ namespace Atlas {
         }
     };
 
-    struct Color {
-        glm::vec4 color{1.0f, 1.0f, 1.0f, 1.0f}; // default white
-
-        constexpr Color() = default;
-        constexpr Color(glm::vec3 color) : color(glm::vec4(color, 1.0f)) {}
-        constexpr Color(int r, int b, int g, int a) : color(r / 255.f, g / 255.f, b / 255.f, a / 255.f) {}
-        constexpr Color(float r, float g, float b, float a = 1.0f) : color(r, g, b, a) {}
-
-        Color(const std::string &hex) {
-
-            if (hex.length() != 8) {
-                assert("Color hex lenght must be 8");
-            }
-
-            color = glm::vec4(
-                std::stoi(hex.substr(0, 2), nullptr, 16) / 255.0f,
-                std::stoi(hex.substr(2, 2), nullptr, 16) / 255.0f,
-                std::stoi(hex.substr(4, 2), nullptr, 16) / 255.0f,
-                std::stoi(hex.substr(6, 2), nullptr, 16) / 255.0f
-            );
-        }
-
-        static constexpr Color white() { return Color(1.0f, 1.0f, 1.0f, 1.0f); }
-        static constexpr Color black() { return Color(0.0f, 0.0f, 0.0f, 1.0f); }
-        static constexpr Color gray() { return Color{75, 75, 75}; }
-        static constexpr Color red() { return Color(1.0f, 0.0f, 0.0f, 1.0f); }
-        static constexpr Color green() { return Color(0.0f, 1.0f, 0.0f, 1.0f); }
-        static constexpr Color blue() { return Color(0.0f, 0.0f, 1.0f, 1.0f); }
-        static constexpr Color transparent() { return Color(0.0f, 0.0f, 0.0f, 0.0f); }
+    struct Material {
+        Color color;
     };
 
     struct ModelComponent {
-        std::shared_ptr<Model> model;
+        std::shared_ptr<Mesh> model;
+    };
+
+    struct CameraComponent {
+       Camera& camera;
     };
 }

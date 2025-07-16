@@ -59,22 +59,22 @@ namespace Atlas {
             pipelineConfig);
     }
 
-    void RenderSystem::update(entt::registry &registry, VkCommandBuffer commandBuffer) const {
+    void RenderSystem::update(entt::registry &registry, VkCommandBuffer commandBuffer, const Camera &camera) const {
         pipeline->bind(commandBuffer);
 
-        auto view = registry.view<Transform, Color, ModelComponent>();
-
+        auto projectionView = camera.getProjection() * camera.getView();
+        auto view = registry.view<Transform, Material, ModelComponent>();
         for (auto entity: view) {
             auto &transform = view.get<Transform>(entity);
-            auto &color = view.get<Color>(entity);
+            auto &material = view.get<Material>(entity);
             auto &model = view.get<ModelComponent>(entity);
 
-            transform.rotation.y = glm::mod(transform.rotation.y + 0.001f, glm::two_pi<float>());
-            transform.rotation.x = glm::mod(transform.rotation.y + 0.0005f, glm::two_pi<float>());
+            //transform.rotation.y = glm::mod(transform.rotation.y + 0.001f, glm::two_pi<float>());
+            //transform.rotation.x = glm::mod(transform.rotation.y + 0.0005f, glm::two_pi<float>());
 
             SimplePushConstantData push{};
-            push.color = color.color;
-            push.transform = transform.mat4();
+            push.color = static_cast<glm::vec3>(material.color);
+            push.transform = projectionView * transform.mat4();
 
             vkCmdPushConstants(
                 commandBuffer,

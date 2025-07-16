@@ -6,7 +6,7 @@
 #include <glm/glm.hpp>
 
 namespace Atlas {
-    class Model {
+    class Mesh {
     public:
         struct Vertex {
             glm::vec3 position;
@@ -21,11 +21,11 @@ namespace Atlas {
             std::vector<uint32_t> indicies;
         };
 
-        Model(Device &device, const std::vector<Vertex> &vertices);
-        ~Model();
+        Mesh(Device &device, const std::vector<Vertex> &vertices);
+        ~Mesh();
 
-        Model(const Model &) = delete;
-        Model &operator=(const Model &) = delete;
+        Mesh(const Mesh &) = delete;
+        Mesh &operator=(const Mesh &) = delete;
 
         void bind(VkCommandBuffer commandBuffer);
         void draw(VkCommandBuffer commandBuffer);

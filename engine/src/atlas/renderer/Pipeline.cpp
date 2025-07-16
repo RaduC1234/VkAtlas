@@ -1,6 +1,6 @@
 #include "Pipeline.hpp"
 
-#include "Model.hpp"
+#include "Mesh.hpp"
 
 #include <cassert>
 
@@ -128,8 +128,8 @@ namespace Atlas {
         shaderStages[1].pNext = nullptr;
         shaderStages[1].pSpecializationInfo = nullptr;
 
-        auto bindingDescriptions = Model::Vertex::getBindingDescriptions();
-        auto attributeDescriptions = Model::Vertex::getAttributeDescriptions();
+        auto bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
+        auto attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());

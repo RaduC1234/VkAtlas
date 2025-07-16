@@ -33,6 +33,10 @@ namespace Atlas {
                 swapChain.swapChainImageFormat == swapChainImageFormat;
         }
 
+        float extentAspectRatio() const {
+            return static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height);
+        }
+
     private:
         Device &device;
         VkExtent2D windowExtent;

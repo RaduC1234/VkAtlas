@@ -1,28 +1,28 @@
-#include "Model.hpp"
+#include "Mesh.hpp"
 
 #include <cassert>
 
 namespace Atlas {
-    Model::Model(Device &device, const std::vector<Vertex> &vertices) : device(device) {
+    Mesh::Mesh(Device &device, const std::vector<Vertex> &vertices) : device(device) {
         createVertexBuffers(vertices);
     }
 
-    Model::~Model() {
+    Mesh::~Mesh() {
         vkDestroyBuffer(device.device(), vertexBuffer, nullptr);
         vkFreeMemory(device.device(), vertexBufferMemory, nullptr);
     }
 
-    void Model::bind(VkCommandBuffer commandBuffer) {
+    void Mesh::bind(VkCommandBuffer commandBuffer) {
         VkBuffer buffers[] = {vertexBuffer};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
     }
 
-    void Model::draw(VkCommandBuffer commandBuffer) {
+    void Mesh::draw(VkCommandBuffer commandBuffer) {
         vkCmdDraw(commandBuffer, vertexCount, 1, 0, 0);
     }
 
-    void Model::createVertexBuffers(const std::vector<Vertex> &vertices) {
+    void Mesh::createVertexBuffers(const std::vector<Vertex> &vertices) {
         vertexCount = static_cast<uint32_t>(vertices.size());
 
         assert(vertexCount >= 3 && "Vertex count must be at least 3");
@@ -42,7 +42,7 @@ namespace Atlas {
     }
 
     // vertex
-    std::vector<VkVertexInputBindingDescription> Model::Vertex::getBindingDescriptions() {
+    std::vector<VkVertexInputBindingDescription> Mesh::Vertex::getBindingDescriptions() {
         std::vector<VkVertexInputBindingDescription> bindingDescriptions(1);
         bindingDescriptions[0].binding = 0;
         bindingDescriptions[0].stride = sizeof(Vertex);
@@ -51,7 +51,7 @@ namespace Atlas {
         return bindingDescriptions;
     }
 
-    std::vector<VkVertexInputAttributeDescription> Model::Vertex::getAttributeDescriptions() {
+    std::vector<VkVertexInputAttributeDescription> Mesh::Vertex::getAttributeDescriptions() {
         std::vector<VkVertexInputAttributeDescription> attributeDescriptions(2);
         attributeDescriptions[0].binding = 0;
         attributeDescriptions[0].location = 0;
