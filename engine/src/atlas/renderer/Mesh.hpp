@@ -5,6 +5,8 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
+#include "Buffer.hpp"
+
 namespace Atlas {
     class Mesh {
     public:
@@ -18,11 +20,11 @@ namespace Atlas {
 
         struct Builder {
             std::vector<Vertex> vertices{};
-            std::vector<uint32_t> indicies;
+            std::vector<uint32_t> indices{};
         };
 
-        Mesh(Device &device, const std::vector<Vertex> &vertices);
-        ~Mesh();
+        Mesh(Device &device, const Builder &builder);
+        ~Mesh() = default;
 
         Mesh(const Mesh &) = delete;
         Mesh &operator=(const Mesh &) = delete;
@@ -32,10 +34,15 @@ namespace Atlas {
 
     private:
         void createVertexBuffers(const std::vector<Vertex> &vertices);
+        void createIndexBuffers(const std::vector<uint32_t> &indices);
 
         Device &device;
-        VkBuffer vertexBuffer;
-        VkDeviceMemory vertexBufferMemory;
+
+        std::unique_ptr<Buffer> vertexBuffer;
         uint32_t vertexCount;
+
+        std::unique_ptr<Buffer> indexBuffer;
+        uint32_t indexCount;
+        bool hasIndexBuffer = false;
     };
 }

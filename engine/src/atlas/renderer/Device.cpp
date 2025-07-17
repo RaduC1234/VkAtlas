@@ -45,6 +45,7 @@ namespace Atlas {
 
     Device::~Device() {
         vkDestroyCommandPool(device_, commandPool, nullptr);
+        vmaDestroyAllocator(allocator_);
         vkDestroyDevice(device_, nullptr);
 
         if constexpr (enableValidationLayers) {
@@ -426,6 +427,38 @@ namespace Atlas {
         throw std::runtime_error("failed to find supported format!");
     }
 
+    VkCommandBuffer Device::beginSingleTimeCommands() {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = commandPool;
+        allocInfo.commandBufferCount = 1;
+
+        VkCommandBuffer commandBuffer;
+        vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer);
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        vkBeginCommandBuffer(commandBuffer, &beginInfo);
+        return commandBuffer;
+    }
+
+    void Device::endSingleTimeCommands(VkCommandBuffer commandBuffer) const {
+        vkEndCommandBuffer(commandBuffer);
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffer;
+
+        vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue_);
+
+        vkFreeCommandBuffers(device_, commandPool, 1, &commandBuffer);
+    }
+
     void Device::createBuffer(
         VkDeviceSize size,
         VkBufferUsageFlags usage,
@@ -462,6 +495,7 @@ namespace Atlas {
         VkMemoryPropertyFlags properties,
         VkImage &image,
         VkDeviceMemory &imageMemory) {
+
         if (vkCreateImage(device_, &imageInfo, nullptr, &image) != VK_SUCCESS) {
             throw std::runtime_error("failed to create image!");
         }

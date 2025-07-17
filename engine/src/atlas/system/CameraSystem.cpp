@@ -37,8 +37,7 @@ namespace Atlas {
             auto &tf = view.get<Transform>(entity);
             auto &camComp = view.get<CameraComponent>(entity);
 
-            if (glm::dot(rotationDt, rotationDt) >
-                std::numeric_limits<float>::epsilon()) {
+            if (glm::dot(rotationDt, rotationDt) > std::numeric_limits<float>::epsilon()) {
                 tf.rotation += lookSpeed * deltaTime * rotationDt;
             }
 
@@ -47,6 +46,7 @@ namespace Atlas {
 
             float pitch = tf.rotation.x;
             float yaw = tf.rotation.y;
+
 
             glm::vec3 forward{
                 cos(pitch) * sin(yaw), // x
@@ -72,8 +72,7 @@ namespace Atlas {
             //if (Keyboard::isKeyPressed(keyMappings.up))       dir += up;
             //if (Keyboard::isKeyPressed(keyMappings.down))     dir -= up;
 
-            if (glm::dot(dir, dir) >
-                std::numeric_limits<float>::epsilon()) {
+            if (glm::dot(dir, dir) > std::numeric_limits<float>::epsilon()) {
                 tf.translation += moveSpeed * deltaTime * glm::normalize(dir);
             }
 

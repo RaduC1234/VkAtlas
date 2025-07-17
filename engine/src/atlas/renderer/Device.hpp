@@ -56,7 +56,9 @@ namespace Atlas {
 
         VkPhysicalDeviceProperties properties;
 
-        VmaAllocator allocator() const { return this->allocator_; }
+        VmaAllocator &allocator() { return this->allocator_; }
+        VkCommandBuffer beginSingleTimeCommands();
+        void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
 
     private:
         void createInstance();

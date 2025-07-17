@@ -3,23 +3,27 @@
 #include <cassert>
 
 namespace Atlas {
-    Mesh::Mesh(Device &device, const std::vector<Vertex> &vertices) : device(device) {
-        createVertexBuffers(vertices);
-    }
-
-    Mesh::~Mesh() {
-        vkDestroyBuffer(device.device(), vertexBuffer, nullptr);
-        vkFreeMemory(device.device(), vertexBufferMemory, nullptr);
+    Mesh::Mesh(Device &device, const Builder &builder) : device{device} {
+        createVertexBuffers(builder.vertices);
+        createIndexBuffers(builder.indices);
     }
 
     void Mesh::bind(VkCommandBuffer commandBuffer) {
-        VkBuffer buffers[] = {vertexBuffer};
+        VkBuffer buffers[] = {vertexBuffer->get()};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+
+        if (hasIndexBuffer) {
+            vkCmdBindIndexBuffer(commandBuffer, indexBuffer->get(), 0, VK_INDEX_TYPE_UINT32);
+        }
     }
 
     void Mesh::draw(VkCommandBuffer commandBuffer) {
-        vkCmdDraw(commandBuffer, vertexCount, 1, 0, 0);
+        if (hasIndexBuffer) {
+            vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);
+        } else {
+            vkCmdDraw(commandBuffer, vertexCount, 1, 0, 0);
+        }
     }
 
     void Mesh::createVertexBuffers(const std::vector<Vertex> &vertices) {
@@ -28,17 +32,54 @@ namespace Atlas {
         assert(vertexCount >= 3 && "Vertex count must be at least 3");
         VkDeviceSize bufferSize = sizeof(vertices[0]) * vertexCount;
 
-        device.createBuffer(
+        const auto stagingBuffer = std::make_unique<Buffer>(
+            device,
             bufferSize,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            vertexBuffer,
-            vertexBufferMemory);
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+        );
 
-        void *data;
-        vkMapMemory(device, vertexBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
-        vkUnmapMemory(device, vertexBufferMemory);
+        stagingBuffer->uploadData(vertices.data(), bufferSize);
+
+        vertexBuffer = std::make_unique<Buffer>(
+            device,
+            bufferSize,
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+        );
+
+        Buffer::copy(device, stagingBuffer->get()\, vertexBuffer->get(), bufferSize);
+    }
+
+    void Mesh::createIndexBuffers(const std::vector<uint32_t> &indices) {
+        indexCount = static_cast<uint32_t>(indices.size());
+        hasIndexBuffer = indexCount > 0;
+
+        if (!hasIndexBuffer) {
+            return;
+        }
+
+        VkDeviceSize bufferSize = sizeof(indices[0]) * indexCount;
+
+        const auto stagingBuffer = std::make_unique<Buffer>(
+            device,
+            bufferSize,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+        );
+
+        stagingBuffer->uploadData(indices.data(), bufferSize);
+
+        indexBuffer = std::make_unique<Buffer>(
+            device,
+            bufferSize,
+            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+        );
+
+        Buffer::copy(device, stagingBuffer->get(), indexBuffer->get(), bufferSize);
     }
 
     // vertex
