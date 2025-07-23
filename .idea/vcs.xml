@@ -7,6 +7,8 @@
     <mapping directory="$PROJECT_DIR$/engine/dependencies/fmt" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/engine/dependencies/glfw" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/engine/dependencies/glm" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/engine/dependencies/imgui" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/engine/dependencies/stb" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/engine/dependencies/tinyobjloader" vcs="Git" />
   </component>
 </project>

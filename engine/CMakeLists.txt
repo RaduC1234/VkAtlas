@@ -10,6 +10,7 @@ add_subdirectory(dependencies/fmt)
 add_subdirectory(dependencies/glm)
 add_subdirectory(dependencies/entt)
 add_subdirectory(dependencies/VulkanMemoryAllocator)
+add_subdirectory(dependencies/tinyobjloader)
 
 if (ANDROID)
     target_compile_definitions(atlas_engine PUBLIC AVALON_PLATFORM_ANDROID)
@@ -44,6 +45,23 @@ elseif (WIN32)
     add_library(stb_image INTERFACE)
     target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
 
+    add_library(imgui STATIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_draw.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_widgets.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_demo.cpp   # Optional
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_tables.cpp # Add this line
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_glfw.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_vulkan.cpp
+    )
+
+    target_link_libraries(imgui PRIVATE glfw Vulkan::Vulkan)
+
+    target_include_directories(imgui PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui
+            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends
+    )
+
     target_link_libraries(atlas_engine PUBLIC
             glfw
             Vulkan::Vulkan
@@ -53,6 +71,8 @@ elseif (WIN32)
             fmt::fmt-header-only
             EnTT::EnTT
             GPUOpen::VulkanMemoryAllocator
+            imgui
+            tinyobjloader
     )
 
     target_compile_definitions(atlas_engine PUBLIC AVALON_PLATFORM_WINDOWS)

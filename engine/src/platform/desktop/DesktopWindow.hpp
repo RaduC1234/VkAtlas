@@ -20,6 +20,8 @@ namespace Atlas {
 
         void setCursorMode(CursorMode cursorMode) override;
 
+        void * getNativeHandle() const override;
+
     private:
         GLFWwindow* glfwWindow;
 

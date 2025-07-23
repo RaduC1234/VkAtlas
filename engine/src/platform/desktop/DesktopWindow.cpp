@@ -89,6 +89,10 @@ namespace Atlas {
         }
     }
 
+    void * DesktopWindow::getNativeHandle() const {
+        return glfwWindow;
+    }
+
     void DesktopWindow::framebufferResizeCallback(GLFWwindow *glfwWindow, int width, int height) {
         auto *window = static_cast<DesktopWindow *>(glfwGetWindowUserPointer(glfwWindow));
 

@@ -11,8 +11,10 @@ namespace Atlas {
     class Mesh {
     public:
         struct Vertex {
-            glm::vec3 position;
-            glm::vec3 color;
+            glm::vec3 position{};
+            glm::vec3 color{};
+            glm::vec3 normal{};
+            glm::vec2 uv{};
 
             static std::vector<VkVertexInputBindingDescription> getBindingDescriptions();
             static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions();
@@ -21,6 +23,8 @@ namespace Atlas {
         struct Builder {
             std::vector<Vertex> vertices{};
             std::vector<uint32_t> indices{};
+
+            void loadModel(const std::string& filepath);
         };
 
         Mesh(Device &device, const Builder &builder);
@@ -31,6 +35,8 @@ namespace Atlas {
 
         void bind(VkCommandBuffer commandBuffer);
         void draw(VkCommandBuffer commandBuffer);
+
+        static std::unique_ptr<Mesh> createModelFromFileObj(Device &device, const std::string& filepath);
 
     private:
         void createVertexBuffers(const std::vector<Vertex> &vertices);

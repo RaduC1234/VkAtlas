@@ -29,6 +29,8 @@ namespace Atlas {
             return currentFrameIndex;
         }
 
+        size_t getImageCount() const { return swapChain->imageCount(); }
+
         VkCommandBuffer beginFrame();
         void endFrame();
 

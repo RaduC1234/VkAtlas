@@ -41,6 +41,8 @@ namespace Atlas {
         Device &operator=(Device &&) = delete;
 
         VkCommandPool getCommandPool() { return commandPool; }
+        const VkInstance &getInstance() const { return instance; }
+        const VkPhysicalDevice &getPhysicalDevice() const { return physicalDevice; }
         VkDevice device() { return device_; }
         VkSurfaceKHR surface() { return surface_; }
         VkQueue graphicsQueue() { return graphicsQueue_; }
@@ -56,7 +58,7 @@ namespace Atlas {
 
         VkPhysicalDeviceProperties properties;
 
-        VmaAllocator &allocator() { return this->allocator_; }
+        const VmaAllocator &allocator() const { return this->allocator_; }
         VkCommandBuffer beginSingleTimeCommands();
         void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
 

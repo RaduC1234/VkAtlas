@@ -1,0 +1,79 @@
+#include "ImGuiLayer.hpp"
+
+#include <stdexcept>
+
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
+#include <imgui_impl_glfw.h>
+#include <vulkan/vulkan.h>
+
+namespace Atlas {
+    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device){
+        createDescriptorPool(device);
+
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO &io = ImGui::GetIO();
+        ImGui::StyleColorsDark();
+
+        ImGui_ImplGlfw_InitForVulkan(static_cast<GLFWwindow *>(window.getNativeHandle()), true);
+
+        ImGui_ImplVulkan_InitInfo initInfo{};
+        initInfo.Instance = device.getInstance();
+        initInfo.PhysicalDevice = device.getPhysicalDevice();
+        initInfo.Device = device.device();
+        initInfo.QueueFamily = device.findPhysicalQueueFamilies().graphicsFamily;
+        initInfo.Queue = device.graphicsQueue();
+        initInfo.DescriptorPool = descriptorPool;
+        initInfo.MinImageCount = 2;
+        initInfo.ImageCount = imageCount;
+        initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+        initInfo.RenderPass = renderPass;
+
+        ImGui_ImplVulkan_Init(&initInfo);
+    }
+
+    ImGuiLayer::~ImGuiLayer() {
+        vkDeviceWaitIdle(device);
+
+        ImGui_ImplVulkan_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+
+        if (descriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+            descriptorPool = VK_NULL_HANDLE;
+        }
+    }
+
+    void ImGuiLayer::beginFrame() {
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+    }
+
+    void ImGuiLayer::endFrame(VkCommandBuffer commandBuffer) {
+        ImGui::Render();
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+    }
+
+    void ImGuiLayer::createDescriptorPool(Device &device) {
+        VkDescriptorPoolSize poolSizes[] = {
+            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         1000 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         1000 },
+        };
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        poolInfo.maxSets = 1000;
+        poolInfo.poolSizeCount = static_cast<uint32_t>(std::size(poolSizes));
+        poolInfo.pPoolSizes = poolSizes;
+
+        if (vkCreateDescriptorPool(device.device(), &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create ImGui descriptor pool");
+        }
+    }
+}

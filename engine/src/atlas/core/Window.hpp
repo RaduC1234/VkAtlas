@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <imgui_impl_glfw.h>
 #include <string>
 #include <memory>
 #include <vector>
@@ -52,6 +53,8 @@ namespace Atlas {
         VkExtent2D getExtent() const { return {width, height}; }
         int32_t getWidth() const { return width; }
         int32_t getHeight() const { return height; }
+
+        virtual void* getNativeHandle() const = 0;
 
         static std::unique_ptr<Window> create(const WindowSpecification& specification);
 
