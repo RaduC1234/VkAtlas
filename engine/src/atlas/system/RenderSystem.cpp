@@ -9,34 +9,35 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp>
 
 #include "entity/Object.hpp"
 
 namespace Atlas {
     struct SimplePushConstantData {
-        glm::mat4 transform{1.0f};
-        alignas(16) glm::vec3 color;
+        glm::mat4 modelMatrix{1.0f};
+        glm::mat4 normalMatrix{1.0f};
     };
 
-    RenderSystem::RenderSystem(Device &device, VkRenderPass renderPass): device(device) {
-        createPipelineLayout();
+    RenderSystem::RenderSystem(Device &device, VkRenderPass renderPass, VkDescriptorSetLayout globalSetLayout): device(device) {
+        createPipelineLayout(globalSetLayout);
         createPipeline(renderPass);
     }
 
     RenderSystem::~RenderSystem() { vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr); }
 
-    void RenderSystem::createPipelineLayout() {
+    void RenderSystem::createPipelineLayout(VkDescriptorSetLayout globalSetLayout) {
         VkPushConstantRange pushConstantRange{};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(SimplePushConstantData);
 
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts{globalSetLayout};
+
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 0;
-        pipelineLayoutInfo.pSetLayouts = nullptr;
+        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
+        pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
         pipelineLayoutInfo.pushConstantRangeCount = 1;
         pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -59,22 +60,28 @@ namespace Atlas {
             pipelineConfig);
     }
 
-    void RenderSystem::update(entt::registry &registry, VkCommandBuffer commandBuffer, const Camera &camera) const {
+    void RenderSystem::update(entt::registry &registry, VkCommandBuffer commandBuffer, const Camera &camera, VkDescriptorSet globalDescriptorSet) const {
         pipeline->bind(commandBuffer);
 
-        auto projectionView = camera.getProjection() * camera.getView();
-        auto view = registry.view<Transform, Material, ModelComponent>();
+        vkCmdBindDescriptorSets(
+            commandBuffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipelineLayout,
+            0, 1,
+            &globalDescriptorSet,
+            0,
+            nullptr
+        );
+
+        auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
         for (auto entity: view) {
-            auto &transform = view.get<Transform>(entity);
-            auto &material = view.get<Material>(entity);
+            auto &transform = view.get<TransformComponent>(entity);
+            //auto &material = view.get<MaterialComponent>(entity);
             auto &model = view.get<ModelComponent>(entity);
 
-            //transform.rotation.y = glm::mod(transform.rotation.y + 0.001f, glm::two_pi<float>());
-            //transform.rotation.x = glm::mod(transform.rotation.y + 0.0005f, glm::two_pi<float>());
-
             SimplePushConstantData push{};
-            push.color = static_cast<glm::vec3>(material.color);
-            push.transform = projectionView * transform.mat4();
+            push.modelMatrix= transform.mat4();
+            push.normalMatrix = transform.normalMatrix();
 
             vkCmdPushConstants(
                 commandBuffer,

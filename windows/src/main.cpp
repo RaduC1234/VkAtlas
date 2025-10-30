@@ -12,7 +12,7 @@ int main() {
         return 1;
     }
 
-    RunAtlas runEngine = reinterpret_cast<RunAtlas>(GetProcAddress(engineDLL, "runAtlas"));
+    const auto runEngine = reinterpret_cast<RunAtlas>(GetProcAddress(engineDLL, "runAtlas"));
 
     if (!runEngine) {
         std::cerr << "Failed to find function!" << std::endl;

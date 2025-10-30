@@ -18,6 +18,10 @@ namespace Atlas {
 
             static std::vector<VkVertexInputBindingDescription> getBindingDescriptions();
             static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions();
+
+            bool operator==(const Vertex& other) const {
+                return position == other.position && color == other.color && normal == other.normal && uv == other.uv;
+            }
         };
 
         struct Builder {
@@ -36,7 +40,12 @@ namespace Atlas {
         void bind(VkCommandBuffer commandBuffer);
         void draw(VkCommandBuffer commandBuffer);
 
+        // obj loading
         static std::unique_ptr<Mesh> createModelFromFileObj(Device &device, const std::string& filepath);
+
+        // primitive shapes
+        static std::unique_ptr<Mesh> createSphere(Device& device, float radius = 1.0f, uint32_t segments = 32, uint32_t rings = 16);
+        static std::unique_ptr<Mesh> createCube(Device &device, float size = 1.0f);
 
     private:
         void createVertexBuffers(const std::vector<Vertex> &vertices);

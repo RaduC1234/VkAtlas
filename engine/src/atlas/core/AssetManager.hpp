@@ -4,29 +4,40 @@
 #include <vector>
 #include <memory>
 
-#if defined(__ANDROID__)
-#include <android/asset_manager.h>
-#elif defined(_WIN32)
-#include <filesystem>
-#endif
-
 namespace Atlas {
 
+    /**
+     * @brief Abstract base class for platform-agnostic asset management
+     *
+     * This class provides a factory method to create platform-specific
+     * asset manager implementations.
+     */
     class AssetManager {
     public:
-        static void init(void* nativeApp);
-        static AssetManager get();
+        virtual ~AssetManager() = default;
 
-        std::vector<char> load(const std::string& resource);
+        /**
+         * @brief Factory method to create platform-specific AssetManager instance
+         * @param nativeApp Platform-specific application handle (android_app* on Android, nullptr on desktop)
+         * @return Shared pointer to the created AssetManager instance
+         */
+        static std::shared_ptr<AssetManager> create(void* nativeApp = nullptr);
+
+        /**
+         * @brief Get the singleton instance of AssetManager
+         * @return Reference to the AssetManager instance
+         */
+        static AssetManager& get();
+
+        /**
+         * @brief Load a text file from assets
+         * @param resource Path to the resource relative to assets directory
+         * @return Vector of characters containing the file data
+         */
+        virtual std::vector<char> loadTextFile(const std::string& resource) = 0;
 
     protected:
-        static std::shared_ptr<AssetManager> assetManager;
-
-#if defined(__ANDROID__)
-        static AAssetManager* androidAssetManager;
-#elif defined(_WIN32)
-        static std::filesystem::path assetsPath;
-#endif
+        static std::shared_ptr<AssetManager> instance;
     };
 
 }

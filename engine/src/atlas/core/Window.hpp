@@ -2,7 +2,6 @@
 
 #include <cassert>
 #include <cstdint>
-#include <imgui_impl_glfw.h>
 #include <string>
 #include <memory>
 #include <vector>

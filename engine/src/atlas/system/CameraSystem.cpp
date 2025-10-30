@@ -31,10 +31,10 @@ namespace Atlas {
             0.0f
         };
 
-        auto view = registry.view<Transform, CameraComponent>();
+        auto view = registry.view<TransformComponent, CameraComponent>();
 
         for (auto entity: view) {
-            auto &tf = view.get<Transform>(entity);
+            auto &tf = view.get<TransformComponent>(entity);
             auto &camComp = view.get<CameraComponent>(entity);
 
             if (glm::dot(rotationDt, rotationDt) > std::numeric_limits<float>::epsilon()) {
