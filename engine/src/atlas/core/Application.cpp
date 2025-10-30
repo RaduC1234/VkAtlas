@@ -28,7 +28,7 @@ namespace Atlas {
 
     Application::Application(const ApplicationSpecification &spec) : specification(spec) {
         // Load Systems
-        AssetManager::create(spec.pNativeApp);
+        AssetManager::init(spec.pNativeApp);
 
         globalPool = DescriptorPool::Builder(device)
                 .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)

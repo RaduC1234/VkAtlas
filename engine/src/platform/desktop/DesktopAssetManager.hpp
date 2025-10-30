@@ -16,11 +16,10 @@ namespace Atlas {
         ~DesktopAssetManager() override = default;
 
         /**
-         * @brief Load a text file from the desktop filesystem
-         * @param resource Path to the resource relative to assets directory
-         * @return Vector of characters containing the file data
+         * @brief Get the desktop assets path
+         * @return Path to the assets directory
          */
-        std::vector<char> loadTextFile(const std::string& resource) override;
+        [[nodiscard]] std::filesystem::path getAssetsPath() const override;
 
     private:
         std::filesystem::path assetsPath;

@@ -1,20 +1,31 @@
 #pragma once
 
-#ifdef ATLAS_PLATFORM_WINDOWS
-    #ifdef AVALON_BUILD_SHARED
-        #define AVALON_API __declspec(dllexport)
-    #else
-        #define AVALON_API __declspec(dllimport)
-    #endif
+#ifdef _WIN32
+#if defined(AVALON_BUILD_SHARED)
+#define AVALON_API __declspec(dllexport)
+#elif defined(AVALON_USE_SHARED)
+#define AVALON_API __declspec(dllimport)
 #else
-    #define AVALON_API
+#define AVALON_API
+#endif
+#elif defined(__ANDROID__) || defined(__linux__)
+#if defined(AVALON_BUILD_SHARED) || defined(AVALON_USE_SHARED)
+#define AVALON_API __attribute__((visibility("default")))
+#else
+#define AVALON_API
+#endif
+#elif defined(__GNUC__) || defined(__clang__)
+#define AVALON_API
+#else
+#define AVALON_API
 #endif
 
 #ifdef __cplusplus
-    #define EXTERN_C extern "C"
+#define EXTERN_C extern "C"
 #else
-    #define EXTERN_C
+#define EXTERN_C
 #endif
 
-#define BIT(x) (1 << x)
-
+#ifndef BIT
+#define BIT(x) (1 << (x))
+#endif

@@ -6,6 +6,19 @@ file(GLOB_RECURSE ENGINE_SOURCES "src/*.cpp" "src/*.hpp")
 
 add_library(atlas_engine SHARED ${ENGINE_SOURCES})
 
+# When building shared: compile engine with AVALON_BUILD_SHARED; consumers linking
+# against atlas_engine will get AVALON_USE_SHARED so headers expand to dllimport
+target_compile_definitions(atlas_engine PRIVATE AVALON_BUILD_SHARED)
+target_compile_definitions(atlas_engine INTERFACE AVALON_USE_SHARED)
+
+# Make symbols hidden by default on GCC/Clang platforms so only AVALON_API exports
+if (NOT WIN32)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        set_target_properties(atlas_engine PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+        target_compile_options(atlas_engine PRIVATE -fvisibility=hidden)
+    endif()
+endif()
+
 add_subdirectory(dependencies/fmt)
 add_subdirectory(dependencies/glm)
 add_subdirectory(dependencies/entt)
@@ -16,13 +29,10 @@ add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
 
 if (ANDROID)
-    target_compile_definitions(atlas_engine PUBLIC AVALON_PLATFORM_ANDROID)
-
     # Find and link GameActivity
     find_package(game-activity REQUIRED CONFIG)
 
     # Vulkan support via Android NDK
-    # Vulkan headers come with the NDK, and loader is on device
     find_library(VULKAN_LIB vulkan REQUIRED)
 
     target_link_libraries(atlas_engine PUBLIC
@@ -71,7 +81,6 @@ elseif (WIN32)
             tinyobjloader
     )
 
-    target_compile_definitions(atlas_engine PUBLIC AVALON_PLATFORM_WINDOWS)
     add_custom_command(TARGET atlas_engine POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_BINARY_DIR}/engine/atlas_engine.dll"
@@ -91,6 +100,3 @@ endif ()
 
 target_include_directories(atlas_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/atlas)
 target_include_directories(atlas_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src/platform)
-
-
-

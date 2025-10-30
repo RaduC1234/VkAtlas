@@ -105,8 +105,8 @@ namespace Atlas {
             configInfo.renderPass != VK_NULL_HANDLE &&
             "Cannot create graphics pipeline: no renderPass provided in configInfo");
 
-        const auto fragCode = AssetManager::get().loadTextFile(fragFilepath);
-        const auto vertCode = AssetManager::get().loadTextFile(vertFilepath);
+        const auto fragCode = AssetManager::loadTextFile(fragFilepath);
+        const auto vertCode = AssetManager::loadTextFile(vertFilepath);
 
         createShaderModule(vertCode, &vertShaderModule);
         createShaderModule(fragCode, &fragShaderModule);

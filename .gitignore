@@ -74,6 +74,7 @@ app/build/
 *.zip
 *.tar.gz
 *.rar
+*.spv
 
 **/build/**
 **/bin/**

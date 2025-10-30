@@ -18,31 +18,10 @@ namespace Atlas {
         AT_INFO("Android AssetManager initialized");
     }
 
-    std::vector<char> AndroidAssetManager::loadTextFile(const std::string& resource) {
-        if (!androidAssetManager) {
-            AT_ERROR("Android AssetManager is not initialized");
-            return {};
-        }
-
-        AAsset* asset = AAssetManager_open(androidAssetManager, resource.c_str(), AASSET_MODE_STREAMING);
-        if (!asset) {
-            AT_ERROR("Failed to open asset: {}", resource);
-            return {};
-        }
-
-        off_t size = AAsset_getLength(asset);
-        std::vector<char> buffer(size);
-
-        int bytesRead = AAsset_read(asset, buffer.data(), size);
-        AAsset_close(asset);
-
-        if (bytesRead != size) {
-            AT_ERROR("Failed to read complete asset: {}", resource);
-            return {};
-        }
-
-        AT_TRACE("Loaded asset: {} ({} bytes)", resource, size);
-        return buffer;
+    std::filesystem::path AndroidAssetManager::getAssetsPath() const {
+        // Android uses AssetManager API, not filesystem paths
+        // Return empty path as assets are accessed directly from APK
+        return std::filesystem::path();
     }
 
 }

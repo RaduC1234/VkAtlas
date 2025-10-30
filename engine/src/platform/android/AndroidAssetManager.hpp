@@ -18,11 +18,10 @@ namespace Atlas {
         ~AndroidAssetManager() override = default;
 
         /**
-         * @brief Load a text file from Android assets
-         * @param resource Path to the resource relative to assets directory
-         * @return Vector of characters containing the file data
+         * @brief Get the Android assets path (returns empty path as Android uses AssetManager API)
+         * @return Empty filesystem path
          */
-        std::vector<char> loadTextFile(const std::string& resource) override;
+        [[nodiscard]] std::filesystem::path getAssetsPath() const override;
 
     private:
         AAssetManager* androidAssetManager;
