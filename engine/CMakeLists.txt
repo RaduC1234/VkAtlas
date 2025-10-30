@@ -12,6 +12,9 @@ add_subdirectory(dependencies/entt)
 add_subdirectory(dependencies/VulkanMemoryAllocator)
 add_subdirectory(dependencies/tinyobjloader)
 
+add_library(stb_image INTERFACE)
+target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
+
 if (ANDROID)
     target_compile_definitions(atlas_engine PUBLIC AVALON_PLATFORM_ANDROID)
 
@@ -22,28 +25,22 @@ if (ANDROID)
     # Vulkan headers come with the NDK, and loader is on device
     find_library(VULKAN_LIB vulkan REQUIRED)
 
-    add_library(stb_image INTERFACE)
-    target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
-
     target_link_libraries(atlas_engine PUBLIC
             game-activity::game-activity
             ${VULKAN_LIB}
             android
             log
-
             glm::glm-header-only
             stb_image
             fmt::fmt-header-only
             EnTT::EnTT
             GPUOpen::VulkanMemoryAllocator
+            tinyobjloader
     )
 elseif (WIN32)
 
     find_package(Vulkan REQUIRED)
     add_subdirectory(dependencies/glfw)
-
-    add_library(stb_image INTERFACE)
-    target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
 
     add_library(imgui STATIC
             ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui.cpp
@@ -65,7 +62,6 @@ elseif (WIN32)
     target_link_libraries(atlas_engine PUBLIC
             glfw
             Vulkan::Vulkan
-
             glm::glm-header-only
             stb_image
             fmt::fmt-header-only

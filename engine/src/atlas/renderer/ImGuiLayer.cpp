@@ -2,12 +2,22 @@
 
 #include <stdexcept>
 
+#ifndef __ANDROID__
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_glfw.h>
 #include <vulkan/vulkan.h>
+#endif
 
 namespace Atlas {
+
+
+#ifdef __ANDROID__
+    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(VK_NULL_HANDLE) {}
+    ImGuiLayer::~ImGuiLayer() {}
+    void ImGuiLayer::beginFrame() {}
+    void ImGuiLayer::endFrame(VkCommandBuffer commandBuffer) {}
+#else
     ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device){
         createDescriptorPool(device);
 
@@ -76,4 +86,5 @@ namespace Atlas {
             throw std::runtime_error("Failed to create ImGui descriptor pool");
         }
     }
+#endif
 }

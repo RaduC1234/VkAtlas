@@ -2,7 +2,7 @@
 #include "core/Log.hpp"
 
 #if defined(__ANDROID__)
-#include "platform/android/AndroidAssetManager.hpp"
+#include "android/AndroidAssetManager.hpp"
 #elif defined(_WIN32)
 #include "desktop/DesktopAssetManager.hpp"
 #endif
@@ -15,7 +15,7 @@ namespace Atlas {
         if (!instance) {
 #if defined(__ANDROID__)
             instance = std::make_shared<AndroidAssetManager>(nativeApp);
-            LOG_INFO("Created Android AssetManager instance");
+            AT_INFO("Created Android AssetManager instance");
 #elif defined(_WIN32)
             instance = std::make_shared<DesktopAssetManager>(nativeApp);
             AT_INFO("Created Desktop AssetManager instance");

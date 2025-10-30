@@ -1,5 +1,6 @@
 #include "FileDialogs.hpp"
 
+#ifndef __ANDROID__
 #include <GLFW/glfw3.h>
 
 #ifdef _WIN32
@@ -14,9 +15,25 @@
 #include <gtk/gtk.h>
 #endif
 
+#include <GLFW/glfw3native.h>
+#endif // __ANDROID__
+
 #include <stdexcept>
 #include <string>
-#include <GLFW/glfw3native.h>
+
+#ifdef __ANDROID__
+// On Android provide stubs so this file can be compiled but the desktop dialogs are not used.
+std::string FileDialogs::openFile(const char *filter) {
+    (void)filter;
+    return {};
+}
+
+std::string FileDialogs::saveFile(const char *filter) {
+    (void)filter;
+    return {};
+}
+
+#else
 
 std::string FileDialogs::openFile(const char *filter) {
     auto glfwWindow = glfwGetCurrentContext();
@@ -152,3 +169,5 @@ std::string FileDialogs::saveFile(const char *filter) {
 
     return {};
 }
+
+#endif // __ANDROID__
