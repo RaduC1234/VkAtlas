@@ -6,6 +6,16 @@
 #include <cassert>
 #include <stdexcept>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+// Win32 API for dark mode
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#include <dwmapi.h>
+
+#pragma comment(lib, "dwmapi.lib")
+
 namespace Atlas {
     DesktopWindow::DesktopWindow(const WindowSpecification &properties) {
         this->width = properties.width;
@@ -48,6 +58,10 @@ namespace Atlas {
 
         glfwSetKeyCallback(glfwWindow, keyboardKeyCallback);
         glfwSetCharCallback(glfwWindow, keyboardTextCallback);
+
+        if (!properties.iconPath.empty()) {
+            DesktopWindow::setWindowIcon(properties.iconPath);
+        }
     }
 
     bool DesktopWindow::shouldClose() {
@@ -86,6 +100,50 @@ namespace Atlas {
             case ATLAS_WINDOW_CURSOR_HIDDEN:
                 glfwSetInputMode(this->glfwWindow, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
                 break;
+        }
+    }
+
+    void DesktopWindow::setWindowIcon(const std::string &iconPath) {
+        // No-op when empty
+        if (iconPath.empty()) {
+            return;
+        }
+
+        int iconWidth = 0, iconHeight = 0, iconChannels = 0;
+        // Request 4 channels (RGBA) because GLFW expects 4-byte RGBA pixels
+        unsigned char *pixels = stbi_load(iconPath.c_str(), &iconWidth, &iconHeight, &iconChannels, 4);
+
+        if (!pixels) {
+            const char *reason = stbi_failure_reason();
+            throw std::runtime_error(std::string("Failed to load window icon '") + iconPath + "': " + (reason ? reason : "unknown"));
+        }
+
+        GLFWimage image;
+        image.width = iconWidth;
+        image.height = iconHeight;
+        image.pixels = pixels;
+
+        // GLFW copies the pixels internally, so we can free after the call
+        glfwSetWindowIcon(this->glfwWindow, 1, &image);
+
+        stbi_image_free(pixels);
+    }
+
+    void DesktopWindow::setTheme(uint32_t enabled) {
+        HWND hwnd = glfwGetWin32Window(this->glfwWindow);
+
+        if (hwnd) {
+            // DWMWA_USE_IMMERSIVE_DARK_MODE is available on Windows 11 Build 22000+
+            // For Windows 10, we use the undocumented attribute 19
+            BOOL useDarkMode = enabled ? TRUE : FALSE;
+
+            // Try Windows 11 method first (DWMWA_USE_IMMERSIVE_DARK_MODE = 20)
+            HRESULT hr = DwmSetWindowAttribute(hwnd, 20, &useDarkMode, sizeof(useDarkMode));
+
+            // If that fails, try Windows 10 undocumented attribute (19)
+            if (FAILED(hr)) {
+                DwmSetWindowAttribute(hwnd, 19, &useDarkMode, sizeof(useDarkMode));
+            }
         }
     }
 

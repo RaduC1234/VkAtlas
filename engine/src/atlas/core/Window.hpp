@@ -25,11 +25,17 @@ namespace Atlas {
         ATLAS_WINDOW_CURSOR_HIDDEN, // Makes the cursor invisible when it is over the content area of the window but does not restrict the cursor from leaving.
     };
 
+    enum Theme : uint32_t {
+        LIGHT = 0,
+        DARK = 1,
+    };
+
     struct WindowSpecification {
         void *pNativeApp = nullptr;
         uint32_t width = 1080;
         uint32_t height = 720;
         std::string title = "Atlas Window";
+        std::string iconPath;
         uint32_t properties = WINDOW_PROPERTIES_DECORATED | WINDOW_PROPERTIES_RESIZEABLE;
     };
 
@@ -42,9 +48,13 @@ namespace Atlas {
         virtual void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const = 0;
         virtual void pollEvents() = 0;
         virtual void waitEvents() = 0;
-        virtual std::vector<const char*> getRequiredExtensions() = 0;
+        virtual std::vector<const char *> getRequiredExtensions() = 0;
 
         virtual void setCursorMode(CursorMode cursorMode) { assert(true && "Method not implemented"); }
+
+        virtual void setWindowIcon(const std::string &iconPath) { assert(true && "Method not implemented"); }
+
+        virtual void setTheme(uint32_t theme) { assert(true && "Method not implemented"); }
 
         bool wasWindowResized() const { return framebufferResized; }
         void resetWindowResizedFlag() { this->framebufferResized = false; }
@@ -53,9 +63,9 @@ namespace Atlas {
         int32_t getWidth() const { return width; }
         int32_t getHeight() const { return height; }
 
-        virtual void* getNativeHandle() const = 0;
+        virtual void *getNativeHandle() const = 0;
 
-        static std::unique_ptr<Window> create(const WindowSpecification& specification);
+        static std::unique_ptr<Window> create(const WindowSpecification &specification);
 
     protected:
         uint32_t width{}, height{};

@@ -10,19 +10,18 @@
 #include <memory>
 
 namespace Atlas {
-
     struct ApplicationSpecification {
         std::string name = "Atlas Engine";
-        void* pNativeApp = nullptr;
+        void *pNativeApp = nullptr;
     };
 
     class Application {
     public:
-        Application(const ApplicationSpecification& specification);
+        Application(const ApplicationSpecification &specification);
         ~Application();
 
-        Application(const Application&) = delete;
-        Application& operator=(const Application&) = delete;
+        Application(const Application &) = delete;
+        Application &operator=(const Application &) = delete;
 
         void run();
 

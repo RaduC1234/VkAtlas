@@ -27,8 +27,9 @@ namespace Atlas {
     };
 
     Application::Application(const ApplicationSpecification &spec) : specification(spec) {
-        // Load Systems
         AssetManager::init(spec.pNativeApp);
+        this->window->setWindowIcon("assets/textures/android_robot.png");
+        this->window->setTheme(DARK);
 
         globalPool = DescriptorPool::Builder(device)
                 .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)

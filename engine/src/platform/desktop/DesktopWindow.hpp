@@ -20,6 +20,10 @@ namespace Atlas {
 
         void setCursorMode(CursorMode cursorMode) override;
 
+        void setWindowIcon(const std::string &iconPath) override;
+
+        void setTheme(uint32_t darkMode) override;
+
         void * getNativeHandle() const override;
 
     private:
