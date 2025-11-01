@@ -19,6 +19,10 @@ namespace Atlas {
     };
 
     RenderSystem::RenderSystem(Device &device, VkRenderPass renderPass, VkDescriptorSetLayout globalSetLayout): device(device) {
+        textureSetLayout = DescriptorSetLayout::Builder(device)
+            .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
+            .build();
+
         createPipelineLayout(globalSetLayout);
         createPipeline(renderPass);
     }
@@ -31,7 +35,7 @@ namespace Atlas {
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(SimplePushConstantData);
 
-        std::vector<VkDescriptorSetLayout> descriptorSetLayouts{globalSetLayout};
+        std::vector<VkDescriptorSetLayout> descriptorSetLayouts{globalSetLayout, textureSetLayout->getDescriptorSetLayout()};
 
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
@@ -60,7 +64,7 @@ namespace Atlas {
             pipelineConfig);
     }
 
-    void RenderSystem::update(entt::registry &registry, VkCommandBuffer commandBuffer, const Camera &camera, VkDescriptorSet globalDescriptorSet) const {
+    void RenderSystem::update(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalDescriptorSet) const {
         pipeline->bind(commandBuffer);
 
         vkCmdBindDescriptorSets(
@@ -76,8 +80,21 @@ namespace Atlas {
         auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
         for (auto entity: view) {
             auto &transform = view.get<TransformComponent>(entity);
-            //auto &material = view.get<MaterialComponent>(entity);
+            auto &material = view.get<MaterialComponent>(entity);
             auto &model = view.get<ModelComponent>(entity);
+
+            // Bind texture descriptor set if material has a texture
+            if (material.albedoTexture && material.textureDescriptorSet != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(
+                    commandBuffer,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    pipelineLayout,
+                    1, 1,
+                    &material.textureDescriptorSet,
+                    0,
+                    nullptr
+                );
+            }
 
             SimplePushConstantData push{};
             push.modelMatrix= transform.mat4();

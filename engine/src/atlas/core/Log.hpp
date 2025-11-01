@@ -16,19 +16,10 @@ namespace Atlas {
     };
 
     class Log {
-    private:
-        static std::shared_ptr<Log> coreLogger;
-        LogLevel logLevel = LogLevel::Trace;
-        std::mutex logMutex;
-
-        std::string getLogPrefix(LogLevel level);
-
-        fmt::color getLogColor(LogLevel level);
-
     public:
         static void init();
 
-        static std::shared_ptr<Log>& getCoreLogger() {
+        static std::shared_ptr<Log> &getCoreLogger() {
             return coreLogger;
         }
 
@@ -40,14 +31,23 @@ namespace Atlas {
 
         void log(LogLevel level, const std::string &message);
 
-        template <typename... Args>
-        void log(LogLevel level, const std::string& format, Args&&... args) {
+        template<typename... Args>
+        void log(LogLevel level, const std::string &format, Args &&... args) {
             log(level, fmt::format(format, std::forward<Args>(args)...));
         }
+
+    private:
+        static std::shared_ptr<Log> coreLogger;
+        LogLevel logLevel = LogLevel::Trace;
+        std::mutex logMutex;
+
+    private:
+        std::string getLogPrefix(LogLevel level);
+
+        fmt::color getLogColor(LogLevel level);
     };
 }
 
-// Logging Macros
 #define AT_FATAL(...) { Atlas::Log::getCoreLogger()->log(Atlas::LogLevel::Fatal, __VA_ARGS__); }
 #define AT_ERROR(...) { Atlas::Log::getCoreLogger()->log(Atlas::LogLevel::Error, __VA_ARGS__); }
 #define AT_WARN(...)  { Atlas::Log::getCoreLogger()->log(Atlas::LogLevel::Warn, __VA_ARGS__); }

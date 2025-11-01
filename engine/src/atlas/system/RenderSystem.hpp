@@ -2,7 +2,7 @@
 #include <entt/entt.hpp>
 
 #include "renderer/Pipeline.hpp"
-#include "renderer/Camera.hpp"
+#include "renderer/Descriptors.hpp"
 
 namespace Atlas {
     class RenderSystem {
@@ -13,7 +13,10 @@ namespace Atlas {
         RenderSystem(const RenderSystem&) = delete;
         RenderSystem &operator=(const RenderSystem&) = delete;
 
-        void update(entt::registry &registry, VkCommandBuffer commandBuffer, const Camera &camera, VkDescriptorSet globalDescriptorSet) const;
+        void update(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalDescriptorSet) const;
+
+        DescriptorSetLayout& getTextureSetLayout() const { return *textureSetLayout; }
+
     private:
         void createPipelineLayout(VkDescriptorSetLayout globalSetLayout);
         void createPipeline(VkRenderPass renderPass);
@@ -22,5 +25,6 @@ namespace Atlas {
 
         std::unique_ptr<Pipeline> pipeline;
         VkPipelineLayout pipelineLayout;
+        std::unique_ptr<DescriptorSetLayout> textureSetLayout;
     };
 }

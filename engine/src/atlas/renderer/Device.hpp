@@ -53,9 +53,6 @@ namespace Atlas {
         QueueFamilyIndices findPhysicalQueueFamilies() { return findQueueFamilies(physicalDevice); }
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 
-        void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
-        void createImageWithInfo(const VkImageCreateInfo &imageInfo, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
-
         VkPhysicalDeviceProperties properties;
 
         const VmaAllocator &allocator() const { return this->allocator_; }

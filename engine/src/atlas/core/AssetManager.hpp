@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
+
+#include "renderer/Texture.hpp"
 
 namespace Atlas {
     /**
@@ -32,14 +35,18 @@ namespace Atlas {
          * @brief Reset and recreate the singleton instance using the stored nativeApp from init()
          */
         static void reset();
+#pragma region coherent functions
 
+#pragma endregion
+
+#pragma region non-coherent functions
         /**
          * @brief Load a text file from assets
          * @param resource Path to the resource relative to assets directory
          * @return Vector of characters containing the file data
          */
         static std::vector<char> loadTextFile(const std::string &resource);
-
+#pragma endregion
         /**
          * @brief Get the platform-specific assets path
          * @return Path to the assets directory
@@ -49,6 +56,8 @@ namespace Atlas {
     protected:
         static std::shared_ptr<AssetManager> instance;
         static void *storedNativeApp;
+
+        static std::unordered_map<std::string, std::shared_ptr<Texture>> loadedAssets;
 
     private:
         /**

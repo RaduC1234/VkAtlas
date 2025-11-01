@@ -3,6 +3,7 @@
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec3 fragPosWorld;
 layout(location = 2) in vec3 fragNormalWorld;
+layout(location = 3) in vec2 fragUV;
 
 layout(push_constant) uniform Push {
     mat4 modelMatrix;
@@ -17,6 +18,8 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
     float padding1;
     vec4 lightColor;
 } ubo;
+
+layout(set = 1, binding = 0) uniform sampler2D texSampler;
 
 layout(location = 0) out vec4 outColor;
 
@@ -36,8 +39,11 @@ void main() {
     vec3 ambientLight = ubo.ambientLightColor.rgb * ubo.ambientLightColor.w;
     vec3 diffuseLight = lightColor * max(dot(normalize(fragNormalWorld), normalize(directionToLight)), 0.0);
 
-    //...
-    vec3 srgbColor = linearToSRGB((diffuseLight + ambientLight) * fragColor);
+    // Sample texture
+    vec3 texColor = texture(texSampler, fragUV).rgb;
+
+    // Combine texture with vertex color and lighting
+    vec3 finalColor = texColor * fragColor;
+    vec3 srgbColor = linearToSRGB((diffuseLight + ambientLight) * finalColor);
     outColor = vec4(srgbColor, 1.0);
 }
-

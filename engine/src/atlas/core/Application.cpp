@@ -15,6 +15,7 @@
 #include "entity/Object.hpp"
 #include "renderer/ImGuiLayer.hpp"
 #include "system/CameraSystem.hpp"
+#include "renderer/Texture.hpp"
 
 namespace Atlas {
     struct alignas(16) GlobalUbo {
@@ -29,12 +30,21 @@ namespace Atlas {
     Application::Application(const ApplicationSpecification &spec) : specification(spec) {
         AssetManager::init(spec.pNativeApp);
         this->window->setWindowIcon("assets/textures/android_robot.png");
-        this->window->setTheme(DARK);
+        this->window->setTheme(true);
 
         globalPool = DescriptorPool::Builder(device)
                 .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
                 .build();
+
+        // Create texture descriptor pool
+        texturePool = DescriptorPool::Builder(device)
+                .setMaxSets(100)  // Support up to 100 textures
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100)
+                .build();
+
+        // Create default white texture for objects without textures
+        defaultTexture = Texture::createDefaultTexture(device);
 
         loadGameObjects();
     }
@@ -73,6 +83,30 @@ namespace Atlas {
         ImGuiLayer imGui{device, *window, renderer.getSwapChainRenderPass(), static_cast<uint32_t>(renderer.getImageCount())};
         CameraSystem cameraSystem{*window};
         RenderSystem renderSystem{device, renderer.getSwapChainRenderPass(), globalSetLayout->getDescriptorSetLayout()};
+
+        // Create texture descriptor sets for materials that have textures
+        auto materialView = registry.view<MaterialComponent>();
+        for (auto entity : materialView) {
+            auto &material = materialView.get<MaterialComponent>(entity);
+
+            // Assign default texture if no texture is set
+            if (!material.albedoTexture) {
+                material.albedoTexture = defaultTexture;
+            }
+
+            // Create descriptor set for the texture
+            if (material.albedoTexture && material.textureDescriptorSet == VK_NULL_HANDLE) {
+                VkDescriptorImageInfo imageInfo{};
+                imageInfo.imageLayout = material.albedoTexture->getImageLayout();
+                imageInfo.imageView = material.albedoTexture->getImageView();
+                imageInfo.sampler = material.albedoTexture->getSampler();
+
+                DescriptorWriter descriptorWriter(renderSystem.getTextureSetLayout(), *texturePool);
+                descriptorWriter.writeImage(0, &imageInfo);
+                descriptorWriter.build(material.textureDescriptorSet);
+            }
+        }
+
         Camera camera{};
         //camera.setViewDirection(glm::vec3(0.0f), glm::vec3(0.5f, 0.0f, 1.0f));
 
@@ -112,7 +146,7 @@ namespace Atlas {
                 // render
                 renderer.beginSwapChainRenderPass(commandBuffer);
                 cameraSystem.update(registry, frameTime);
-                renderSystem.update(registry, commandBuffer, camera, globalDescriptorSets[frameIndex]);
+                renderSystem.update(registry, commandBuffer, globalDescriptorSets[frameIndex]);
 
                 imGui.endFrame(commandBuffer);
 
@@ -132,7 +166,7 @@ namespace Atlas {
         transform0.translation = {0.0f, 0.5f, -0.25f};
         transform0.scale = glm::vec3{1.0f};
 
-        registry.emplace<MaterialComponent>(gameObject0, Color::white());
+        registry.emplace<MaterialComponent>(gameObject0);
         registry.emplace<ModelComponent>(gameObject0, std::move(model0));
 
 
@@ -143,7 +177,7 @@ namespace Atlas {
         transform1.translation = {0.0f, 0.5f, 0.25f};
         transform1.scale = glm::vec3{1.0f};
 
-        registry.emplace<MaterialComponent>(gameObject1, Color::white());
+        registry.emplace<MaterialComponent>(gameObject1);
         registry.emplace<ModelComponent>(gameObject1, std::move(model1));
 
         
@@ -154,7 +188,7 @@ namespace Atlas {
         transform2.translation = glm::vec3{0.0f};
         transform2.scale = glm::vec3{1.0};
 
-        registry.emplace<MaterialComponent>(gameObject2, Color::white());
+        registry.emplace<MaterialComponent>(gameObject2);
         registry.emplace<ModelComponent>(gameObject2, std::move(model2));
 
 
@@ -165,7 +199,13 @@ namespace Atlas {
         transform3.translation = {0, 0.5f, 0.0f};
         transform3.scale = glm::vec3{2.0f, 1.0f, 2.0f};
 
-        registry.emplace<MaterialComponent>(gameObject3, Color::white());
+        // Create brick texture for the quad
+        auto brickTexture = std::make_shared<Texture>(device, "assets/textures/Brick_4K_BaseColor.jpg");
+
+        auto &material3 = registry.emplace<MaterialComponent>(gameObject3);
+        material3.albedoTexture = brickTexture;
+        // Descriptor set will be created in run() after RenderSystem is initialized
+
         registry.emplace<ModelComponent>(gameObject3, std::move(model3));
     }
 } // namespace
