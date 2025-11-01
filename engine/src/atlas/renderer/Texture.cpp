@@ -6,9 +6,6 @@
 #include "stb_image.h"
 #include "Buffer.hpp"
 
-#ifdef __ANDROID__
-#include "core/AssetManager.hpp"
-#endif
 
 namespace Atlas {
     Texture::Texture(Device &device, const std::string &filepath) : device(device) {
@@ -201,16 +198,12 @@ namespace Atlas {
     }
 
     std::shared_ptr<Texture> Texture::createDefaultTexture(Device &device) {
-        // Create a 1x1 white texture using the private constructor
         auto texture = std::shared_ptr<Texture>(new Texture(device));
 
-        // Create a 1x1 white pixel
-        unsigned char pixels[4] = {255, 255, 255, 255}; // RGBA white
+        unsigned char pixels[4] = {255, 255, 255, 255};
 
-        // Create texture with the white pixel
         texture->createTextureImage(pixels, 1, 1);
 
-        // Create image view and sampler
         texture->createTextureImageView();
         texture->createTextureSampler();
 
