@@ -6,7 +6,7 @@
 #include <memory>
 #include <unordered_map>
 
-#include "renderer/Texture.hpp"
+#include "renderer/Sampler.hpp"
 
 namespace Atlas {
     /**
@@ -57,7 +57,7 @@ namespace Atlas {
         static std::shared_ptr<AssetManager> instance;
         static void *storedNativeApp;
 
-        static std::unordered_map<std::string, std::shared_ptr<Texture>> loadedAssets;
+        static std::unordered_map<std::string, std::shared_ptr<Sampler>> loadedAssets;
 
     private:
         /**

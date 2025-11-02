@@ -3,8 +3,6 @@
 #include "Window.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/Renderer.hpp"
-#include "renderer/Descriptors.hpp"
-#include "renderer/Texture.hpp"
 
 #include <entt/entt.hpp>
 
@@ -36,9 +34,5 @@ namespace Atlas {
         Renderer renderer{*window, device};
 
         entt::registry registry;
-
-        std::unique_ptr<DescriptorPool> globalPool{};
-        std::unique_ptr<DescriptorPool> texturePool{};
-        std::shared_ptr<Texture> defaultTexture{};
     };
 }

@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : require
 
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec3 fragPosWorld;
@@ -8,6 +9,7 @@ layout(location = 3) in vec2 fragUV;
 layout(push_constant) uniform Push {
     mat4 modelMatrix;
     mat4 normalMatrix;
+    uint textureIndex;  // Index into the bindless texture array
 } push;
 
 layout(set = 0, binding = 0) uniform GlobalUbo {
@@ -19,7 +21,8 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
     vec4 lightColor;
 } ubo;
 
-layout(set = 1, binding = 0) uniform sampler2D texSampler;
+// Bindless texture array
+layout(set = 1, binding = 0) uniform sampler2D textures[];
 
 layout(location = 0) out vec4 outColor;
 
@@ -39,8 +42,8 @@ void main() {
     vec3 ambientLight = ubo.ambientLightColor.rgb * ubo.ambientLightColor.w;
     vec3 diffuseLight = lightColor * max(dot(normalize(fragNormalWorld), normalize(directionToLight)), 0.0);
 
-    // Sample texture
-    vec3 texColor = texture(texSampler, fragUV).rgb;
+    // Sample texture using bindless index with nonuniformEXT
+    vec3 texColor = texture(textures[nonuniformEXT(push.textureIndex)], fragUV).rgb;
 
     // Combine texture with vertex color and lighting
     vec3 finalColor = texColor * fragColor;

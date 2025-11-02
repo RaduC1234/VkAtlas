@@ -22,22 +22,49 @@ namespace Atlas {
         return *this;
     }
 
+    DescriptorSetLayout::Builder &DescriptorSetLayout::Builder::setBindingFlags(uint32_t binding, VkDescriptorBindingFlags flags) {
+        assert(bindings.count(binding) == 1 && "Binding does not exist");
+        bindingFlags[binding] = flags;
+        return *this;
+    }
+
+    DescriptorSetLayout::Builder &DescriptorSetLayout::Builder::setLayoutFlags(VkDescriptorSetLayoutCreateFlags flags) {
+        layoutFlags = flags;
+        return *this;
+    }
+
     std::unique_ptr<DescriptorSetLayout> DescriptorSetLayout::Builder::build() const {
-        return std::make_unique<DescriptorSetLayout>(Device, bindings);
+        return std::make_unique<DescriptorSetLayout>(Device, bindings, bindingFlags, layoutFlags);
     }
 
     // *************** Descriptor Set Layout *********************
 
-    DescriptorSetLayout::DescriptorSetLayout(class Device &device, std::unordered_map<uint32_t, VkDescriptorSetLayoutBinding> bindings) : Device{device}, bindings{bindings} {
+    DescriptorSetLayout::DescriptorSetLayout(class Device &device, std::unordered_map<uint32_t, VkDescriptorSetLayoutBinding> bindings, std::unordered_map<uint32_t, VkDescriptorBindingFlags> bindingFlags, VkDescriptorSetLayoutCreateFlags layoutFlags) : Device{device}, bindings{bindings} {
         std::vector<VkDescriptorSetLayoutBinding> setLayoutBindings{};
+        std::vector<VkDescriptorBindingFlags> flags{};
+
         for (auto kv: bindings) {
             setLayoutBindings.push_back(kv.second);
+            // Add flags for this binding (0 if not specified)
+            auto it = bindingFlags.find(kv.first);
+            flags.push_back(it != bindingFlags.end() ? it->second : 0);
         }
+
+        VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
+        bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+        bindingFlagsInfo.bindingCount = static_cast<uint32_t>(flags.size());
+        bindingFlagsInfo.pBindingFlags = flags.data();
 
         VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
         descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         descriptorSetLayoutInfo.bindingCount = static_cast<uint32_t>(setLayoutBindings.size());
         descriptorSetLayoutInfo.pBindings = setLayoutBindings.data();
+        descriptorSetLayoutInfo.flags = layoutFlags;  // Set the layout flags
+
+        // Only set pNext if we have binding flags
+        if (!bindingFlags.empty()) {
+            descriptorSetLayoutInfo.pNext = &bindingFlagsInfo;
+        }
 
         if (vkCreateDescriptorSetLayout(
                 device.device(),

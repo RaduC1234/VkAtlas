@@ -21,14 +21,20 @@ namespace Atlas {
                 VkShaderStageFlags stageFlags,
                 uint32_t count = 1);
 
+            Builder &setBindingFlags(uint32_t binding, VkDescriptorBindingFlags flags);
+
+            Builder &setLayoutFlags(VkDescriptorSetLayoutCreateFlags flags);
+
             std::unique_ptr<DescriptorSetLayout> build() const;
 
         private:
             Device &Device;
             std::unordered_map<uint32_t, VkDescriptorSetLayoutBinding> bindings{};
+            std::unordered_map<uint32_t, VkDescriptorBindingFlags> bindingFlags{};
+            VkDescriptorSetLayoutCreateFlags layoutFlags = 0;
         };
 
-        DescriptorSetLayout(Device &device, std::unordered_map<uint32_t, VkDescriptorSetLayoutBinding> bindings);
+        DescriptorSetLayout(Device &device, std::unordered_map<uint32_t, VkDescriptorSetLayoutBinding> bindings, std::unordered_map<uint32_t, VkDescriptorBindingFlags> bindingFlags, VkDescriptorSetLayoutCreateFlags layoutFlags);
         ~DescriptorSetLayout();
 
         DescriptorSetLayout(const DescriptorSetLayout &) = delete;

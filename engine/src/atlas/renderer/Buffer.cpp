@@ -37,7 +37,7 @@ namespace Atlas {
                    VkBufferUsageFlags usage,
                    VmaMemoryUsage memoryUsage,
                    VmaAllocationCreateFlags flags)
-        : device_(device), instanceSize_(size), instanceCount_(1), alignmentSize_(size), totalSize_(size) {
+        : device_(device), instanceSize_(size), alignmentSize_(size), totalSize_(size) {
         bufferInfo_.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufferInfo_.size = size;
         bufferInfo_.usage = usage;

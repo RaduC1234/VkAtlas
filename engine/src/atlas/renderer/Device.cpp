@@ -159,11 +159,35 @@ namespace Atlas {
             queueCreateInfos.push_back(queueCreateInfo);
         }
 
+        // Query descriptor indexing features
+        VkPhysicalDeviceDescriptorIndexingFeatures indexingFeatures{};
+        indexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+
+        VkPhysicalDeviceFeatures2 features2{};
+        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features2.pNext = &indexingFeatures;
+
+        vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
+
+        if (!indexingFeatures.runtimeDescriptorArray ||
+            !indexingFeatures.shaderSampledImageArrayNonUniformIndexing) {
+            throw std::runtime_error("GPU lacks descriptor indexing features needed for bindless textures.");
+        }
+
+        // Enable descriptor indexing features for bindless textures
+        indexingFeatures.runtimeDescriptorArray = VK_TRUE;
+        indexingFeatures.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        indexingFeatures.descriptorBindingPartiallyBound = VK_TRUE;
+        indexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
+        indexingFeatures.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+
+        // Enable core features
         VkPhysicalDeviceFeatures deviceFeatures = {};
         deviceFeatures.samplerAnisotropy = VK_TRUE;
 
         VkDeviceCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        createInfo.pNext = &indexingFeatures; // Chain descriptor indexing features
 
         createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
         createInfo.pQueueCreateInfos = queueCreateInfos.data();

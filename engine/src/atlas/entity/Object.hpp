@@ -9,7 +9,7 @@
 #include <glm/glm.hpp>
 #include <entt/entt.hpp>
 
-#include "renderer/Texture.hpp"
+#include "renderer/Sampler.hpp"
 
 namespace Atlas {
     struct TransformComponent {
@@ -88,9 +88,9 @@ namespace Atlas {
     };
 
     struct MaterialComponent {
-        std::shared_ptr<Texture> albedoTexture;
-        VkDescriptorSet textureDescriptorSet = VK_NULL_HANDLE;
-        //std::shared_ptr<Texture> normalMap;
-        //std::shared_ptr<Texture> specularMap;
+        std::shared_ptr<Sampler> albedoTexture;
+        uint32_t textureIndex = 0;  // Index into bindless texture array
+        //std::shared_ptr<Sampler> normalMap;
+        //std::shared_ptr<Sampler> specularMap;
     };
 }
