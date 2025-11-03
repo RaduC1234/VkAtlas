@@ -17,8 +17,6 @@ namespace Atlas {
         RenderSystem(const RenderSystem&) = delete;
         RenderSystem &operator=(const RenderSystem&) = delete;
 
-        void registerMaterials(entt::registry &registry);
-
         uint32_t registerTexture(std::shared_ptr<Sampler> texture);
 
         // Update UBO data per frame
@@ -52,10 +50,9 @@ namespace Atlas {
         VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
 
         // Texture management
-        std::vector<std::shared_ptr<Sampler>> registeredTextures;
-        uint32_t nextTextureIndex = 0;
-        std::shared_ptr<Sampler> defaultTexture;
+        uint32_t nextTextureIndex = 1;
+        std::vector<std::shared_ptr<Sampler>> waitingToBeCommitedSamplers;
 
-        std::unordered_map<std::string, uint32_t> samplersIndexMap;
+        std::unordered_map<Sampler*, uint32_t> samplersIndexMap;
     };
 }

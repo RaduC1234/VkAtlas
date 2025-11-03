@@ -33,8 +33,6 @@ namespace Atlas {
         CameraSystem cameraSystem{*window};
         RenderSystem renderSystem{device, renderer.getSwapChainRenderPass()};
 
-        renderSystem.registerMaterials(registry);
-
         Camera camera{};
         auto currentTime = std::chrono::high_resolution_clock::now();
 

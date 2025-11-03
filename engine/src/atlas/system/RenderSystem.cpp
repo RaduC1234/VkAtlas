@@ -133,45 +133,16 @@ namespace Atlas {
 
     void RenderSystem::createSamplersBuffer() {
         constexpr unsigned char pixels[4] = {255, 255, 255, 255};
-        this->defaultTexture = Sampler::create(device, pixels, 1, 1);
+        auto defaultTexture = Sampler::create(device, pixels, 1, 1);
 
-        registeredTextures.clear();
-        registeredTextures.push_back(defaultTexture);
-        nextTextureIndex = 1;
+        waitingToBeCommitedSamplers.clear();
+        waitingToBeCommitedSamplers.push_back(defaultTexture); // Index 0: placeholder (not used, but keeps indexing aligned)
+        waitingToBeCommitedSamplers.push_back(defaultTexture); // Index 1: default white texture
+
+        samplersIndexMap[defaultTexture.get()] = 1;
+        nextTextureIndex = 2;
 
         commitSamplersToDescriptors();
-    }
-
-    void RenderSystem::registerMaterials(entt::registry &registry) {
-        bool newTexture{false};
-
-        auto materialView = registry.view<MaterialComponent>();
-        for (auto entity: materialView) {
-            auto &material = materialView.get<MaterialComponent>(entity);
-
-            if (!material.albedoTexture) {
-                material.albedoTexture = defaultTexture;
-                material.textureIndex = 0;
-            } else {
-                bool found{false};
-                for (size_t i = 0; i < registeredTextures.size(); i++) {
-                    if (registeredTextures[i] == material.albedoTexture) {
-                        material.textureIndex = static_cast<uint32_t>(i);
-                        found = true;
-                        break;
-                    }
-                }
-
-                if (!found) {
-                    newTexture = true;
-                    material.textureIndex = registerTexture(material.albedoTexture);
-                }
-            }
-        }
-
-        if (newTexture) {
-            commitSamplersToDescriptors();
-        }
     }
 
     uint32_t RenderSystem::registerTexture(std::shared_ptr<Sampler> texture) {
@@ -179,16 +150,20 @@ namespace Atlas {
             throw std::runtime_error("Exceeded maximum bindless texture count (1024)");
         }
 
+        Sampler* key = texture.get();
         uint32_t index = nextTextureIndex++;
-        registeredTextures.push_back(texture);
+
+        samplersIndexMap[key] = index;
+        waitingToBeCommitedSamplers.push_back(texture);
+
         return index;
     }
 
     void RenderSystem::commitSamplersToDescriptors() {
         std::vector<VkDescriptorImageInfo> imageInfos;
-        imageInfos.reserve(registeredTextures.size());
+        imageInfos.reserve(waitingToBeCommitedSamplers.size());
 
-        for (const auto &texture: registeredTextures) {
+        for (const auto &texture: waitingToBeCommitedSamplers) {
             VkDescriptorImageInfo imageInfo{};
             imageInfo.imageLayout = texture->getImageLayout();
             imageInfo.imageView = texture->getImageView();
@@ -244,8 +219,27 @@ namespace Atlas {
             nullptr
         );
 
-        // Render all objects
+        // Register any new textures that haven't been uploaded to GPU yet
+        bool newTexturesRegistered = false;
+
         auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
+        for (auto entity: view) {
+            auto &material = view.get<MaterialComponent>(entity);
+
+            if (material.albedoTexture) {
+                if (const uint32_t textureIndex = samplersIndexMap[material.albedoTexture.get()]; textureIndex == 0) {
+                    registerTexture(material.albedoTexture);
+                    newTexturesRegistered = true;
+                }
+            }
+        }
+
+        // Commit any newly registered textures to GPU BEFORE drawing
+        if (newTexturesRegistered) {
+            commitSamplersToDescriptors();
+        }
+
+        // Now render all objects with textures properly committed
         for (auto entity: view) {
             auto &transform = view.get<TransformComponent>(entity);
             auto &material = view.get<MaterialComponent>(entity);
@@ -254,7 +248,8 @@ namespace Atlas {
             SimplePushConstantData push{};
             push.modelMatrix = transform.mat4();
             push.normalMatrix = transform.normalMatrix();
-            push.textureIndex = material.textureIndex;
+
+            push.textureIndex = material.albedoTexture ? samplersIndexMap[material.albedoTexture.get()] : 0;
 
             vkCmdPushConstants(
                 commandBuffer,

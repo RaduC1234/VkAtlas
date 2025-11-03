@@ -89,7 +89,7 @@ namespace Atlas {
 
     struct MaterialComponent {
         std::shared_ptr<Sampler> albedoTexture;
-        uint32_t textureIndex = 0;  // Index into bindless texture array
+        uint32_t textureIndex = 0;
         //std::shared_ptr<Sampler> normalMap;
         //std::shared_ptr<Sampler> specularMap;
     };
