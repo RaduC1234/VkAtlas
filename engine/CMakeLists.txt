@@ -6,12 +6,9 @@ file(GLOB_RECURSE ENGINE_SOURCES "src/*.cpp" "src/*.hpp")
 
 add_library(atlas_engine SHARED ${ENGINE_SOURCES})
 
-# When building shared: compile engine with AVALON_BUILD_SHARED; consumers linking
-# against atlas_engine will get AVALON_USE_SHARED so headers expand to dllimport
 target_compile_definitions(atlas_engine PRIVATE AVALON_BUILD_SHARED)
 target_compile_definitions(atlas_engine INTERFACE AVALON_USE_SHARED)
 
-# Make symbols hidden by default on GCC/Clang platforms so only AVALON_API exports
 if (NOT WIN32)
     if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         set_target_properties(atlas_engine PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
@@ -24,15 +21,13 @@ add_subdirectory(dependencies/glm)
 add_subdirectory(dependencies/entt)
 add_subdirectory(dependencies/VulkanMemoryAllocator)
 add_subdirectory(dependencies/tinyobjloader)
+add_subdirectory(dependencies/tinygltf)
 
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
 
 if (ANDROID)
-    # Find and link GameActivity
     find_package(game-activity REQUIRED CONFIG)
-
-    # Vulkan support via Android NDK
     find_library(VULKAN_LIB vulkan REQUIRED)
 
     target_link_libraries(atlas_engine PUBLIC
@@ -46,6 +41,7 @@ if (ANDROID)
             EnTT::EnTT
             GPUOpen::VulkanMemoryAllocator
             tinyobjloader
+            tinygltf
     )
 elseif (WIN32)
 
@@ -79,6 +75,7 @@ elseif (WIN32)
             GPUOpen::VulkanMemoryAllocator
             imgui
             tinyobjloader
+            tinygltf
     )
 
     add_custom_command(TARGET atlas_engine POST_BUILD

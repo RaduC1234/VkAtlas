@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/AssetManager.hpp"
+#include "asset/AssetManager.hpp"
 #include <filesystem>
 
 namespace Atlas {
@@ -12,7 +12,7 @@ namespace Atlas {
      */
     class DesktopAssetManager : public AssetManager {
     public:
-        explicit DesktopAssetManager(void* nativeApp = nullptr);
+        explicit DesktopAssetManager(Device& device, void* nativeApp = nullptr);
         ~DesktopAssetManager() override = default;
 
         /**

@@ -1,12 +1,13 @@
 #include "AndroidAssetManager.hpp"
 
 #if defined(__ANDROID__)
-#include "core/AT.hpp"
+#include "core/Log.hpp"
 #include <game-activity/native_app_glue/android_native_app_glue.h>
 
 namespace Atlas {
 
-    AndroidAssetManager::AndroidAssetManager(void* nativeApp) {
+    AndroidAssetManager::AndroidAssetManager(Device& device, void* nativeApp)
+        : AssetManager(device, nativeApp) {
         if (!nativeApp) {
             AT_ERROR("Native app handle is null!");
             androidAssetManager = nullptr;

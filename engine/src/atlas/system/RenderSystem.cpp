@@ -4,7 +4,7 @@
 #include <cassert>
 #include <stdexcept>
 
-#include "core/AssetManager.hpp"
+#include "asset/AssetManager.hpp"
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -34,7 +34,11 @@ namespace Atlas {
         createDescriptors();
         createPipelineLayout();
         createPipeline(renderPass);
-        createSamplersBuffer();
+
+        const AssetHandle defaultTexture = AssetManager::get().createDefaultWhiteTexture();
+        registerTexture(defaultTexture);
+        commitSamplersToDescriptors();
+        defaultWhiteTextureHandle = defaultTexture;
     }
 
     RenderSystem::~RenderSystem() {
@@ -57,18 +61,15 @@ namespace Atlas {
             uboBuffer->map();
         }
 
-        // Create global descriptor set layout
         globalSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
                 .build();
 
-        // Create global descriptor pool
         globalPool = DescriptorPool::Builder(device)
                 .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
                 .build();
 
-        // Allocate and write global descriptor sets
         globalDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
         for (int i = 0; i < globalDescriptorSets.size(); i++) {
             auto bufferInfo = uboBuffers[i]->descriptorInfo();
@@ -131,35 +132,38 @@ namespace Atlas {
             pipelineConfig);
     }
 
-    void RenderSystem::createSamplersBuffer() {
-        constexpr unsigned char pixels[4] = {255, 255, 255, 255};
-        auto defaultTexture = Sampler::create(device, pixels, 1, 1);
+    uint32_t RenderSystem::registerTexture(AssetHandle handle) {
+        if (handle == INVALID_ASSET_HANDLE) {
+            return 1; // Return default white texture index
+        }
 
-        waitingToBeCommitedSamplers.clear();
-        waitingToBeCommitedSamplers.push_back(defaultTexture); // Index 0: placeholder (not used, but keeps indexing aligned)
-        waitingToBeCommitedSamplers.push_back(defaultTexture); // Index 1: default white texture
+        auto it = handleToGPUIndex.find(handle);
+        if (it != handleToGPUIndex.end()) {
+            return it->second;
+        }
 
-        samplersIndexMap[defaultTexture.get()] = 1;
-        nextTextureIndex = 2;
-
-        commitSamplersToDescriptors();
-    }
-
-    uint32_t RenderSystem::registerTexture(std::shared_ptr<Sampler> texture) {
         if (nextTextureIndex >= 1024) {
             throw std::runtime_error("Exceeded maximum bindless texture count (1024)");
         }
 
-        Sampler* key = texture.get();
-        uint32_t index = nextTextureIndex++;
+        const auto texture = AssetManager::get().getTexture(handle);
 
-        samplersIndexMap[key] = index;
+        if (!texture) {
+            return 1; // Return default texture if asset not found
+        }
+
+        uint32_t gpuIndex = nextTextureIndex++;
+        handleToGPUIndex[handle] = gpuIndex;
         waitingToBeCommitedSamplers.push_back(texture);
 
-        return index;
+        return gpuIndex;
     }
 
     void RenderSystem::commitSamplersToDescriptors() {
+        if (waitingToBeCommitedSamplers.empty()) {
+            return;
+        }
+
         std::vector<VkDescriptorImageInfo> imageInfos;
         imageInfos.reserve(waitingToBeCommitedSamplers.size());
 
@@ -175,12 +179,35 @@ namespace Atlas {
         writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         writeDescriptorSet.dstSet = bindlessTextureSet;
         writeDescriptorSet.dstBinding = 0;
-        writeDescriptorSet.dstArrayElement = 0;
+        uint32_t startArrayElement = nextTextureIndex - static_cast<uint32_t>(waitingToBeCommitedSamplers.size());
+        writeDescriptorSet.dstArrayElement = startArrayElement; // update only from the end of the gpu array.
         writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writeDescriptorSet.descriptorCount = static_cast<uint32_t>(imageInfos.size());
         writeDescriptorSet.pImageInfo = imageInfos.data();
 
         vkUpdateDescriptorSets(device.device(), 1, &writeDescriptorSet, 0, nullptr);
+
+        waitingToBeCommitedSamplers.clear();
+    }
+
+    void RenderSystem::prepareTextures(entt::registry &registry) {
+        bool newTexturesRegistered = false;
+
+        auto view = registry.view<MaterialComponent>();
+        for (auto entity: view) {
+            auto &material = view.get<MaterialComponent>(entity);
+
+            if (material.albedoTexture != INVALID_ASSET_HANDLE) {
+                if (handleToGPUIndex.find(material.albedoTexture) == handleToGPUIndex.end()) {
+                    registerTexture(material.albedoTexture);
+                    newTexturesRegistered = true;
+                }
+            }
+        }
+
+        if (newTexturesRegistered) {
+            commitSamplersToDescriptors();
+        }
     }
 
     void RenderSystem::updateUBO(int frameIndex, const glm::mat4 &projection, const glm::mat4 &view, const glm::vec4 &ambientColor, const glm::vec3 &lightPosition, const glm::vec4 &lightColor) {
@@ -197,7 +224,6 @@ namespace Atlas {
     void RenderSystem::render(entt::registry &registry, VkCommandBuffer commandBuffer, int frameIndex) {
         pipeline->bind(commandBuffer);
 
-        // Bind global descriptor set (UBO)
         vkCmdBindDescriptorSets(
             commandBuffer,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -208,7 +234,6 @@ namespace Atlas {
             nullptr
         );
 
-        // Bind bindless texture descriptor set
         vkCmdBindDescriptorSets(
             commandBuffer,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -219,37 +244,26 @@ namespace Atlas {
             nullptr
         );
 
-        // Register any new textures that haven't been uploaded to GPU yet
-        bool newTexturesRegistered = false;
-
+        auto& assetManager = AssetManager::get();
         auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
-        for (auto entity: view) {
-            auto &material = view.get<MaterialComponent>(entity);
 
-            if (material.albedoTexture) {
-                if (const uint32_t textureIndex = samplersIndexMap[material.albedoTexture.get()]; textureIndex == 0) {
-                    registerTexture(material.albedoTexture);
-                    newTexturesRegistered = true;
-                }
-            }
-        }
-
-        // Commit any newly registered textures to GPU BEFORE drawing
-        if (newTexturesRegistered) {
-            commitSamplersToDescriptors();
-        }
-
-        // Now render all objects with textures properly committed
         for (auto entity: view) {
             auto &transform = view.get<TransformComponent>(entity);
             auto &material = view.get<MaterialComponent>(entity);
-            auto &model = view.get<ModelComponent>(entity);
+            auto &modelComp = view.get<ModelComponent>(entity);
+
+            auto mesh = assetManager.getMesh(modelComp.meshHandle);
+            if (!mesh) continue; // skip if mesh not loaded. todo: implement resource streaming
 
             SimplePushConstantData push{};
             push.modelMatrix = transform.mat4();
             push.normalMatrix = transform.normalMatrix();
 
-            push.textureIndex = material.albedoTexture ? samplersIndexMap[material.albedoTexture.get()] : 0;
+            AssetHandle textureHandle = material.albedoTexture != INVALID_ASSET_HANDLE
+                ? material.albedoTexture
+                : defaultWhiteTextureHandle;
+
+            push.textureIndex = handleToGPUIndex[textureHandle];
 
             vkCmdPushConstants(
                 commandBuffer,
@@ -260,8 +274,8 @@ namespace Atlas {
                 &push
             );
 
-            model.model->bind(commandBuffer);
-            model.model->draw(commandBuffer);
+            mesh->bind(commandBuffer);
+            mesh->draw(commandBuffer);
         }
     }
 }

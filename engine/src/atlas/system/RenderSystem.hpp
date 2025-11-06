@@ -5,6 +5,7 @@
 #include "renderer/Descriptors.hpp"
 #include "renderer/Sampler.hpp"
 #include "renderer/Buffer.hpp"
+#include "asset/AssetManager.hpp"
 
 #include <glm/glm.hpp>
 
@@ -17,7 +18,10 @@ namespace Atlas {
         RenderSystem(const RenderSystem&) = delete;
         RenderSystem &operator=(const RenderSystem&) = delete;
 
-        uint32_t registerTexture(std::shared_ptr<Sampler> texture);
+        uint32_t registerTexture(AssetHandle handle);
+
+        // Prepare all textures before rendering (call before render pass begins)
+        void prepareTextures(entt::registry &registry);
 
         // Update UBO data per frame
         void updateUBO(int frameIndex, const glm::mat4& projection, const glm::mat4& view,
@@ -30,13 +34,12 @@ namespace Atlas {
         void createDescriptors();
         void createPipelineLayout();
         void createPipeline(VkRenderPass renderPass);
-        void createSamplersBuffer();
         void commitSamplersToDescriptors();
 
         Device &device;
 
         std::unique_ptr<Pipeline> pipeline;
-        VkPipelineLayout pipelineLayout;
+        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
         // Global descriptors (UBO)
         std::unique_ptr<DescriptorSetLayout> globalSetLayout;
@@ -49,10 +52,10 @@ namespace Atlas {
         std::unique_ptr<DescriptorPool> bindlessTexturePool;
         VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
 
-        // Texture management
+        // Texture management - maps AssetHandle to GPU descriptor array index
         uint32_t nextTextureIndex = 1;
         std::vector<std::shared_ptr<Sampler>> waitingToBeCommitedSamplers;
-
-        std::unordered_map<Sampler*, uint32_t> samplersIndexMap;
+        std::unordered_map<AssetHandle, uint32_t> handleToGPUIndex;
+        AssetHandle defaultWhiteTextureHandle = INVALID_ASSET_HANDLE;  // Just store the handle
     };
 }

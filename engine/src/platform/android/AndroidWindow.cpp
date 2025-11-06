@@ -106,5 +106,9 @@ namespace Atlas {
         };
     }
 
+    void *AndroidWindow::getNativeHandle() const {
+        return this->app;
+    }
+
 }
 #endif

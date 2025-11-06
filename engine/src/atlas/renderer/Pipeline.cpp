@@ -4,7 +4,7 @@
 
 #include <cassert>
 
-#include "core/AssetManager.hpp"
+#include "asset/AssetManager.hpp"
 
 namespace Atlas {
     Pipeline::Pipeline(Device &device, const std::string &vertexVertCode, const std::string &fragmentVertCode, const PipelineConfigInfo &configInfo): device{device} {

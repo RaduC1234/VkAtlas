@@ -17,6 +17,8 @@ namespace Atlas {
         void waitEvents() override;
         std::vector<const char *> getRequiredExtensions() override;
 
+        void *getNativeHandle() const override;
+
     private:
         android_app* app;
 

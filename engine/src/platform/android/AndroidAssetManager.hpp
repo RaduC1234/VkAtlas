@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/AssetManager.hpp"
+#include "asset/AssetManager.hpp"
 
 #if defined(__ANDROID__)
 #include <android/asset_manager.h>
@@ -14,7 +14,7 @@ namespace Atlas {
      */
     class AndroidAssetManager : public AssetManager {
     public:
-        explicit AndroidAssetManager(void* nativeApp);
+        explicit AndroidAssetManager(Device& device, void* nativeApp);
         ~AndroidAssetManager() override = default;
 
         /**

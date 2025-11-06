@@ -3,7 +3,7 @@
 // std
 #include <chrono>
 
-#include "AssetManager.hpp"
+#include "asset/AssetManager.hpp"
 #include "system/RenderSystem.hpp"
 #include "system/CameraSystem.hpp"
 
@@ -14,11 +14,10 @@
 
 #include "entity/Object.hpp"
 #include "renderer/ImGuiLayer.hpp"
-#include "renderer/Sampler.hpp"
 
 namespace Atlas {
     Application::Application(const ApplicationSpecification &spec) : specification(spec) {
-        AssetManager::init(spec.pNativeApp);
+        AssetManager::create(this->device, spec.pNativeApp);
         this->window->setWindowIcon("assets/textures/android_robot.png");
         this->window->setTheme(true);
 
@@ -26,6 +25,8 @@ namespace Atlas {
     }
 
     Application::~Application() {
+        // Destroy AssetManager before Device to free GPU resources.
+        AssetManager::destroy();
     }
 
     void Application::run() {
@@ -52,6 +53,8 @@ namespace Atlas {
             camera.setPerspectiveProjection(glm::radians(50.0f), aspect, 0.1f, 100.0f);
 
             if (auto commandBuffer = renderer.beginFrame()) {
+                renderSystem.prepareTextures(registry);
+
                 imGui.beginFrame();
 
                 ImGui::Begin("Debug Settings");
@@ -65,7 +68,7 @@ namespace Atlas {
                     frameIndex,
                     camera.getProjection(),
                     camera.getView(),
-                    glm::vec4(1.0f, 1.0f, 1.0f, 0.005f),  // ambient color
+                    glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),  // ambient color
                     glm::vec3(-1.0f),                       // light position
                     glm::vec4(1.0f)                         // light color
                 );
@@ -86,7 +89,36 @@ namespace Atlas {
     }
 
     void Application::loadGameObjects() {
-        std::shared_ptr<Mesh> model0 = Mesh::createModelFromFileObj(device, "assets/models/flat_vase.obj");
+        auto& assetManager = AssetManager::get();
+
+        // Load assets and get handles
+        AssetHandle vase0Mesh = assetManager.loadMesh("models/flat_vase.obj");
+        AssetHandle vase1Mesh = assetManager.loadMesh("models/smooth_vase.obj");
+        AssetHandle sphereMesh = assetManager.createSphere(0.1f);  // Create procedural sphere instead of loading
+        AssetHandle quadMesh = assetManager.loadMesh("models/quad.obj");
+        AssetHandle brickTexture = assetManager.loadTexture("textures/Brick_4K_BaseColor.jpg");
+        AssetHandle chairTex;
+
+        // Load chair GLB and add it to the scene
+        AssetHandle chairMesh = assetManager.loadGltf("models/SM_ArmChair_2.glb");
+        if (chairMesh != INVALID_ASSET_HANDLE) {
+            auto chairObj = registry.create();
+            auto &chairTransform = registry.emplace<TransformComponent>(chairObj);
+            chairTransform.translation = glm::vec3{0.0f, 0.0f, 0.0f};
+            chairTransform.scale = glm::vec3{1.0f};
+
+            registry.emplace<MaterialComponent>(chairObj);
+            auto &chairModel = registry.emplace<ModelComponent>(chairObj);
+            chairModel.meshHandle = chairMesh;
+
+            // Attempt to assign the first embedded image as albedo if it exists
+            std::string firstImageKey = "models/SM_ArmChair_2.glb#mesh0_prim0_baseColor";
+            chairTex = assetManager.loadTexture(firstImageKey);
+            if (chairTex != INVALID_ASSET_HANDLE) {
+                auto &mat = registry.get<MaterialComponent>(chairObj);
+                mat.albedoTexture = chairTex;
+            }
+        }
 
         auto gameObject0 = registry.create();
         auto &transform0 = registry.emplace<TransformComponent>(gameObject0);
@@ -94,10 +126,9 @@ namespace Atlas {
         transform0.scale = glm::vec3{1.0f};
 
         registry.emplace<MaterialComponent>(gameObject0);
-        registry.emplace<ModelComponent>(gameObject0, std::move(model0));
+        auto &model0 = registry.emplace<ModelComponent>(gameObject0);
+        model0.meshHandle = vase0Mesh;
 
-
-        std::shared_ptr<Mesh> model1 = Mesh::createModelFromFileObj(device, "assets/models/smooth_vase.obj");
 
         auto gameObject1 = registry.create();
         auto &transform1 = registry.emplace<TransformComponent>(gameObject1);
@@ -105,10 +136,9 @@ namespace Atlas {
         transform1.scale = glm::vec3{1.0f};
 
         registry.emplace<MaterialComponent>(gameObject1);
-        registry.emplace<ModelComponent>(gameObject1, std::move(model1));
+        auto &model1 = registry.emplace<ModelComponent>(gameObject1);
+        model1.meshHandle = vase1Mesh;
 
-
-        std::shared_ptr<Mesh> model2 = Mesh::createSphere(device, 0.1f);
 
         auto gameObject2 = registry.create();
         auto &transform2 = registry.emplace<TransformComponent>(gameObject2);
@@ -116,22 +146,19 @@ namespace Atlas {
         transform2.scale = glm::vec3{1.0};
 
         registry.emplace<MaterialComponent>(gameObject2);
-        registry.emplace<ModelComponent>(gameObject2, std::move(model2));
+        auto &model2 = registry.emplace<ModelComponent>(gameObject2);
+        model2.meshHandle = sphereMesh;
 
-
-        std::shared_ptr<Mesh> model3 = Mesh::createModelFromFileObj(device, "assets/models/quad.obj");
 
         auto gameObject3 = registry.create();
         auto &transform3 = registry.emplace<TransformComponent>(gameObject3);
         transform3.translation = {0, 0.5f, 0.0f};
         transform3.scale = glm::vec3{2.0f, 1.0f, 2.0f};
 
-        // Create brick texture for the quad
-        auto brickTexture = Sampler::create(device, "assets/textures/Brick_4K_BaseColor.jpg");
-
         auto &material3 = registry.emplace<MaterialComponent>(gameObject3);
-        material3.albedoTexture = brickTexture;
+        material3.albedoTexture = chairTex;
 
-        registry.emplace<ModelComponent>(gameObject3, std::move(model3));
+        auto &model3 = registry.emplace<ModelComponent>(gameObject3);
+        model3.meshHandle = quadMesh;
     }
 } // namespace

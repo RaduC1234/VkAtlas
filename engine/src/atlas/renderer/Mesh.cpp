@@ -1,13 +1,11 @@
 #include "Mesh.hpp"
 #include "utils/Utils.hpp"
 
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
-
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
 #include <cassert>
+#include <stdexcept>
 
 namespace std {
     template<>
@@ -120,74 +118,13 @@ namespace Atlas {
     }
 
     void Mesh::Builder::loadModel(const std::string &filepath) {
-
+        // Deprecated: Use AssetManager::loadMesh() instead
     }
 
     std::unique_ptr<Mesh> Mesh::createModelFromFileObj(Device &device, const std::string &filepath) {
-        Builder builder{};
-        tinyobj::attrib_t attrib;
-        std::vector<tinyobj::shape_t> shapes;
-        std::vector<tinyobj::material_t> materials;
-        std::string warn, err;
-
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath.c_str())) {
-            throw std::runtime_error(warn + err);
-        }
-
-        builder.vertices.clear();
-        builder.indices.clear();
-
-        std::unordered_map<Vertex, uint32_t> uniqueVertices;
-        for (const auto &shape: shapes) {
-            for (const auto &index: shape.mesh.indices) {
-                Vertex vertex{};
-
-                if (index.vertex_index >= 0) {
-                    vertex.position = glm::vec3(
-                        attrib.vertices[3 * index.vertex_index + 0],
-                        attrib.vertices[3 * index.vertex_index + 1],
-                        attrib.vertices[3 * index.vertex_index + 2]
-                    );
-
-                    if (!attrib.colors.empty()) {
-                        vertex.color = glm::vec3(
-                            attrib.colors[3 * index.vertex_index + 0],
-                            attrib.colors[3 * index.vertex_index + 1],
-                            attrib.colors[3 * index.vertex_index + 2]
-                        );
-                    } else {
-                        vertex.color = glm::vec3(1.0f);
-                    }
-                }
-
-                if (index.normal_index >= 0 && !attrib.normals.empty()) {
-                    vertex.normal = glm::vec3(
-                        attrib.normals[3 * index.normal_index + 0],
-                        attrib.normals[3 * index.normal_index + 1],
-                        attrib.normals[3 * index.normal_index + 2]
-                    );
-                } else {
-                    vertex.normal = glm::vec3(0.0f);
-                }
-
-                if (index.texcoord_index >= 0 && !attrib.texcoords.empty()) {
-                    vertex.uv = glm::vec2(
-                        attrib.texcoords[2 * index.texcoord_index + 0],
-                        attrib.texcoords[2 * index.texcoord_index + 1]
-                    );
-                } else {
-                    vertex.uv = glm::vec2(0.0f);
-                }
-
-                if (uniqueVertices.count(vertex) == 0) {
-                    uniqueVertices[vertex] = static_cast<uint32_t>(builder.vertices.size());
-                    builder.vertices.push_back(vertex);
-                }
-                builder.indices.push_back(uniqueVertices[vertex]);
-            }
-        }
-
-        return std::make_unique<Mesh>(device, builder);
+        // Deprecated: Use AssetManager::loadMesh() instead
+        // This is kept for backward compatibility but should not be used
+        throw std::runtime_error("Mesh::createModelFromFileObj is deprecated. Use AssetManager::loadMesh() instead.");
     }
 
     std::unique_ptr<Mesh> Mesh::createSphere(Device &device, float radius, uint32_t segments, uint32_t rings) {
@@ -256,6 +193,18 @@ namespace Atlas {
         builder.vertices.push_back({{-h, h, -h}, {1, 1, 1}, {0, 0, -1}, {1.0f, 1.0f}});
         builder.vertices.push_back({{h, h, -h}, {1, 1, 1}, {0, 0, -1}, {0.0f, 1.0f}});
 
+        // Left face
+        builder.vertices.push_back({{-h, -h, -h}, {1, 1, 1}, {-1, 0, 0}, {0.0f, 0.0f}});
+        builder.vertices.push_back({{-h, -h, h}, {1, 1, 1}, {-1, 0, 0}, {1.0f, 0.0f}});
+        builder.vertices.push_back({{-h, h, h}, {1, 1, 1}, {-1, 0, 0}, {1.0f, 1.0f}});
+        builder.vertices.push_back({{-h, h, -h}, {1, 1, 1}, {-1, 0, 0}, {0.0f, 1.0f}});
+
+        // Right face
+        builder.vertices.push_back({{h, -h, h}, {1, 1, 1}, {1, 0, 0}, {0.0f, 0.0f}});
+        builder.vertices.push_back({{h, -h, -h}, {1, 1, 1}, {1, 0, 0}, {1.0f, 0.0f}});
+        builder.vertices.push_back({{h, h, -h}, {1, 1, 1}, {1, 0, 0}, {1.0f, 1.0f}});
+        builder.vertices.push_back({{h, h, h}, {1, 1, 1}, {1, 0, 0}, {0.0f, 1.0f}});
+
         // Top face
         builder.vertices.push_back({{-h, h, h}, {1, 1, 1}, {0, 1, 0}, {0.0f, 0.0f}});
         builder.vertices.push_back({{h, h, h}, {1, 1, 1}, {0, 1, 0}, {1.0f, 0.0f}});
@@ -268,30 +217,16 @@ namespace Atlas {
         builder.vertices.push_back({{h, -h, h}, {1, 1, 1}, {0, -1, 0}, {1.0f, 1.0f}});
         builder.vertices.push_back({{-h, -h, h}, {1, 1, 1}, {0, -1, 0}, {0.0f, 1.0f}});
 
-        // Right face
-        builder.vertices.push_back({{h, -h, h}, {1, 1, 1}, {1, 0, 0}, {0.0f, 0.0f}});
-        builder.vertices.push_back({{h, -h, -h}, {1, 1, 1}, {1, 0, 0}, {1.0f, 0.0f}});
-        builder.vertices.push_back({{h, h, -h}, {1, 1, 1}, {1, 0, 0}, {1.0f, 1.0f}});
-        builder.vertices.push_back({{h, h, h}, {1, 1, 1}, {1, 0, 0}, {0.0f, 1.0f}});
+        // Indices for all 6 faces (2 triangles per face)
+        for (uint32_t i = 0; i < 6; ++i) {
+            uint32_t base = i * 4;
+            builder.indices.push_back(base);
+            builder.indices.push_back(base + 1);
+            builder.indices.push_back(base + 2);
 
-        // Left face
-        builder.vertices.push_back({{-h, -h, -h}, {1, 1, 1}, {-1, 0, 0}, {0.0f, 0.0f}});
-        builder.vertices.push_back({{-h, -h, h}, {1, 1, 1}, {-1, 0, 0}, {1.0f, 0.0f}});
-        builder.vertices.push_back({{-h, h, h}, {1, 1, 1}, {-1, 0, 0}, {1.0f, 1.0f}});
-        builder.vertices.push_back({{-h, h, -h}, {1, 1, 1}, {-1, 0, 0}, {0.0f, 1.0f}});
-
-        // Indices (6 faces * 2 triangles * 3 vertices)
-        uint32_t indices[] = {
-            0, 1, 2, 2, 3, 0, // Front
-            4, 5, 6, 6, 7, 4, // Back
-            8, 9, 10, 10, 11, 8, // Top
-            12, 13, 14, 14, 15, 12, // Bottom
-            16, 17, 18, 18, 19, 16, // Right
-            20, 21, 22, 22, 23, 20 // Left
-        };
-
-        for (uint32_t idx: indices) {
-            builder.indices.push_back(idx);
+            builder.indices.push_back(base);
+            builder.indices.push_back(base + 2);
+            builder.indices.push_back(base + 3);
         }
 
         return std::make_unique<Mesh>(device, builder);
