@@ -258,7 +258,6 @@ namespace Atlas {
         return handle;
     }
 
-    // Helper to read accessor data pointer and stride
     static const unsigned char *accessorDataPtr(const tinygltf::Model &model, const tinygltf::Accessor &accessor, size_t &strideOut, int &numComponentsOut) {
         const tinygltf::BufferView &bv = model.bufferViews[accessor.bufferView];
         const tinygltf::Buffer &buffer = model.buffers[bv.buffer];

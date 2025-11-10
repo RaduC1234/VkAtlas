@@ -20,14 +20,11 @@ namespace Atlas {
 
         uint32_t registerTexture(AssetHandle handle);
 
-        // Prepare all textures before rendering (call before render pass begins)
         void prepareTextures(entt::registry &registry);
 
-        // Update UBO data per frame
         void updateUBO(int frameIndex, const glm::mat4& projection, const glm::mat4& view,
                        const glm::vec4& ambientColor, const glm::vec3& lightPosition, const glm::vec4& lightColor);
 
-        // Render all objects
         void render(entt::registry &registry, VkCommandBuffer commandBuffer, int frameIndex);
 
     private:

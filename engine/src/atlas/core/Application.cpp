@@ -18,7 +18,7 @@
 namespace Atlas {
     Application::Application(const ApplicationSpecification &spec) : specification(spec) {
         AssetManager::create(this->device, spec.pNativeApp);
-        this->window->setWindowIcon("assets/textures/android_robot.png");
+        this->window->setWindowIcon("assets/icons/android_robot.png");
         this->window->setTheme(true);
 
         loadGameObjects();
@@ -68,7 +68,7 @@ namespace Atlas {
                     frameIndex,
                     camera.getProjection(),
                     camera.getView(),
-                    glm::vec4(1.0f, 1.0f, 1.0f, 1.0f),  // ambient color
+                    glm::vec4(1.0f, 1.0f, 1.0f, 0.005f),  // ambient color
                     glm::vec3(-1.0f),                       // light position
                     glm::vec4(1.0f)                         // light color
                 );
@@ -105,6 +105,7 @@ namespace Atlas {
             auto chairObj = registry.create();
             auto &chairTransform = registry.emplace<TransformComponent>(chairObj);
             chairTransform.translation = glm::vec3{0.0f, 0.0f, 0.0f};
+            chairTransform.rotation = glm::vec3{0.0f, glm::radians(-90.0f), 0.0f};
             chairTransform.scale = glm::vec3{1.0f};
 
             registry.emplace<MaterialComponent>(chairObj);
@@ -156,7 +157,7 @@ namespace Atlas {
         transform3.scale = glm::vec3{2.0f, 1.0f, 2.0f};
 
         auto &material3 = registry.emplace<MaterialComponent>(gameObject3);
-        material3.albedoTexture = chairTex;
+        material3.albedoTexture = brickTexture;
 
         auto &model3 = registry.emplace<ModelComponent>(gameObject3);
         model3.meshHandle = quadMesh;

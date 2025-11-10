@@ -8,6 +8,9 @@
 
 #include <memory>
 
+#include "renderer/Buffer.hpp"
+#include "renderer/Descriptors.hpp"
+
 namespace Atlas {
     struct ApplicationSpecification {
         std::string name = "Atlas Engine";
