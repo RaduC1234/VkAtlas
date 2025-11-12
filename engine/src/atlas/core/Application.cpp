@@ -45,7 +45,7 @@ namespace Atlas {
             window->pollEvents();
 
             auto newTime = std::chrono::high_resolution_clock::now();
-            float frameTime = std::chrono::duration_cast<std::chrono::duration<float>>(newTime - currentTime).count();
+            float frameTime = std::chrono::duration_cast<std::chrono::duration<float> >(newTime - currentTime).count();
             currentTime = newTime;
 
             float aspect = renderer.getAspectRatio();
@@ -68,9 +68,9 @@ namespace Atlas {
                     frameIndex,
                     camera.getProjection(),
                     camera.getView(),
-                    glm::vec4(1.0f, 1.0f, 1.0f, 0.005f),  // ambient color
-                    glm::vec3(-1.0f),                       // light position
-                    glm::vec4(1.0f)                         // light color
+                    glm::vec4(1.0f, 1.0f, 1.0f, 0.005f), // ambient color
+                    glm::vec3(-1.0f), // light position
+                    glm::vec4(1.0f) // light color
                 );
 
                 // Render
@@ -89,13 +89,13 @@ namespace Atlas {
     }
 
     void Application::loadGameObjects() {
-        auto& assetManager = AssetManager::get();
+        auto &assetManager = AssetManager::get();
 
         // Load assets and get handles
+        AssetHandle plane0Mesh = assetManager.createPlane(1, 1);
         AssetHandle vase0Mesh = assetManager.loadMesh("models/flat_vase.obj");
         AssetHandle vase1Mesh = assetManager.loadMesh("models/smooth_vase.obj");
-        AssetHandle sphereMesh = assetManager.createSphere(0.1f);  // Create procedural sphere instead of loading
-        AssetHandle quadMesh = assetManager.loadMesh("models/quad.obj");
+        AssetHandle sphereMesh = assetManager.createSphere(0.1f);
         AssetHandle brickTexture = assetManager.loadTexture("textures/Brick_4K_BaseColor.jpg");
         AssetHandle chairTex;
 
@@ -154,12 +154,12 @@ namespace Atlas {
         auto gameObject3 = registry.create();
         auto &transform3 = registry.emplace<TransformComponent>(gameObject3);
         transform3.translation = {0, 0.5f, 0.0f};
-        transform3.scale = glm::vec3{2.0f, 1.0f, 2.0f};
+        transform3.scale = glm::vec3{5.0f, 1.0f, 5.0f};
 
         auto &material3 = registry.emplace<MaterialComponent>(gameObject3);
         material3.albedoTexture = brickTexture;
 
         auto &model3 = registry.emplace<ModelComponent>(gameObject3);
-        model3.meshHandle = quadMesh;
+        model3.meshHandle = plane0Mesh;
     }
 } // namespace

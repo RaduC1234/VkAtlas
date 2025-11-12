@@ -30,7 +30,7 @@ namespace Atlas {
          * @param nativeApp Platform-specific application handle (android_app* on Android, nullptr on desktop)
          * @return Reference to the created AssetManager instance
          */
-        static AssetManager& create(Device& device, void *nativeApp = nullptr);
+        static AssetManager &create(Device &device, void *nativeApp = nullptr);
 
         /**
          * @brief Get the singleton instance of AssetManager
@@ -48,14 +48,14 @@ namespace Atlas {
          * @param virtualPath Virtual path to the texture (e.g., "textures/wood.png")
          * @return AssetHandle for the loaded texture
          */
-        AssetHandle loadTexture(const std::string& virtualPath);
+        AssetHandle loadTexture(const std::string &virtualPath);
 
         /**
          * @brief Load a mesh and return its handle
          * @param virtualPath Virtual path to the mesh file (e.g., "models/sphere.obj")
          * @return AssetHandle for the loaded mesh
          */
-        AssetHandle loadMesh(const std::string& virtualPath);
+        AssetHandle loadMesh(const std::string &virtualPath);
 
         /**
          * @brief Create a procedural sphere mesh and return its handle
@@ -72,6 +72,14 @@ namespace Atlas {
          * @return AssetHandle for the created cube mesh
          */
         AssetHandle createCube(float size = 1.0f);
+
+        /**
+        *
+        * @param width
+        * @param height
+        * @return
+        */
+        AssetHandle createPlane(float width, float height);
 
         /**
          * @brief Load a glTF file (GLTF/GLB) and create mesh and texture assets.
@@ -127,10 +135,10 @@ namespace Atlas {
          * @param device Vulkan device reference
          * @param nativeApp Platform-specific application handle
          */
-        explicit AssetManager(Device& device, void* nativeApp = nullptr);
+        explicit AssetManager(Device &device, void *nativeApp = nullptr);
 
         Device &device;
-        void* nativeApp;
+        void *nativeApp;
 
         static std::shared_ptr<AssetManager> instance;
 
@@ -142,7 +150,7 @@ namespace Atlas {
         std::unordered_map<AssetHandle, std::string> handleToPath;
 
         // Resource pools
-        std::unordered_map<AssetHandle, std::shared_ptr<Sampler>> texturePool;
-        std::unordered_map<AssetHandle, std::shared_ptr<Mesh>> meshPool;
+        std::unordered_map<AssetHandle, std::shared_ptr<Sampler> > texturePool;
+        std::unordered_map<AssetHandle, std::shared_ptr<Mesh> > meshPool;
     };
 }

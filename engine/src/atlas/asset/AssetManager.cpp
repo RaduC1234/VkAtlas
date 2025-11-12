@@ -237,6 +237,25 @@ namespace Atlas {
         return handle;
     }
 
+    AssetHandle AssetManager::createPlane(float width, float height) {
+        std::string virtualPath = "procedural://plane_wh" + std::to_string(width) + "_" + std::to_string(height);
+
+        auto it = pathToHandle.find(virtualPath);
+        if (it!= pathToHandle.end()) {
+            AT_TRACE("Plane mesh already created: {} (handle: {})", virtualPath, it->second);
+        }
+
+        AssetHandle handle = nextHandle++;
+        pathToHandle[virtualPath] = handle;
+        handleToPath[handle] = virtualPath;
+
+        auto mesh = Mesh::createPlane(device, width, height);
+        meshPool[handle] = std::move(mesh);
+
+        AT_TRACE("Created procedural plane mesh (handle: {}, size: {} {})", handle, width, height);
+        return handle;
+    }
+
     AssetHandle AssetManager::createDefaultWhiteTexture() {
         std::string virtualPath = "procedural://white_1x1";
 
@@ -251,7 +270,7 @@ namespace Atlas {
         handleToPath[handle] = virtualPath;
 
         constexpr unsigned char pixels[4] = {255, 255, 255, 255};
-        auto texture = Sampler::create(device, pixels, 1, 1);
+        const auto texture = Sampler::create(device, pixels, 1, 1);
         texturePool[handle] = texture;
 
         AT_TRACE("Created default white texture (handle: {})", handle);

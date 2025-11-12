@@ -15,6 +15,7 @@ namespace Atlas {
             glm::vec3 color{};
             glm::vec3 normal{};
             glm::vec2 uv{};
+            glm::vec3 tangent{};
 
             static std::vector<VkVertexInputBindingDescription> getBindingDescriptions();
             static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions();
@@ -40,12 +41,10 @@ namespace Atlas {
         void bind(VkCommandBuffer commandBuffer);
         void draw(VkCommandBuffer commandBuffer);
 
-        // obj loading
-        static std::unique_ptr<Mesh> createModelFromFileObj(Device &device, const std::string& filepath);
-
         // primitive shapes
         static std::unique_ptr<Mesh> createSphere(Device& device, float radius = 1.0f, uint32_t segments = 32, uint32_t rings = 16);
         static std::unique_ptr<Mesh> createCube(Device &device, float size = 1.0f);
+        static std::unique_ptr<Mesh> createPlane(Device &device, float width, float height);
 
     private:
         void createVertexBuffers(const std::vector<Vertex> &vertices);
