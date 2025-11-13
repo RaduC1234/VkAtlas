@@ -1,11 +1,12 @@
 #include "Mesh.hpp"
-#include "utils/Utils.hpp"
+#include "utils/Hash.hpp"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
 #include <cassert>
 #include <stdexcept>
+#include <tiny_gltf.h>
 
 namespace std {
     template<>
@@ -14,6 +15,13 @@ namespace std {
             size_t seed = 0;
             Atlas::hash(seed, vertex.position, vertex.color, vertex.normal, vertex.uv);
             return seed;
+        }
+    };
+
+    template<>
+    struct hash<Atlas::Mesh> {
+        size_t operator()(const Atlas::Mesh &obj) const noexcept {
+            return obj.getHash();
         }
     };
 }
@@ -244,5 +252,25 @@ namespace Atlas {
         builder.indices.push_back(3);
 
         return std::make_unique<Mesh>(device, builder);
+    }
+
+    size_t Mesh::computeHash(const std::vector<Vertex> &vertices, const std::vector<uint32_t> &indices) {
+        size_t vertexHash = 0;
+        Atlas::hash(vertexHash, vertices.size());
+
+        for (const auto &vertex: vertices) {
+            Atlas::hash(vertexHash, vertex.position, vertex.color, vertex.normal, vertex.uv, vertex.tangent);
+        }
+
+        size_t indexHash = 0;
+        Atlas::hash(indexHash, indices.size());
+
+        for (const auto &index: indices) {
+            Atlas::hash(indexHash, index);
+        }
+
+        size_t finalSeed = 0;
+        Atlas::hash(finalSeed, vertexHash, indexHash);
+        return finalSeed;
     }
 }

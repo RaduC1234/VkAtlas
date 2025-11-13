@@ -19,13 +19,12 @@ namespace Atlas {
     Application::Application(const ApplicationSpecification &spec) : specification(spec) {
         AssetManager::create(this->device, spec.pNativeApp);
         this->window->setWindowIcon("assets/icons/android_robot.png");
-        this->window->setTheme(true);
+        this->window->setTheme(Theme::DARK);
 
         loadGameObjects();
     }
 
     Application::~Application() {
-        // Destroy AssetManager before Device to free GPU resources.
         AssetManager::destroy();
     }
 
@@ -63,7 +62,6 @@ namespace Atlas {
 
                 int frameIndex = renderer.getFrameIndex();
 
-                // Update UBO data
                 renderSystem.updateUBO(
                     frameIndex,
                     camera.getProjection(),
@@ -91,7 +89,6 @@ namespace Atlas {
     void Application::loadGameObjects() {
         auto &assetManager = AssetManager::get();
 
-        // Load assets and get handles
         AssetHandle plane0Mesh = assetManager.createPlane(1, 1);
         AssetHandle vase0Mesh = assetManager.loadMesh("models/flat_vase.obj");
         AssetHandle vase1Mesh = assetManager.loadMesh("models/smooth_vase.obj");
@@ -99,8 +96,7 @@ namespace Atlas {
         AssetHandle brickTexture = assetManager.loadTexture("textures/Brick_4K_BaseColor.jpg");
         AssetHandle chairTex;
 
-        // Load chair GLB and add it to the scene
-        AssetHandle chairMesh = assetManager.loadGltf("models/SM_ArmChair_2.glb");
+        AssetHandle chairMesh = assetManager.loadGltf("models/SM_ArmChair_2.glb").back();
         if (chairMesh != INVALID_ASSET_HANDLE) {
             auto chairObj = registry.create();
             auto &chairTransform = registry.emplace<TransformComponent>(chairObj);
@@ -112,7 +108,6 @@ namespace Atlas {
             auto &chairModel = registry.emplace<ModelComponent>(chairObj);
             chairModel.meshHandle = chairMesh;
 
-            // Attempt to assign the first embedded image as albedo if it exists
             std::string firstImageKey = "models/SM_ArmChair_2.glb#mesh0_prim0_baseColor";
             chairTex = assetManager.loadTexture(firstImageKey);
             if (chairTex != INVALID_ASSET_HANDLE) {

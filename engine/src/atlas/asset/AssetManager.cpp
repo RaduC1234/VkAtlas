@@ -2,19 +2,12 @@
 
 #include "core/Log.hpp"
 #include <fstream>
-#include <set>
-
-// Do not define TINYOBJLOADER_IMPLEMENTATION here — the dependency already compiles its implementation
-#include <tiny_obj_loader.h>
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
-#include <memory>
-
 #include <stb_image.h>
-
-// Allow tinygltf to use its own stb image implementation from the dependency build
 #include <tiny_gltf.h>
+#include <tiny_obj_loader.h>
 
 #if defined(__ANDROID__)
 #include "android/AndroidAssetManager.hpp"
@@ -41,7 +34,6 @@ namespace std {
 namespace Atlas {
     std::shared_ptr<AssetManager> AssetManager::instance = nullptr;
 
-    // Protected constructor implementation
     AssetManager::AssetManager(Device &device, void *nativeApp) : device(device), nativeApp(nativeApp) {
     }
 
@@ -241,7 +233,7 @@ namespace Atlas {
         std::string virtualPath = "procedural://plane_wh" + std::to_string(width) + "_" + std::to_string(height);
 
         auto it = pathToHandle.find(virtualPath);
-        if (it!= pathToHandle.end()) {
+        if (it != pathToHandle.end()) {
             AT_TRACE("Plane mesh already created: {} (handle: {})", virtualPath, it->second);
         }
 
@@ -277,328 +269,6 @@ namespace Atlas {
         return handle;
     }
 
-    static const unsigned char *accessorDataPtr(const tinygltf::Model &model, const tinygltf::Accessor &accessor, size_t &strideOut, int &numComponentsOut) {
-        const tinygltf::BufferView &bv = model.bufferViews[accessor.bufferView];
-        const tinygltf::Buffer &buffer = model.buffers[bv.buffer];
-        const unsigned char *base = buffer.data.data() + bv.byteOffset + accessor.byteOffset;
-
-        switch (accessor.type) {
-            case TINYGLTF_TYPE_SCALAR: numComponentsOut = 1;
-                break;
-            case TINYGLTF_TYPE_VEC2: numComponentsOut = 2;
-                break;
-            case TINYGLTF_TYPE_VEC3: numComponentsOut = 3;
-                break;
-            case TINYGLTF_TYPE_VEC4: numComponentsOut = 4;
-                break;
-            default: numComponentsOut = 1;
-                break;
-        }
-
-        // Use tinygltf helper to determine component size in bytes
-        auto componentSize = static_cast<size_t>(tinygltf::GetComponentSizeInBytes(accessor.componentType));
-
-        size_t stride = bv.byteStride ? static_cast<size_t>(bv.byteStride) : (componentSize * static_cast<size_t>(numComponentsOut));
-        strideOut = stride;
-        return base;
-    }
-
-    AssetHandle AssetManager::loadGltf(const std::string &virtualPath) {
-        // If already loaded, return existing handle (caller may change behavior)
-        auto it = pathToHandle.find(virtualPath);
-        if (it != pathToHandle.end()) {
-            AT_TRACE("gltf already loaded: {} (handle: {})", virtualPath, it->second);
-            return it->second;
-        }
-
-        std::filesystem::path fullPath = getAssetsPath() / virtualPath;
-
-        tinygltf::Model model;
-        tinygltf::TinyGLTF loader;
-        loader.SetImageLoader(&tinygltf::LoadImageData, nullptr);
-        std::string err;
-        std::string warn;
-        bool ret = false;
-
-        const std::string ext = fullPath.extension().string();
-        if (ext == ".glb") {
-            ret = loader.LoadBinaryFromFile(&model, &err, &warn, fullPath.string());
-        } else {
-            ret = loader.LoadASCIIFromFile(&model, &err, &warn, fullPath.string());
-        }
-
-        if (!warn.empty()) AT_WARN("gltf warning: {}", warn);
-        if (!err.empty()) AT_ERROR("gltf error: {}", err);
-        if (!ret) {
-            AT_ERROR("Failed to load glTF: {}", fullPath.string());
-            return INVALID_ASSET_HANDLE;
-        }
-
-        // Prepare containers
-        std::vector<AssetHandle> imageHandles(model.images.size(), INVALID_ASSET_HANDLE);
-        std::vector<std::vector<AssetHandle>> meshIndexToHandles(model.meshes.size());
-        AssetHandle firstMeshHandle = INVALID_ASSET_HANDLE;
-
-        // --- First pass: determine which images are used as base color textures ---
-        std::set<int> baseColorImageIndices;
-        for (const auto &mat : model.materials) {
-            if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
-                int texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
-                if (texIdx < static_cast<int>(model.textures.size())) {
-                    int imgIdx = model.textures[texIdx].source;
-                    if (imgIdx >= 0 && imgIdx < static_cast<int>(model.images.size())) {
-                        baseColorImageIndices.insert(imgIdx);
-                    }
-                }
-            }
-        }
-
-        // --- Second pass: only load base color textures ---
-        for (int imgIdx : baseColorImageIndices) {
-            const tinygltf::Image &img = model.images[imgIdx];
-
-            if (img.image.empty()) {
-                // If no image data (rare in GLB), attempt to load from URI if present
-                if (!img.uri.empty()) {
-                    std::filesystem::path imagePath = fullPath.parent_path() / img.uri;
-                    int w = 0, h = 0, c = 0;
-                    stbi_set_flip_vertically_on_load(true);
-                    unsigned char* pixels = stbi_load(imagePath.string().c_str(), &w, &h, &c, STBI_rgb_alpha);
-                    if (!pixels) {
-                        AT_WARN("Failed to load external image: {}", imagePath.string());
-                        continue;
-                    }
-                    AssetHandle hnd = nextHandle++;
-                    std::string imgPath = virtualPath + "#image" + std::to_string(imgIdx);
-                    pathToHandle[imgPath] = hnd;
-                    handleToPath[hnd] = imgPath;
-                    VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
-                    auto sampler = Sampler::create(device, pixels, static_cast<uint32_t>(w), static_cast<uint32_t>(h), format);
-                    texturePool[hnd] = sampler;
-                    stbi_image_free(pixels);
-                    imageHandles[imgIdx] = hnd;
-                    AT_TRACE("Loaded base color texture from URI: image[{}] (handle: {})", imgIdx, hnd);
-                }
-                continue;
-            }
-
-            // img.image contains raw pixel bytes (usually RGBA)
-            AssetHandle hnd = nextHandle++;
-            std::string imgPath = virtualPath + "#image" + std::to_string(imgIdx);
-            pathToHandle[imgPath] = hnd;
-            handleToPath[hnd] = imgPath;
-
-            // Use SRGB for base color textures
-            VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
-            auto sampler = Sampler::create(device, img.image.data(), static_cast<uint32_t>(img.width), static_cast<uint32_t>(img.height), format);
-            texturePool[hnd] = sampler;
-            imageHandles[imgIdx] = hnd;
-            AT_TRACE("Loaded base color texture: image[{}] (handle: {})", imgIdx, hnd);
-        }
-
-        // --- Debug: Log material and texture information ---
-        AT_INFO("=== glTF Debug Info for: {} ===", virtualPath);
-        AT_INFO("Total images: {}", model.images.size());
-        AT_INFO("Loaded base color textures: {}", baseColorImageIndices.size());
-        AT_INFO("Total materials: {}", model.materials.size());
-        for (size_t i = 0; i < model.materials.size(); ++i) {
-            const tinygltf::Material &mat = model.materials[i];
-            AT_INFO("Material[{}]: name='{}', baseColorTexture.index={}",
-                    i, mat.name, mat.pbrMetallicRoughness.baseColorTexture.index);
-            if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
-                int texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
-                if (texIdx < static_cast<int>(model.textures.size())) {
-                    int imgIdx = model.textures[texIdx].source;
-                    AT_INFO("  -> Uses texture[{}] -> image[{}]", texIdx, imgIdx);
-                }
-            }
-        }
-
-        // --- Iterate meshes and primitives -> create Mesh assets ---
-        for (size_t meshIndex = 0; meshIndex < model.meshes.size(); ++meshIndex) {
-            const tinygltf::Mesh &mesh = model.meshes[meshIndex];
-            for (size_t primIndex = 0; primIndex < mesh.primitives.size(); ++primIndex) {
-                const tinygltf::Primitive &prim = mesh.primitives[primIndex];
-
-                // Require POSITION
-                if (prim.attributes.find("POSITION") == prim.attributes.end()) {
-                    AT_WARN("Primitive missing POSITION attribute, skipping (mesh %zu prim %zu)", meshIndex, primIndex);
-                    continue;
-                }
-
-                const tinygltf::Accessor &posAcc = model.accessors[prim.attributes.at("POSITION")];
-                size_t posStride;
-                int posComp;
-                const unsigned char *posBase = accessorDataPtr(model, posAcc, posStride, posComp);
-
-                bool hasNormal = prim.attributes.find("NORMAL") != prim.attributes.end();
-                size_t normStride = 0;
-                int normComp = 0;
-                const unsigned char *normBase = nullptr;
-                if (hasNormal) normBase = accessorDataPtr(model, model.accessors[prim.attributes.at("NORMAL")], normStride, normComp);
-
-                bool hasTex = prim.attributes.find("TEXCOORD_0") != prim.attributes.end();
-                size_t texStride = 0;
-                int texComp = 0;
-                const unsigned char *texBase = nullptr;
-                if (hasTex) {
-                    texBase = accessorDataPtr(model, model.accessors[prim.attributes.at("TEXCOORD_0")], texStride, texComp);
-                    AT_INFO("Mesh[{}] Prim[{}] has UV coordinates (TEXCOORD_0)", meshIndex, primIndex);
-                } else {
-                    AT_WARN("Mesh[{}] Prim[{}] MISSING UV coordinates! Texture will not display.", meshIndex, primIndex);
-                }
-
-                bool hasColor = prim.attributes.find("COLOR_0") != prim.attributes.end();
-                size_t colorStride = 0;
-                int colorComp = 0;
-                const unsigned char *colorBase = nullptr;
-                if (hasColor) colorBase = accessorDataPtr(model, model.accessors[prim.attributes.at("COLOR_0")], colorStride, colorComp);
-
-                Mesh::Builder builder;
-                builder.vertices.clear();
-                builder.indices.clear();
-                std::unordered_map<Mesh::Vertex, uint32_t> uniqueVertices;
-
-                // Build vertices WITH TRANSFORMATIONS APPLIED
-                for (size_t v = 0; v < posAcc.count; ++v) {
-                    Mesh::Vertex vert{};
-                    // positions: apply 180° rotation around Z
-                    auto pv = reinterpret_cast<const float *>(posBase + v * posStride);
-                    vert.position = glm::vec3(-pv[0], -pv[1], pv[2]);
-
-                    if (hasNormal && normBase) {
-                        auto nv = reinterpret_cast<const float *>(normBase + v * normStride);
-                        vert.normal = glm::vec3(nv[0], nv[1], nv[2]);  // Keep normals as-is
-                    } else {
-                        vert.normal = glm::vec3(0.0f);
-                    }
-
-                    if (hasTex && texBase) {
-                        auto tv = reinterpret_cast<const float *>(texBase + v * texStride);
-                        vert.uv = glm::vec2(tv[0], 1.0f - tv[1]);  // Flip V coordinate for glTF
-                    } else {
-                        vert.uv = glm::vec2(0.0f);
-                    }
-
-                    if (hasColor && colorBase) {
-                        auto cv = reinterpret_cast<const float *>(colorBase + v * colorStride);
-                        vert.color = glm::vec3(cv[0], cv[1], cv[2]);
-                    } else {
-                        vert.color = glm::vec3(1.0f);
-                    }
-
-                    // Only add vertex if it doesn't already exist
-                    if (uniqueVertices.count(vert) == 0) {
-                        uniqueVertices[vert] = static_cast<uint32_t>(builder.vertices.size());
-                        builder.vertices.push_back(vert);
-                    }
-                }
-
-                // Build indices - just map to the already-transformed vertices
-                if (prim.indices >= 0) {
-                    const tinygltf::Accessor &idxAcc = model.accessors[prim.indices];
-                    const tinygltf::BufferView &idxView = model.bufferViews[idxAcc.bufferView];
-                    const tinygltf::Buffer &idxBuffer = model.buffers[idxView.buffer];
-                    const unsigned char *base = idxBuffer.data.data() + idxView.byteOffset + idxAcc.byteOffset;
-                    size_t idxStride = idxView.byteStride ? static_cast<size_t>(idxView.byteStride) : tinygltf::GetComponentSizeInBytes(idxAcc.componentType);
-
-                    for (size_t i = 0; i < idxAcc.count; ++i) {
-                        uint32_t index = 0;
-                        switch (idxAcc.componentType) {
-                            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
-                                auto p = reinterpret_cast<const uint16_t *>(base + i * idxStride);
-                                index = static_cast<uint32_t>(*p);
-                                break;
-                            }
-                            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
-                                auto p = reinterpret_cast<const uint32_t *>(base + i * idxStride);
-                                index = *p;
-                                break;
-                            }
-                            case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
-                                auto p = reinterpret_cast<const uint8_t *>(base + i * idxStride);
-                                index = static_cast<uint32_t>(*p);
-                                break;
-                            }
-                            default:
-                                throw std::runtime_error("Unsupported index component type in glTF");
-                        }
-
-                        // Just push the index directly - vertices are already built
-                        builder.indices.push_back(index);
-                    }
-                } else {
-                    // non-indexed: create sequential indices
-                    for (uint32_t i = 0; i < static_cast<uint32_t>(posAcc.count); ++i) {
-                        builder.indices.push_back(i);
-                    }
-                }
-
-                // Create the Mesh asset
-                AssetHandle meshHandle = nextHandle++;
-                std::string meshPath = virtualPath + "#mesh" + std::to_string(meshIndex) + "_prim" + std::to_string(primIndex);
-                pathToHandle[meshPath] = meshHandle;
-                handleToPath[meshHandle] = meshPath;
-
-                auto meshPtr = std::make_unique<Mesh>(device, builder);
-                meshPool[meshHandle] = std::move(meshPtr);
-                meshIndexToHandles[meshIndex].push_back(meshHandle);
-
-                // --- Map material base color texture to a named path ---
-                if (prim.material >= 0 && prim.material < static_cast<int>(model.materials.size())) {
-                    const tinygltf::Material &mat = model.materials[prim.material];
-
-                    // Check for base color texture in PBR metallic-roughness workflow
-                    if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
-                        int texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
-                        if (texIdx < static_cast<int>(model.textures.size())) {
-                            int imgIdx = model.textures[texIdx].source;
-                            if (imgIdx >= 0 && imgIdx < static_cast<int>(imageHandles.size())) {
-                                // Use material name if available, otherwise use index
-                                std::string matName = mat.name.empty() ? ("mat" + std::to_string(prim.material)) : mat.name;
-                                std::string baseColorPath = meshPath + "_baseColor";
-                                std::string matBaseColorPath = virtualPath + "#" + matName + "_baseColor";
-
-                                // Register both paths pointing to the same texture
-                                pathToHandle[baseColorPath] = imageHandles[imgIdx];
-                                pathToHandle[matBaseColorPath] = imageHandles[imgIdx];
-
-                                AT_TRACE("Mapped base color texture: {} -> image[{}] (handle: {})",
-                                         baseColorPath, imgIdx, imageHandles[imgIdx]);
-                            }
-                        }
-                    }
-                }
-
-                if (firstMeshHandle == INVALID_ASSET_HANDLE) firstMeshHandle = meshHandle;
-            }
-        }
-
-        // --- Iterate nodes (scene graph) ---
-        for (size_t nodeIndex = 0; nodeIndex < model.nodes.size(); ++nodeIndex) {
-            const tinygltf::Node &node = model.nodes[nodeIndex];
-            // If node references a mesh, map it to the mesh handles we created for that mesh index
-            if (node.mesh >= 0 && node.mesh < static_cast<int>(meshIndexToHandles.size())) {
-                const auto &handles = meshIndexToHandles[node.mesh];
-                if (!handles.empty()) {
-                    // Create a convenient virtual path for this node
-                    std::string nodePath = virtualPath + "#node" + std::to_string(nodeIndex);
-                    // Map the node to the first mesh handle for compatibility with older API
-                    pathToHandle[nodePath] = handles[0];
-                    handleToPath[handles[0]] = nodePath;
-                }
-            }
-        }
-
-        if (firstMeshHandle == INVALID_ASSET_HANDLE) {
-            AT_ERROR("No meshes created from glTF: {}", virtualPath);
-            return INVALID_ASSET_HANDLE;
-        }
-
-        AT_TRACE("Loaded glTF: {} (first mesh handle: {})", virtualPath, firstMeshHandle);
-        return firstMeshHandle;
-    }
-
     std::shared_ptr<Sampler> AssetManager::getTexture(AssetHandle handle) {
         if (handle == INVALID_ASSET_HANDLE) return nullptr;
 
@@ -618,8 +288,8 @@ namespace Atlas {
         return it != handleToPath.end() ? it->second : "";
     }
 
-    std::vector<char> AssetManager::loadTextFile(const std::string &resource) {
-        std::filesystem::path filePath = get().getAssetsPath() / resource;
+    std::vector<char> AssetManager::loadTextFileAsU8(const std::string &path) {
+        std::filesystem::path filePath = get().getAssetsPath() / path;
 
         std::ifstream file(filePath, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
@@ -637,7 +307,507 @@ namespace Atlas {
         }
 
         file.close();
-        AT_TRACE("Loaded file: {} ({} bytes)", resource, size);
+        AT_TRACE("Loaded file: {} ({} bytes)", path, size);
         return buffer;
+    }
+
+    void AssetManager::saveFileAsU8(const std::vector<char> &data, const std::string &path) {
+        try {
+            std::filesystem::path filePath = get().getAssetsPath() / path;
+
+            std::ofstream out(filePath, std::ios::binary);
+            if (!out.is_open()) {
+                AT_ERROR("Failed to open file for writing: {}", filePath.string());
+                return;
+            }
+
+            if (!data.empty()) {
+                out.write(data.data(), static_cast<std::streamsize>(data.size()));
+                if (!out) {
+                    AT_ERROR("Failed to write data to file: {}", filePath.string());
+                    return;
+                }
+            }
+
+            out.close();
+            AT_TRACE("Saved {} bytes to {}", data.size(), filePath.string());
+        } catch (const std::exception &e) {
+            AT_ERROR("Exception while saving file: {}", e.what());
+        }
+    }
+
+    std::string AssetManager::loadTextFileAsString(const std::string &path) {
+        const auto data = loadTextFileAsU8(path);
+        return {data.begin(), data.end()};
+    }
+
+    void AssetManager::saveFileAsString(const std::string &data, const std::string &path) {
+        const std::vector bytes(data.begin(), data.end());
+        saveFileAsU8(bytes, path);
+    }
+
+    AssetHandle AssetManager::getOrCreateMesh(const std::vector<Mesh::Vertex> &vertices, const std::vector<uint32_t> &indices, const std::string &virtualPath) {
+        size_t meshHash = Mesh::computeHash(vertices, indices);
+
+        // Check if we already have this asset loaded (by hash)
+        auto hashIt = hashToHandle.find(meshHash);
+        if (hashIt != hashToHandle.end()) {
+            AT_TRACE("Mesh already loaded (hash match): {} -> handle {}", virtualPath, hashIt->second);
+            // Create an alias in pathToHandle for this virtual path
+            pathToHandle[virtualPath] = hashIt->second;
+            return hashIt->second;
+        }
+
+        // Create new mesh
+        AssetHandle handle = nextHandle++;
+        pathToHandle[virtualPath] = handle;
+        handleToPath[handle] = virtualPath;
+
+        // Create the mesh and set its hash
+        Mesh::Builder builder;
+        builder.vertices = vertices;
+        builder.indices = indices;
+        auto meshPtr = std::make_unique<Mesh>(device, builder);
+        meshPtr->setHash(meshHash);
+
+        meshPool[handle] = std::move(meshPtr);
+        hashToHandle[meshHash] = handle;
+
+        AT_TRACE("Created new mesh: {} (handle: {}, hash: {})", virtualPath, handle, meshHash);
+        return handle;
+    }
+
+    AssetHandle AssetManager::getOrCreateTexture(const unsigned char *pixels, uint32_t width, uint32_t height, const VkFormat format, const std::string &virtualPath) {
+        // Compute hash for this texture
+        uint32_t bytesPerPixel = 4; // Assuming RGBA
+        VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * bytesPerPixel;
+        size_t textureHash = Sampler::computeHash(pixels, imageSize);
+
+        // Check if we already have this asset loaded (by hash)
+        auto hashIt = hashToHandle.find(textureHash);
+        if (hashIt != hashToHandle.end()) {
+            AT_TRACE("Texture already loaded (hash match): {} -> handle {}", virtualPath, hashIt->second);
+            // Create an alias in pathToHandle for this virtual path
+            pathToHandle[virtualPath] = hashIt->second;
+            return hashIt->second;
+        }
+
+        // Create new texture
+        AssetHandle handle = nextHandle++;
+        pathToHandle[virtualPath] = handle;
+        handleToPath[handle] = virtualPath;
+
+        auto sampler = Sampler::create(device, pixels, width, height, format);
+        sampler->setHash(textureHash);
+
+        texturePool[handle] = sampler;
+        hashToHandle[textureHash] = handle;
+
+        AT_TRACE("Created new texture: {} (handle: {}, hash: {}, {}x{})",
+                 virtualPath, handle, textureHash, width, height);
+        return handle;
+    }
+
+    std::vector<AssetHandle> AssetManager::loadGltf(const std::string &virtualPath) {
+        std::vector<AssetHandle> allAssets;
+
+        // Check if already loaded (by path)
+        auto it = pathToHandle.find(virtualPath);
+        if (it != pathToHandle.end()) {
+            AT_TRACE("glTF already loaded: {} (returning existing assets)", virtualPath);
+
+            // Collect all handles for this gltf (both meshes and textures)
+            for (const auto &[path, handle]: pathToHandle) {
+                if (path.find(virtualPath + "#") == 0) {
+                    allAssets.push_back(handle);
+                }
+            }
+
+            return allAssets;
+        }
+
+        std::filesystem::path fullPath = getAssetsPath() / virtualPath;
+
+        tinygltf::Model model;
+        tinygltf::TinyGLTF loader;
+        std::string err, warn;
+
+        bool success = false;
+        if (fullPath.extension() == ".glb") {
+            success = loader.LoadBinaryFromFile(&model, &err, &warn, fullPath.string());
+        } else {
+            success = loader.LoadASCIIFromFile(&model, &err, &warn, fullPath.string());
+        }
+
+        if (!warn.empty()) AT_WARN("glTF warning: {}", warn);
+        if (!success) {
+            AT_ERROR("Failed to load glTF: {} - {}", fullPath.string(), err);
+            return allAssets; // Return empty vector
+        }
+
+        AT_INFO("Loading glTF file: {} ({} meshes, {} images)",
+                virtualPath, model.meshes.size(), model.images.size());
+
+        // Thread-safe containers for results
+        std::mutex handleMutex;
+        std::vector<AssetHandle> imageHandles(model.images.size(), INVALID_ASSET_HANDLE);
+
+        // Get executor service
+        auto &executor = device.getExecutor();
+
+        // ========================================================================
+        // STEP 1: Load all images in parallel
+        // ========================================================================
+        std::vector<std::future<void> > imageFutures;
+        imageFutures.reserve(model.images.size());
+
+        for (size_t imgIdx = 0; imgIdx < model.images.size(); ++imgIdx) {
+            imageFutures.push_back(executor.submit([this, &model, imgIdx, &imageHandles,
+                    &handleMutex, &virtualPath]() {
+                    const tinygltf::Image &image = model.images[imgIdx];
+
+                    // Skip if no image data
+                    if (image.image.empty()) {
+                        AT_WARN("Image {} has no data", imgIdx);
+                        return;
+                    }
+
+                    int width = image.width;
+                    int height = image.height;
+                    int channels = image.component;
+
+                    // Convert to RGBA if needed
+                    std::vector<unsigned char> rgbaData;
+                    const unsigned char *pixelData = nullptr;
+
+                    if (channels == 4) {
+                        pixelData = image.image.data();
+                    } else if (channels == 3) {
+                        // Convert RGB to RGBA
+                        rgbaData.resize(width * height * 4);
+                        for (int i = 0; i < width * height; ++i) {
+                            rgbaData[i * 4 + 0] = image.image[i * 3 + 0];
+                            rgbaData[i * 4 + 1] = image.image[i * 3 + 1];
+                            rgbaData[i * 4 + 2] = image.image[i * 3 + 2];
+                            rgbaData[i * 4 + 3] = 255;
+                        }
+                        pixelData = rgbaData.data();
+                    } else {
+                        AT_ERROR("Unsupported image channel count: {}", channels);
+                        return;
+                    }
+
+                    // Determine if this is likely a normal map based on name
+                    bool isNormalMap = false;
+                    std::string imgName = image.name;
+                    std::transform(imgName.begin(), imgName.end(), imgName.begin(), ::tolower);
+                    if (imgName.find("normal") != std::string::npos ||
+                        imgName.find("nrm") != std::string::npos) {
+                        isNormalMap = true;
+                    }
+
+                    VkFormat format = isNormalMap ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R8G8B8A8_SRGB;
+
+                    std::string texturePath = virtualPath + "#image" + std::to_string(imgIdx);
+                    if (!image.name.empty()) {
+                        texturePath = virtualPath + "#" + image.name;
+                    }
+
+                    // Thread-safe creation
+                    std::lock_guard<std::mutex> lock(handleMutex);
+                    AssetHandle handle = getOrCreateTexture(pixelData, width, height, format, texturePath);
+                    imageHandles[imgIdx] = handle;
+
+                    AT_TRACE("Loaded image[{}]: {} (handle: {}, {}x{}, {})",
+                             imgIdx, texturePath, handle, width, height,
+                             isNormalMap ? "normal" : "albedo");
+                }));
+        }
+
+        // Wait for all images to load
+        for (auto &future: imageFutures) {
+            future.get();
+        }
+
+        AT_INFO("Loaded {} images from glTF", imageHandles.size());
+
+        // ========================================================================
+        // STEP 2: Load all meshes in parallel
+        // ========================================================================
+        std::vector<std::future<void> > meshFutures;
+        std::vector<std::vector<AssetHandle> > meshIndexToHandles(model.meshes.size());
+        meshFutures.reserve(model.meshes.size());
+
+        for (size_t meshIndex = 0; meshIndex < model.meshes.size(); ++meshIndex) {
+            meshFutures.push_back(executor.submit([this, &model, meshIndex, &meshIndexToHandles, &imageHandles, &handleMutex, &virtualPath]() {
+                    const tinygltf::Mesh &mesh = model.meshes[meshIndex];
+                    std::vector<AssetHandle> primHandles;
+
+                    for (size_t primIndex = 0; primIndex < mesh.primitives.size(); ++primIndex) {
+                        const tinygltf::Primitive &prim = mesh.primitives[primIndex];
+
+                        // Only support triangles
+                        if (prim.mode != TINYGLTF_MODE_TRIANGLES) {
+                            AT_WARN("Skipping non-triangle primitive in mesh[{}]", meshIndex);
+                            continue;
+                        }
+
+                        // Extract vertex data
+                        std::vector<Mesh::Vertex> vertices;
+                        std::vector<uint32_t> indices;
+
+                        // Get position accessor
+                        auto posIt = prim.attributes.find("POSITION");
+                        if (posIt == prim.attributes.end()) {
+                            AT_ERROR("Primitive missing POSITION attribute");
+                            continue;
+                        }
+
+                        const tinygltf::Accessor &posAcc = model.accessors[posIt->second];
+                        const tinygltf::BufferView &posView = model.bufferViews[posAcc.bufferView];
+                        const tinygltf::Buffer &posBuffer = model.buffers[posView.buffer];
+                        const unsigned char *posBase = posBuffer.data.data() + posView.byteOffset + posAcc.byteOffset;
+                        size_t posStride = posView.byteStride ? posView.byteStride : (3 * sizeof(float));
+
+                        // Get optional attributes
+                        const unsigned char *normBase = nullptr;
+                        size_t normStride = 0;
+                        bool hasNormal = false;
+                        auto normIt = prim.attributes.find("NORMAL");
+                        if (normIt != prim.attributes.end()) {
+                            const tinygltf::Accessor &normAcc = model.accessors[normIt->second];
+                            const tinygltf::BufferView &normView = model.bufferViews[normAcc.bufferView];
+                            const tinygltf::Buffer &normBuffer = model.buffers[normView.buffer];
+                            normBase = normBuffer.data.data() + normView.byteOffset + normAcc.byteOffset;
+                            normStride = normView.byteStride ? normView.byteStride : (3 * sizeof(float));
+                            hasNormal = true;
+                        }
+
+                        const unsigned char *texBase = nullptr;
+                        size_t texStride = 0;
+                        bool hasTex = false;
+                        auto texIt = prim.attributes.find("TEXCOORD_0");
+                        if (texIt != prim.attributes.end()) {
+                            const tinygltf::Accessor &texAcc = model.accessors[texIt->second];
+                            const tinygltf::BufferView &texView = model.bufferViews[texAcc.bufferView];
+                            const tinygltf::Buffer &texBuffer = model.buffers[texView.buffer];
+                            texBase = texBuffer.data.data() + texView.byteOffset + texAcc.byteOffset;
+                            texStride = texView.byteStride ? texView.byteStride : (2 * sizeof(float));
+                            hasTex = true;
+                        }
+
+                        const unsigned char *colorBase = nullptr;
+                        size_t colorStride = 0;
+                        bool hasColor = false;
+                        auto colorIt = prim.attributes.find("COLOR_0");
+                        if (colorIt != prim.attributes.end()) {
+                            const tinygltf::Accessor &colorAcc = model.accessors[colorIt->second];
+                            const tinygltf::BufferView &colorView = model.bufferViews[colorAcc.bufferView];
+                            const tinygltf::Buffer &colorBuffer = model.buffers[colorView.buffer];
+                            colorBase = colorBuffer.data.data() + colorView.byteOffset + colorAcc.byteOffset;
+                            colorStride = colorView.byteStride ? colorView.byteStride : (3 * sizeof(float));
+                            hasColor = true;
+                        }
+
+                        const unsigned char *tangentBase = nullptr;
+                        size_t tangentStride = 0;
+                        bool hasTangent = false;
+                        auto tangentIt = prim.attributes.find("TANGENT");
+                        if (tangentIt != prim.attributes.end()) {
+                            const tinygltf::Accessor &tangentAcc = model.accessors[tangentIt->second];
+                            const tinygltf::BufferView &tangentView = model.bufferViews[tangentAcc.bufferView];
+                            const tinygltf::Buffer &tangentBuffer = model.buffers[tangentView.buffer];
+                            tangentBase = tangentBuffer.data.data() + tangentView.byteOffset + tangentAcc.byteOffset;
+                            tangentStride = tangentView.byteStride ? tangentView.byteStride : (4 * sizeof(float));
+                            hasTangent = true;
+                        }
+
+                        // Build vertices
+                        vertices.reserve(posAcc.count);
+                        for (size_t v = 0; v < posAcc.count; ++v) {
+                            Mesh::Vertex vert{};
+
+                            // Position - apply 180° rotation around Z for coordinate system conversion
+                            auto pv = reinterpret_cast<const float *>(posBase + v * posStride);
+                            vert.position = glm::vec3(-pv[0], -pv[1], pv[2]);
+
+                            // Normal
+                            if (hasNormal) {
+                                auto nv = reinterpret_cast<const float *>(normBase + v * normStride);
+                                vert.normal = glm::vec3(nv[0], nv[1], nv[2]);
+                            } else {
+                                vert.normal = glm::vec3(0.0f);
+                            }
+
+
+                            if (hasTex) {
+                                auto tv = reinterpret_cast<const float *>(texBase + v * texStride);
+                                vert.uv = glm::vec2(tv[0], 1.0f - tv[1]); // UV - flip V coordinate for vulkan
+                            } else {
+                                vert.uv = glm::vec2(0.0f);
+                            }
+
+                            // Color
+                            if (hasColor) {
+                                auto cv = reinterpret_cast<const float *>(colorBase + v * colorStride);
+                                vert.color = glm::vec3(cv[0], cv[1], cv[2]);
+                            } else {
+                                vert.color = glm::vec3(1.0f);
+                            }
+
+                            // Tangent
+                            if (hasTangent) {
+                                auto tv = reinterpret_cast<const float *>(tangentBase + v * tangentStride);
+                                vert.tangent = glm::vec3(tv[0], tv[1], tv[2]);
+                            } else {
+                                vert.tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+                            }
+
+                            vertices.push_back(vert);
+                        }
+
+                        // Build indices
+                        if (prim.indices >= 0) {
+                            const tinygltf::Accessor &idxAcc = model.accessors[prim.indices];
+                            const tinygltf::BufferView &idxView = model.bufferViews[idxAcc.bufferView];
+                            const tinygltf::Buffer &idxBuffer = model.buffers[idxView.buffer];
+                            const unsigned char *base = idxBuffer.data.data() + idxView.byteOffset + idxAcc.byteOffset;
+                            size_t idxStride = idxView.byteStride ? idxView.byteStride : tinygltf::GetComponentSizeInBytes(idxAcc.componentType);
+
+                            indices.reserve(idxAcc.count);
+                            for (size_t i = 0; i < idxAcc.count; ++i) {
+                                uint32_t index = 0;
+                                switch (idxAcc.componentType) {
+                                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
+                                        auto p = reinterpret_cast<const uint16_t *>(base + i * idxStride);
+                                        index = static_cast<uint32_t>(*p);
+                                        break;
+                                    }
+                                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
+                                        auto p = reinterpret_cast<const uint32_t *>(base + i * idxStride);
+                                        index = *p;
+                                        break;
+                                    }
+                                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
+                                        auto p = reinterpret_cast<const uint8_t *>(base + i * idxStride);
+                                        index = static_cast<uint32_t>(*p);
+                                        break;
+                                    }
+                                    default:
+                                        AT_ERROR("Unsupported index component type");
+                                        break;
+                                }
+                                indices.push_back(index);
+                            }
+                        } else {
+                            // Non-indexed: create sequential indices
+                            indices.reserve(vertices.size());
+                            for (uint32_t i = 0; i < static_cast<uint32_t>(vertices.size()); ++i) {
+                                indices.push_back(i);
+                            }
+                        }
+
+                        // Create mesh path
+                        std::string meshPath = virtualPath + "#mesh" + std::to_string(meshIndex) +
+                                               "_prim" + std::to_string(primIndex);
+
+                        // Thread-safe mesh creation with hash-based deduplication
+                        AssetHandle meshHandle; {
+                            std::lock_guard<std::mutex> lock(handleMutex);
+                            meshHandle = getOrCreateMesh(vertices, indices, meshPath);
+                        }
+
+                        primHandles.push_back(meshHandle);
+
+                        // Map material textures (thread-safe)
+                        if (prim.material >= 0 && prim.material < static_cast<int>(model.materials.size())) {
+                            const tinygltf::Material &mat = model.materials[prim.material];
+                            std::string matName = mat.name.empty() ? ("mat" + std::to_string(prim.material)) : mat.name;
+
+                            std::lock_guard<std::mutex> lock(handleMutex);
+
+                            // Base color texture (albedo)
+                            if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+                                int texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
+                                if (texIdx < static_cast<int>(model.textures.size())) {
+                                    int imgIdx = model.textures[texIdx].source;
+                                    if (imgIdx >= 0 && imgIdx < static_cast<int>(imageHandles.size())) {
+                                        std::string baseColorPath = meshPath + "_baseColor";
+                                        std::string matBaseColorPath = virtualPath + "#" + matName + "_baseColor";
+                                        pathToHandle[baseColorPath] = imageHandles[imgIdx];
+                                        pathToHandle[matBaseColorPath] = imageHandles[imgIdx];
+                                    }
+                                }
+                            }
+
+                            // Normal map texture
+                            if (mat.normalTexture.index >= 0) {
+                                int texIdx = mat.normalTexture.index;
+                                if (texIdx < static_cast<int>(model.textures.size())) {
+                                    int imgIdx = model.textures[texIdx].source;
+                                    if (imgIdx >= 0 && imgIdx < static_cast<int>(imageHandles.size())) {
+                                        std::string normalPath = meshPath + "_normal";
+                                        std::string matNormalPath = virtualPath + "#" + matName + "_normal";
+                                        pathToHandle[normalPath] = imageHandles[imgIdx];
+                                        pathToHandle[matNormalPath] = imageHandles[imgIdx];
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Store handles for this mesh
+                    std::lock_guard<std::mutex> lock(handleMutex);
+                    meshIndexToHandles[meshIndex] = primHandles;
+                }));
+        }
+
+        // Wait for all meshes to load
+        for (auto &future: meshFutures) {
+            future.get();
+        }
+
+        // ========================================================================
+        // STEP 3: Collect all asset handles into one vector
+        // ========================================================================
+
+        // Add all texture handles
+        for (auto handle: imageHandles) {
+            if (handle != INVALID_ASSET_HANDLE) {
+                allAssets.push_back(handle);
+            }
+        }
+
+        // Add all mesh handles
+        for (const auto &handles: meshIndexToHandles) {
+            for (auto handle: handles) {
+                if (handle != INVALID_ASSET_HANDLE) {
+                    allAssets.push_back(handle);
+                }
+            }
+        }
+
+        // ========================================================================
+        // STEP 4: Map scene nodes to mesh handles
+        // ========================================================================
+        for (size_t nodeIndex = 0; nodeIndex < model.nodes.size(); ++nodeIndex) {
+            const tinygltf::Node &node = model.nodes[nodeIndex];
+            if (node.mesh >= 0 && node.mesh < static_cast<int>(meshIndexToHandles.size())) {
+                const auto &handles = meshIndexToHandles[node.mesh];
+                if (!handles.empty()) {
+                    std::string nodePath = virtualPath + "#node" + std::to_string(nodeIndex);
+                    pathToHandle[nodePath] = handles[0];
+                }
+            }
+        }
+
+        // Store main path pointing to first asset (for backward compatibility)
+        if (!allAssets.empty()) {
+            pathToHandle[virtualPath] = allAssets[0];
+        }
+
+        AT_INFO("Successfully loaded glTF: {} ({} total assets: {} meshes, {} textures)", virtualPath, allAssets.size(), allAssets.size() - imageHandles.size(), imageHandles.size());
+
+        return allAssets;
     }
 }

@@ -1,31 +1,25 @@
 #include "Sampler.hpp"
 
 #include <cassert>
+#include <future>
 #include <stdexcept>
+#include <thread>
 
 #include "stb_image.h"
 #include "Buffer.hpp"
-#include "utils/Utils.hpp"
+#include "utils/Hash.hpp"
+
+namespace std {
+    template<>
+    struct hash<Atlas::Sampler> {
+        size_t operator()(const Atlas::Sampler &obj) const noexcept {
+            return obj.getHash();
+        }
+    };
+}
 
 namespace Atlas {
-    Sampler::Sampler(Device &device, uint32_t width, uint32_t height): device(device), width(width), height(height) {
-    }
-
-    Sampler::~Sampler() {
-        vkDestroySampler(device.device(), sampler, nullptr);
-        vkDestroyImageView(device.device(), imageView, nullptr);
-        vmaDestroyImage(device.allocator(), textureImage, textureImageMemory);
-    }
-
-    void Sampler::createTextureImage(const void *pixels, VkFormat format) {
-        VkFormat actualFormat = format;
-
-        if (format == VK_FORMAT_R8G8B8_SRGB) {
-            actualFormat = VK_FORMAT_R8G8B8A8_SRGB;
-        } else if (format == VK_FORMAT_R8G8B8_UNORM) {
-            actualFormat = VK_FORMAT_R8G8B8A8_UNORM;
-        }
-
+    Sampler::Sampler(Device &device, uint32_t width, uint32_t height, const void *pixels, VkFormat format): device(device), width(width), height(height) {
         uint32_t bytesPerPixel;
         switch (format) {
             case VK_FORMAT_R8_UNORM:
@@ -38,6 +32,26 @@ namespace Atlas {
         }
 
         const VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * static_cast<VkDeviceSize>(height) * bytesPerPixel;
+
+        createTextureImage(pixels, imageSize, format);
+        createTextureImageView();
+        createTextureSampler();
+    }
+
+    Sampler::~Sampler() {
+        vkDestroySampler(device.device(), sampler, nullptr);
+        vkDestroyImageView(device.device(), imageView, nullptr);
+        vmaDestroyImage(device.allocator(), textureImage, textureImageMemory);
+    }
+
+    void Sampler::createTextureImage(const void *pixels, VkDeviceSize imageSize, VkFormat format) {
+        VkFormat actualFormat = format;
+
+        if (format == VK_FORMAT_R8G8B8_SRGB) {
+            actualFormat = VK_FORMAT_R8G8B8A8_SRGB;
+        } else if (format == VK_FORMAT_R8G8B8_UNORM) {
+            actualFormat = VK_FORMAT_R8G8B8A8_UNORM;
+        }
 
         Buffer stagingBuffer(
             device,
@@ -196,14 +210,7 @@ namespace Atlas {
     }
 
     std::shared_ptr<Sampler> Sampler::create(Device &device, const void *pixels, uint32_t width, uint32_t height, VkFormat format) {
-        auto texture = std::shared_ptr<Sampler>(new Sampler(device, width, height));
-
-        texture->createTextureImage(pixels, format);
-
-        texture->createTextureImageView();
-        texture->createTextureSampler();
-
-        return texture;
+        return std::shared_ptr<Sampler>(new Sampler(device, width, height, pixels, format));
     }
 
     std::shared_ptr<Sampler> Sampler::create(Device &device, const std::string &filepath, VkFormat format) {
@@ -219,5 +226,31 @@ namespace Atlas {
         stbi_image_free(pixels);
 
         return texture;
+    }
+
+    size_t Sampler::computeHash(const void *pixels, const VkDeviceSize imageSize) {
+        if (pixels == nullptr || imageSize == 0) {
+            return 0;
+        }
+
+        size_t seed = 0;
+        Atlas::hash(seed, imageSize);
+
+        const auto *byteData = static_cast<const unsigned char *>(pixels);
+        const auto *wordData = reinterpret_cast<const size_t *>(byteData);
+        size_t numWords = imageSize / sizeof(size_t);
+
+        for (size_t i = 0; i < numWords; ++i) {
+            Atlas::hash(seed, wordData[i]);
+        }
+
+        const unsigned char *remainingBytes = byteData + (numWords * sizeof(size_t));
+        size_t remaining = imageSize % sizeof(size_t);
+
+        for (size_t i = 0; i < remaining; ++i) {
+            Atlas::hash(seed, remainingBytes[i]);
+        }
+
+        return seed;
     }
 }

@@ -1,15 +1,20 @@
 #pragma once
+
 #include <entt/entt.hpp>
 
 namespace Atlas {
     class Scene {
     public:
+        virtual ~Scene() = default;
 
-        virtual ~Scene() = 0;
+        virtual void onLoad();
+        virtual void onUpdate();
+        virtual void onRender();
+        virtual void onDelete();
 
-        virtual void onStart() = 0;
-        virtual void onUpdate(float deltaTime) = 0;
-
+        static Scene loadSceneFromJson(const std::string &json);
+        static std::string saveSceneToJson(const Scene &scene);
+    protected:
         entt::registry registry;
     };
 }

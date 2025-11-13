@@ -5,6 +5,7 @@
 #include "core/Window.hpp"
 
 #include "vk_mem_alloc.h"
+#include "utils/ExecutorService.hpp"
 
 namespace Atlas {
 #if defined(NDEBUG) || defined(__ANDROID__)
@@ -59,6 +60,8 @@ namespace Atlas {
         VkCommandBuffer beginSingleTimeCommands();
         void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
 
+        ExecutorService &getExecutor() const { return *executor; }
+
     private:
         void createInstance();
         void setupDebugMessenger();
@@ -69,10 +72,10 @@ namespace Atlas {
         void createCommandPool();
 
         // helper functions
-        bool checkValidationLayerSupport() ;
+        bool checkValidationLayerSupport();
         std::vector<const char *> getRequiredExtensions();
-        VkPhysicalDevice findBestDevice(const std::vector<VkPhysicalDevice>& devices);
-        void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT & DebugCreateInfo);
+        VkPhysicalDevice findBestDevice(const std::vector<VkPhysicalDevice> &devices);
+        void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &DebugCreateInfo);
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
         bool checkDeviceExtensionSupport(VkPhysicalDevice device);
         void hasGflwRequiredInstanceExtensions();
@@ -97,5 +100,6 @@ namespace Atlas {
         };
 
         VmaAllocator allocator_;
+        std::unique_ptr<ExecutorService> executor;
     };
 }

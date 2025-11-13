@@ -41,6 +41,8 @@ namespace Atlas {
         createLogicalDevice();
         createVmaAllocator();
         createCommandPool();
+
+        this->executor = std::make_unique<ExecutorService>();
     }
 
     Device::~Device() {

@@ -103,13 +103,11 @@ namespace Atlas {
     }
 
     void DesktopWindow::setWindowIcon(const std::string &iconPath) {
-        // No-op when empty
         if (iconPath.empty()) {
             return;
         }
 
         int iconWidth = 0, iconHeight = 0, iconChannels = 0;
-        // Request 4 channels (RGBA) because GLFW expects 4-byte RGBA pixels
         unsigned char *pixels = stbi_load(iconPath.c_str(), &iconWidth, &iconHeight, &iconChannels, 4);
 
         if (!pixels) {
@@ -122,7 +120,6 @@ namespace Atlas {
         image.height = iconHeight;
         image.pixels = pixels;
 
-        // GLFW copies the pixels internally, so we can free after the call
         glfwSetWindowIcon(this->glfwWindow, 1, &image);
 
         stbi_image_free(pixels);
@@ -139,8 +136,7 @@ namespace Atlas {
             // Try Windows 11 method first (DWMWA_USE_IMMERSIVE_DARK_MODE = 20)
             HRESULT hr = DwmSetWindowAttribute(hwnd, 20, &useDarkMode, sizeof(useDarkMode));
 
-            // If that fails, try Windows 10 undocumented attribute (19)
-            if (FAILED(hr)) {
+            if (FAILED(hr)) {  // If that fails, try Windows 10 undocumented attribute (19)
                 DwmSetWindowAttribute(hwnd, 19, &useDarkMode, sizeof(useDarkMode));
             }
         }

@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <unordered_map>
+#include <entt/entity/registry.hpp>
 
 #include "renderer/Mesh.hpp"
 #include "renderer/Sampler.hpp"
@@ -86,7 +87,7 @@ namespace Atlas {
          * @param virtualPath Path to the glTF file inside assets
          * @return AssetHandle of the first mesh created, or INVALID_ASSET_HANDLE on failure
          */
-        AssetHandle loadGltf(const std::string &virtualPath);
+        std::vector<AssetHandle> loadGltf(const std::string &virtualPath);
 
         /**
          * @brief Create a default white 1x1 texture and return its handle
@@ -118,16 +119,22 @@ namespace Atlas {
 #pragma region non-coherent functions
         /**
          * @brief Load a text file from assets
-         * @param resource Path to the resource relative to assets directory
+         * @param path Path to the resource relative to assets directory
          * @return Vector of characters containing the file data
          */
-        static std::vector<char> loadTextFile(const std::string &resource);
+        static std::vector<char> loadTextFileAsU8(const std::string &path);
+        static void saveFileAsU8(const std::vector<char> &data, const std::string &path);
+
+        static std::string loadTextFileAsString(const std::string &path);
+        static void saveFileAsString(const std::string &data, const std::string &path);
 #pragma endregion
         /**
          * @brief Get the platform-specific assets path
          * @return Path to the assets directory
          */
         [[nodiscard]] virtual std::filesystem::path getAssetsPath() const = 0;
+
+        entt::registry loadSceneFromJson(const std::string &filePath) const;
 
     protected:
         /**
@@ -136,6 +143,9 @@ namespace Atlas {
          * @param nativeApp Platform-specific application handle
          */
         explicit AssetManager(Device &device, void *nativeApp = nullptr);
+
+        AssetHandle getOrCreateMesh(const std::vector<Mesh::Vertex> &vertices, const std::vector<uint32_t> &indices, const std::string &virtualPath);
+        AssetHandle getOrCreateTexture(const unsigned char *pixels, uint32_t width, uint32_t height, VkFormat format, const std::string &virtualPath);
 
         Device &device;
         void *nativeApp;
@@ -148,6 +158,8 @@ namespace Atlas {
         // Bidirectional lookup
         std::unordered_map<std::string, AssetHandle> pathToHandle;
         std::unordered_map<AssetHandle, std::string> handleToPath;
+
+        std::unordered_map<size_t, AssetHandle> hashToHandle;
 
         // Resource pools
         std::unordered_map<AssetHandle, std::shared_ptr<Sampler> > texturePool;

@@ -6,9 +6,10 @@
 #include <glm/glm.hpp>
 
 #include "Buffer.hpp"
+#include "asset/Asset.hpp"
 
 namespace Atlas {
-    class Mesh {
+    class Mesh final : public Asset {
     public:
         struct Vertex {
             glm::vec3 position{};
@@ -31,9 +32,8 @@ namespace Atlas {
 
             void loadModel(const std::string& filepath);
         };
-
         Mesh(Device &device, const Builder &builder);
-        ~Mesh() = default;
+        ~Mesh() override = default;
 
         Mesh(const Mesh &) = delete;
         Mesh &operator=(const Mesh &) = delete;
@@ -41,12 +41,13 @@ namespace Atlas {
         void bind(VkCommandBuffer commandBuffer);
         void draw(VkCommandBuffer commandBuffer);
 
-        // primitive shapes
         static std::unique_ptr<Mesh> createSphere(Device& device, float radius = 1.0f, uint32_t segments = 32, uint32_t rings = 16);
         static std::unique_ptr<Mesh> createCube(Device &device, float size = 1.0f);
         static std::unique_ptr<Mesh> createPlane(Device &device, float width, float height);
 
+        static size_t computeHash(const std::vector<Vertex> &vertices, const std::vector<uint32_t> &indices);
     private:
+
         void createVertexBuffers(const std::vector<Vertex> &vertices);
         void createIndexBuffers(const std::vector<uint32_t> &indices);
 
