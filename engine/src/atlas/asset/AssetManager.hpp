@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <tiny_gltf.h>
 #include <unordered_map>
 #include <entt/entity/registry.hpp>
 
@@ -89,6 +90,8 @@ namespace Atlas {
          */
         std::vector<AssetHandle> loadGltf(const std::string &virtualPath);
 
+        entt::registry loadGltfAsScene(const std::string &path);
+
         /**
          * @brief Create a default white 1x1 texture and return its handle
          * @return AssetHandle for the created white texture
@@ -146,6 +149,9 @@ namespace Atlas {
 
         AssetHandle getOrCreateMesh(const std::vector<Mesh::Vertex> &vertices, const std::vector<uint32_t> &indices, const std::string &virtualPath);
         AssetHandle getOrCreateTexture(const unsigned char *pixels, uint32_t width, uint32_t height, VkFormat format, const std::string &virtualPath);
+
+        glm::mat4 getNodeTransform(const tinygltf::Node &node);
+        void processNode(entt::registry &registry, const tinygltf::Model &model, int32_t nodeIdx, const glm::mat4 &parentTransform, const std::string &virtualPath, std::vector<entt::entity> &outEntities);
 
         Device &device;
         void *nativeApp;

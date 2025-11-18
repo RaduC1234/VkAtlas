@@ -19,7 +19,7 @@ namespace Atlas {
 
         CameraSystem(Window &window);
 
-        void update(entt::registry &registry, float deltaTime) const;;
+        void update(entt::registry &registry, float deltaTime, float screenAspect) const;;
 
     private:
         Window &window;

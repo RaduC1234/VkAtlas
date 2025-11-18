@@ -9,13 +9,14 @@ layout(location = 3) in vec2 fragUV;
 layout(push_constant) uniform Push {
     mat4 modelMatrix;
     mat4 normalMatrix;
-    uint textureIndex;  // Index into the bindless texture array
+    vec4 baseColor;
+    uint textureIndex;// Index into the bindless texture array
 } push;
 
 layout(set = 0, binding = 0) uniform GlobalUbo {
     mat4 projectionMatrix;
     mat4 viewMatrix;
-    vec4 ambientLightColor;  // w is intensity
+    vec4 ambientLightColor;// w is intensity
     vec3 lightPosition;
     float padding1;
     vec4 lightColor;
@@ -42,11 +43,10 @@ void main() {
     vec3 ambientLight = ubo.ambientLightColor.rgb * ubo.ambientLightColor.w;
     vec3 diffuseLight = lightColor * max(dot(normalize(fragNormalWorld), normalize(directionToLight)), 0.0);
 
-    // Sample texture using bindless index with nonuniformEXT
     vec3 texColor = texture(textures[nonuniformEXT(push.textureIndex)], fragUV).rgb;
 
     // Combine texture with vertex color and lighting
-    vec3 finalColor = texColor * fragColor;
+    vec3 finalColor = texColor * fragColor * push.baseColor.rgb;
     vec3 srgbColor = linearToSRGB((diffuseLight + ambientLight) * finalColor);
     outColor = vec4(srgbColor, 1.0);
 }

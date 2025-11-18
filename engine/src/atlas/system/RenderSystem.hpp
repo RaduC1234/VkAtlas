@@ -1,13 +1,11 @@
 #pragma once
 #include <entt/entt.hpp>
 
-#include "renderer/Pipeline.hpp"
-#include "renderer/Descriptors.hpp"
-#include "renderer/Sampler.hpp"
-#include "renderer/Buffer.hpp"
 #include "asset/AssetManager.hpp"
+#include "renderer/Descriptors.hpp"
+#include "renderer/Device.hpp"
+#include "renderer/Pipeline.hpp"
 
-#include <glm/glm.hpp>
 
 namespace Atlas {
     class RenderSystem {

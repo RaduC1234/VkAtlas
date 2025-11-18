@@ -8,6 +8,10 @@
 #include <stb_image.h>
 #include <tiny_gltf.h>
 #include <tiny_obj_loader.h>
+#include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#include "entity/Object.hpp"
 
 #if defined(__ANDROID__)
 #include "android/AndroidAssetManager.hpp"
@@ -540,226 +544,226 @@ namespace Atlas {
 
         for (size_t meshIndex = 0; meshIndex < model.meshes.size(); ++meshIndex) {
             meshFutures.push_back(executor.submit([this, &model, meshIndex, &meshIndexToHandles, &imageHandles, &handleMutex, &virtualPath]() {
-                    const tinygltf::Mesh &mesh = model.meshes[meshIndex];
-                    std::vector<AssetHandle> primHandles;
+                const tinygltf::Mesh &mesh = model.meshes[meshIndex];
+                std::vector<AssetHandle> primHandles;
 
-                    for (size_t primIndex = 0; primIndex < mesh.primitives.size(); ++primIndex) {
-                        const tinygltf::Primitive &prim = mesh.primitives[primIndex];
+                for (size_t primIndex = 0; primIndex < mesh.primitives.size(); ++primIndex) {
+                    const tinygltf::Primitive &prim = mesh.primitives[primIndex];
 
-                        // Only support triangles
-                        if (prim.mode != TINYGLTF_MODE_TRIANGLES) {
-                            AT_WARN("Skipping non-triangle primitive in mesh[{}]", meshIndex);
-                            continue;
-                        }
+                    // Only support triangles
+                    if (prim.mode != TINYGLTF_MODE_TRIANGLES) {
+                        AT_WARN("Skipping non-triangle primitive in mesh[{}]", meshIndex);
+                        continue;
+                    }
 
-                        // Extract vertex data
-                        std::vector<Mesh::Vertex> vertices;
-                        std::vector<uint32_t> indices;
+                    // Extract vertex data
+                    std::vector<Mesh::Vertex> vertices;
+                    std::vector<uint32_t> indices;
 
-                        // Get position accessor
-                        auto posIt = prim.attributes.find("POSITION");
-                        if (posIt == prim.attributes.end()) {
-                            AT_ERROR("Primitive missing POSITION attribute");
-                            continue;
-                        }
+                    // Get position accessor
+                    auto posIt = prim.attributes.find("POSITION");
+                    if (posIt == prim.attributes.end()) {
+                        AT_ERROR("Primitive missing POSITION attribute");
+                        continue;
+                    }
 
-                        const tinygltf::Accessor &posAcc = model.accessors[posIt->second];
-                        const tinygltf::BufferView &posView = model.bufferViews[posAcc.bufferView];
-                        const tinygltf::Buffer &posBuffer = model.buffers[posView.buffer];
-                        const unsigned char *posBase = posBuffer.data.data() + posView.byteOffset + posAcc.byteOffset;
-                        size_t posStride = posView.byteStride ? posView.byteStride : (3 * sizeof(float));
+                    const tinygltf::Accessor &posAcc = model.accessors[posIt->second];
+                    const tinygltf::BufferView &posView = model.bufferViews[posAcc.bufferView];
+                    const tinygltf::Buffer &posBuffer = model.buffers[posView.buffer];
+                    const unsigned char *posBase = posBuffer.data.data() + posView.byteOffset + posAcc.byteOffset;
+                    size_t posStride = posView.byteStride ? posView.byteStride : (3 * sizeof(float));
 
-                        // Get optional attributes
-                        const unsigned char *normBase = nullptr;
-                        size_t normStride = 0;
-                        bool hasNormal = false;
-                        auto normIt = prim.attributes.find("NORMAL");
-                        if (normIt != prim.attributes.end()) {
-                            const tinygltf::Accessor &normAcc = model.accessors[normIt->second];
-                            const tinygltf::BufferView &normView = model.bufferViews[normAcc.bufferView];
-                            const tinygltf::Buffer &normBuffer = model.buffers[normView.buffer];
-                            normBase = normBuffer.data.data() + normView.byteOffset + normAcc.byteOffset;
-                            normStride = normView.byteStride ? normView.byteStride : (3 * sizeof(float));
-                            hasNormal = true;
-                        }
+                    // Get optional attributes
+                    const unsigned char *normBase = nullptr;
+                    size_t normStride = 0;
+                    bool hasNormal = false;
+                    auto normIt = prim.attributes.find("NORMAL");
+                    if (normIt != prim.attributes.end()) {
+                        const tinygltf::Accessor &normAcc = model.accessors[normIt->second];
+                        const tinygltf::BufferView &normView = model.bufferViews[normAcc.bufferView];
+                        const tinygltf::Buffer &normBuffer = model.buffers[normView.buffer];
+                        normBase = normBuffer.data.data() + normView.byteOffset + normAcc.byteOffset;
+                        normStride = normView.byteStride ? normView.byteStride : (3 * sizeof(float));
+                        hasNormal = true;
+                    }
 
-                        const unsigned char *texBase = nullptr;
-                        size_t texStride = 0;
-                        bool hasTex = false;
-                        auto texIt = prim.attributes.find("TEXCOORD_0");
-                        if (texIt != prim.attributes.end()) {
-                            const tinygltf::Accessor &texAcc = model.accessors[texIt->second];
-                            const tinygltf::BufferView &texView = model.bufferViews[texAcc.bufferView];
-                            const tinygltf::Buffer &texBuffer = model.buffers[texView.buffer];
-                            texBase = texBuffer.data.data() + texView.byteOffset + texAcc.byteOffset;
-                            texStride = texView.byteStride ? texView.byteStride : (2 * sizeof(float));
-                            hasTex = true;
-                        }
+                    const unsigned char *texBase = nullptr;
+                    size_t texStride = 0;
+                    bool hasTex = false;
+                    auto texIt = prim.attributes.find("TEXCOORD_0");
+                    if (texIt != prim.attributes.end()) {
+                        const tinygltf::Accessor &texAcc = model.accessors[texIt->second];
+                        const tinygltf::BufferView &texView = model.bufferViews[texAcc.bufferView];
+                        const tinygltf::Buffer &texBuffer = model.buffers[texView.buffer];
+                        texBase = texBuffer.data.data() + texView.byteOffset + texAcc.byteOffset;
+                        texStride = texView.byteStride ? texView.byteStride : (2 * sizeof(float));
+                        hasTex = true;
+                    }
 
-                        const unsigned char *colorBase = nullptr;
-                        size_t colorStride = 0;
-                        bool hasColor = false;
-                        auto colorIt = prim.attributes.find("COLOR_0");
-                        if (colorIt != prim.attributes.end()) {
-                            const tinygltf::Accessor &colorAcc = model.accessors[colorIt->second];
-                            const tinygltf::BufferView &colorView = model.bufferViews[colorAcc.bufferView];
-                            const tinygltf::Buffer &colorBuffer = model.buffers[colorView.buffer];
-                            colorBase = colorBuffer.data.data() + colorView.byteOffset + colorAcc.byteOffset;
-                            colorStride = colorView.byteStride ? colorView.byteStride : (3 * sizeof(float));
-                            hasColor = true;
-                        }
+                    const unsigned char *colorBase = nullptr;
+                    size_t colorStride = 0;
+                    bool hasColor = false;
+                    auto colorIt = prim.attributes.find("COLOR_0");
+                    if (colorIt != prim.attributes.end()) {
+                        const tinygltf::Accessor &colorAcc = model.accessors[colorIt->second];
+                        const tinygltf::BufferView &colorView = model.bufferViews[colorAcc.bufferView];
+                        const tinygltf::Buffer &colorBuffer = model.buffers[colorView.buffer];
+                        colorBase = colorBuffer.data.data() + colorView.byteOffset + colorAcc.byteOffset;
+                        colorStride = colorView.byteStride ? colorView.byteStride : (3 * sizeof(float));
+                        hasColor = true;
+                    }
 
-                        const unsigned char *tangentBase = nullptr;
-                        size_t tangentStride = 0;
-                        bool hasTangent = false;
-                        auto tangentIt = prim.attributes.find("TANGENT");
-                        if (tangentIt != prim.attributes.end()) {
-                            const tinygltf::Accessor &tangentAcc = model.accessors[tangentIt->second];
-                            const tinygltf::BufferView &tangentView = model.bufferViews[tangentAcc.bufferView];
-                            const tinygltf::Buffer &tangentBuffer = model.buffers[tangentView.buffer];
-                            tangentBase = tangentBuffer.data.data() + tangentView.byteOffset + tangentAcc.byteOffset;
-                            tangentStride = tangentView.byteStride ? tangentView.byteStride : (4 * sizeof(float));
-                            hasTangent = true;
-                        }
+                    const unsigned char *tangentBase = nullptr;
+                    size_t tangentStride = 0;
+                    bool hasTangent = false;
+                    auto tangentIt = prim.attributes.find("TANGENT");
+                    if (tangentIt != prim.attributes.end()) {
+                        const tinygltf::Accessor &tangentAcc = model.accessors[tangentIt->second];
+                        const tinygltf::BufferView &tangentView = model.bufferViews[tangentAcc.bufferView];
+                        const tinygltf::Buffer &tangentBuffer = model.buffers[tangentView.buffer];
+                        tangentBase = tangentBuffer.data.data() + tangentView.byteOffset + tangentAcc.byteOffset;
+                        tangentStride = tangentView.byteStride ? tangentView.byteStride : (4 * sizeof(float));
+                        hasTangent = true;
+                    }
 
-                        // Build vertices
-                        vertices.reserve(posAcc.count);
-                        for (size_t v = 0; v < posAcc.count; ++v) {
-                            Mesh::Vertex vert{};
+                    // Build vertices
+                    vertices.reserve(posAcc.count);
+                    for (size_t v = 0; v < posAcc.count; ++v) {
+                        Mesh::Vertex vert{};
 
-                            // Position - apply 180° rotation around Z for coordinate system conversion
-                            auto pv = reinterpret_cast<const float *>(posBase + v * posStride);
-                            vert.position = glm::vec3(-pv[0], -pv[1], pv[2]);
+                        // Position - apply 180° rotation around Z for coordinate system conversion
+                        auto pv = reinterpret_cast<const float *>(posBase + v * posStride);
+                        vert.position = glm::vec3(-pv[0], -pv[1], pv[2]);
 
-                            // Normal
-                            if (hasNormal) {
-                                auto nv = reinterpret_cast<const float *>(normBase + v * normStride);
-                                vert.normal = glm::vec3(nv[0], nv[1], nv[2]);
-                            } else {
-                                vert.normal = glm::vec3(0.0f);
-                            }
-
-
-                            if (hasTex) {
-                                auto tv = reinterpret_cast<const float *>(texBase + v * texStride);
-                                vert.uv = glm::vec2(tv[0], 1.0f - tv[1]); // UV - flip V coordinate for vulkan
-                            } else {
-                                vert.uv = glm::vec2(0.0f);
-                            }
-
-                            // Color
-                            if (hasColor) {
-                                auto cv = reinterpret_cast<const float *>(colorBase + v * colorStride);
-                                vert.color = glm::vec3(cv[0], cv[1], cv[2]);
-                            } else {
-                                vert.color = glm::vec3(1.0f);
-                            }
-
-                            // Tangent
-                            if (hasTangent) {
-                                auto tv = reinterpret_cast<const float *>(tangentBase + v * tangentStride);
-                                vert.tangent = glm::vec3(tv[0], tv[1], tv[2]);
-                            } else {
-                                vert.tangent = glm::vec3(1.0f, 0.0f, 0.0f);
-                            }
-
-                            vertices.push_back(vert);
-                        }
-
-                        // Build indices
-                        if (prim.indices >= 0) {
-                            const tinygltf::Accessor &idxAcc = model.accessors[prim.indices];
-                            const tinygltf::BufferView &idxView = model.bufferViews[idxAcc.bufferView];
-                            const tinygltf::Buffer &idxBuffer = model.buffers[idxView.buffer];
-                            const unsigned char *base = idxBuffer.data.data() + idxView.byteOffset + idxAcc.byteOffset;
-                            size_t idxStride = idxView.byteStride ? idxView.byteStride : tinygltf::GetComponentSizeInBytes(idxAcc.componentType);
-
-                            indices.reserve(idxAcc.count);
-                            for (size_t i = 0; i < idxAcc.count; ++i) {
-                                uint32_t index = 0;
-                                switch (idxAcc.componentType) {
-                                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
-                                        auto p = reinterpret_cast<const uint16_t *>(base + i * idxStride);
-                                        index = static_cast<uint32_t>(*p);
-                                        break;
-                                    }
-                                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
-                                        auto p = reinterpret_cast<const uint32_t *>(base + i * idxStride);
-                                        index = *p;
-                                        break;
-                                    }
-                                    case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
-                                        auto p = reinterpret_cast<const uint8_t *>(base + i * idxStride);
-                                        index = static_cast<uint32_t>(*p);
-                                        break;
-                                    }
-                                    default:
-                                        AT_ERROR("Unsupported index component type");
-                                        break;
-                                }
-                                indices.push_back(index);
-                            }
+                        // Normal
+                        if (hasNormal) {
+                            auto nv = reinterpret_cast<const float *>(normBase + v * normStride);
+                            vert.normal = glm::vec3(nv[0], nv[1], nv[2]);
                         } else {
-                            // Non-indexed: create sequential indices
-                            indices.reserve(vertices.size());
-                            for (uint32_t i = 0; i < static_cast<uint32_t>(vertices.size()); ++i) {
-                                indices.push_back(i);
+                            vert.normal = glm::vec3(0.0f);
+                        }
+
+
+                        if (hasTex) {
+                            auto tv = reinterpret_cast<const float *>(texBase + v * texStride);
+                            vert.uv = glm::vec2(tv[0], 1.0f - tv[1]); // UV - flip V coordinate for vulkan
+                        } else {
+                            vert.uv = glm::vec2(0.0f);
+                        }
+
+                        // Color
+                        if (hasColor) {
+                            auto cv = reinterpret_cast<const float *>(colorBase + v * colorStride);
+                            vert.color = glm::vec3(cv[0], cv[1], cv[2]);
+                        } else {
+                            vert.color = glm::vec3(1.0f);
+                        }
+
+                        // Tangent
+                        if (hasTangent) {
+                            auto tv = reinterpret_cast<const float *>(tangentBase + v * tangentStride);
+                            vert.tangent = glm::vec3(tv[0], tv[1], tv[2]);
+                        } else {
+                            vert.tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+                        }
+
+                        vertices.push_back(vert);
+                    }
+
+                    // Build indices
+                    if (prim.indices >= 0) {
+                        const tinygltf::Accessor &idxAcc = model.accessors[prim.indices];
+                        const tinygltf::BufferView &idxView = model.bufferViews[idxAcc.bufferView];
+                        const tinygltf::Buffer &idxBuffer = model.buffers[idxView.buffer];
+                        const unsigned char *base = idxBuffer.data.data() + idxView.byteOffset + idxAcc.byteOffset;
+                        size_t idxStride = idxView.byteStride ? idxView.byteStride : tinygltf::GetComponentSizeInBytes(idxAcc.componentType);
+
+                        indices.reserve(idxAcc.count);
+                        for (size_t i = 0; i < idxAcc.count; ++i) {
+                            uint32_t index = 0;
+                            switch (idxAcc.componentType) {
+                                case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT: {
+                                    auto p = reinterpret_cast<const uint16_t *>(base + i * idxStride);
+                                    index = static_cast<uint32_t>(*p);
+                                    break;
+                                }
+                                case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT: {
+                                    auto p = reinterpret_cast<const uint32_t *>(base + i * idxStride);
+                                    index = *p;
+                                    break;
+                                }
+                                case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE: {
+                                    auto p = reinterpret_cast<const uint8_t *>(base + i * idxStride);
+                                    index = static_cast<uint32_t>(*p);
+                                    break;
+                                }
+                                default:
+                                    AT_ERROR("Unsupported index component type");
+                                    break;
                             }
+                            indices.push_back(index);
                         }
-
-                        // Create mesh path
-                        std::string meshPath = virtualPath + "#mesh" + std::to_string(meshIndex) +
-                                               "_prim" + std::to_string(primIndex);
-
-                        // Thread-safe mesh creation with hash-based deduplication
-                        AssetHandle meshHandle; {
-                            std::lock_guard<std::mutex> lock(handleMutex);
-                            meshHandle = getOrCreateMesh(vertices, indices, meshPath);
+                    } else {
+                        // Non-indexed: create sequential indices
+                        indices.reserve(vertices.size());
+                        for (uint32_t i = 0; i < static_cast<uint32_t>(vertices.size()); ++i) {
+                            indices.push_back(i);
                         }
+                    }
 
-                        primHandles.push_back(meshHandle);
+                    // Create mesh path
+                    std::string meshPath = virtualPath + "#mesh" + std::to_string(meshIndex) +
+                                           "_prim" + std::to_string(primIndex);
 
-                        // Map material textures (thread-safe)
-                        if (prim.material >= 0 && prim.material < static_cast<int>(model.materials.size())) {
-                            const tinygltf::Material &mat = model.materials[prim.material];
-                            std::string matName = mat.name.empty() ? ("mat" + std::to_string(prim.material)) : mat.name;
+                    // Thread-safe mesh creation with hash-based deduplication
+                    AssetHandle meshHandle; {
+                        std::lock_guard<std::mutex> lock(handleMutex);
+                        meshHandle = getOrCreateMesh(vertices, indices, meshPath);
+                    }
 
-                            std::lock_guard<std::mutex> lock(handleMutex);
+                    primHandles.push_back(meshHandle);
 
-                            // Base color texture (albedo)
-                            if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
-                                int texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
-                                if (texIdx < static_cast<int>(model.textures.size())) {
-                                    int imgIdx = model.textures[texIdx].source;
-                                    if (imgIdx >= 0 && imgIdx < static_cast<int>(imageHandles.size())) {
-                                        std::string baseColorPath = meshPath + "_baseColor";
-                                        std::string matBaseColorPath = virtualPath + "#" + matName + "_baseColor";
-                                        pathToHandle[baseColorPath] = imageHandles[imgIdx];
-                                        pathToHandle[matBaseColorPath] = imageHandles[imgIdx];
-                                    }
+                    // Map material textures (thread-safe)
+                    if (prim.material >= 0 && prim.material < static_cast<int>(model.materials.size())) {
+                        const tinygltf::Material &mat = model.materials[prim.material];
+                        std::string matName = mat.name.empty() ? ("mat" + std::to_string(prim.material)) : mat.name;
+
+                        std::lock_guard<std::mutex> lock(handleMutex);
+
+                        // Base color texture (albedo)
+                        if (mat.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+                            int texIdx = mat.pbrMetallicRoughness.baseColorTexture.index;
+                            if (texIdx < static_cast<int>(model.textures.size())) {
+                                int imgIdx = model.textures[texIdx].source;
+                                if (imgIdx >= 0 && imgIdx < static_cast<int>(imageHandles.size())) {
+                                    std::string baseColorPath = meshPath + "_baseColor";
+                                    std::string matBaseColorPath = virtualPath + "#" + matName + "_baseColor";
+                                    pathToHandle[baseColorPath] = imageHandles[imgIdx];
+                                    pathToHandle[matBaseColorPath] = imageHandles[imgIdx];
                                 }
                             }
+                        }
 
-                            // Normal map texture
-                            if (mat.normalTexture.index >= 0) {
-                                int texIdx = mat.normalTexture.index;
-                                if (texIdx < static_cast<int>(model.textures.size())) {
-                                    int imgIdx = model.textures[texIdx].source;
-                                    if (imgIdx >= 0 && imgIdx < static_cast<int>(imageHandles.size())) {
-                                        std::string normalPath = meshPath + "_normal";
-                                        std::string matNormalPath = virtualPath + "#" + matName + "_normal";
-                                        pathToHandle[normalPath] = imageHandles[imgIdx];
-                                        pathToHandle[matNormalPath] = imageHandles[imgIdx];
-                                    }
+                        // Normal map texture
+                        if (mat.normalTexture.index >= 0) {
+                            int texIdx = mat.normalTexture.index;
+                            if (texIdx < static_cast<int>(model.textures.size())) {
+                                int imgIdx = model.textures[texIdx].source;
+                                if (imgIdx >= 0 && imgIdx < static_cast<int>(imageHandles.size())) {
+                                    std::string normalPath = meshPath + "_normal";
+                                    std::string matNormalPath = virtualPath + "#" + matName + "_normal";
+                                    pathToHandle[normalPath] = imageHandles[imgIdx];
+                                    pathToHandle[matNormalPath] = imageHandles[imgIdx];
                                 }
                             }
                         }
                     }
+                }
 
-                    // Store handles for this mesh
-                    std::lock_guard<std::mutex> lock(handleMutex);
-                    meshIndexToHandles[meshIndex] = primHandles;
-                }));
+                // Store handles for this mesh
+                std::lock_guard<std::mutex> lock(handleMutex);
+                meshIndexToHandles[meshIndex] = primHandles;
+            }));
         }
 
         // Wait for all meshes to load
@@ -809,5 +813,196 @@ namespace Atlas {
         AT_INFO("Successfully loaded glTF: {} ({} total assets: {} meshes, {} textures)", virtualPath, allAssets.size(), allAssets.size() - imageHandles.size(), imageHandles.size());
 
         return allAssets;
+    }
+
+    entt::registry AssetManager::loadGltfAsScene(const std::string &virtualPath) {
+        entt::registry registry;
+
+        // First, load all assets (meshes and textures)
+        std::vector<AssetHandle> assets = loadGltf(virtualPath);
+
+        if (assets.empty()) {
+            AT_ERROR("Failed to load any assets from glTF: {}", virtualPath);
+            return registry;
+        }
+
+        // Now load the GLTF model again to process the scene hierarchy
+        std::filesystem::path fullPath = getAssetsPath() / virtualPath;
+
+        tinygltf::Model model;
+        tinygltf::TinyGLTF loader;
+        std::string err, warn;
+
+        bool success = false;
+        if (fullPath.extension() == ".glb") {
+            success = loader.LoadBinaryFromFile(&model, &err, &warn, fullPath.string());
+        } else {
+            success = loader.LoadASCIIFromFile(&model, &err, &warn, fullPath.string());
+        }
+
+        if (!success) {
+            AT_ERROR("Failed to load glTF scene: {}", err);
+            return registry;
+        }
+
+        std::vector<entt::entity> entities;
+
+        // Process each scene (usually there's just one)
+        if (!model.scenes.empty()) {
+            const tinygltf::Scene &gltfScene = model.scenes[model.defaultScene >= 0 ? model.defaultScene : 0];
+
+            // Process each root node
+            for (int nodeIdx: gltfScene.nodes) {
+                glm::mat4 parentTransform = glm::mat4(1.0f);
+                processNode(registry, model, nodeIdx, parentTransform, virtualPath, entities);
+            }
+        }
+
+        AT_INFO("Created {} entities from glTF scene: {}", entities.size(), virtualPath);
+
+        return registry;
+    }
+
+    void AssetManager::processNode(
+        entt::registry &registry,
+        const tinygltf::Model &model,
+        int32_t nodeIdx,
+        const glm::mat4 &parentTransform,
+        const std::string &virtualPath,
+        std::vector<entt::entity> &outEntities) {
+        const tinygltf::Node &node = model.nodes[nodeIdx];
+
+        glm::mat4 localTransform = getNodeTransform(node);
+        glm::mat4 worldTransform = parentTransform * localTransform;
+
+        if (node.mesh >= 0 && node.mesh < static_cast<int>(model.meshes.size())) {
+            const tinygltf::Mesh &mesh = model.meshes[node.mesh];
+
+            for (size_t primIdx = 0; primIdx < mesh.primitives.size(); ++primIdx) {
+                auto entity = registry.create();
+
+                glm::vec3 translation, scale, skew;
+                glm::quat rotation;
+                glm::vec4 perspective;
+                glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
+
+                auto &transform = registry.emplace<TransformComponent>(entity);
+                transform.translation = translation;
+                transform.rotation = glm::eulerAngles(rotation);
+                transform.scale = scale;
+
+                std::string meshPath = virtualPath + "#mesh" + std::to_string(node.mesh) +
+                                       "_prim" + std::to_string(primIdx);
+                auto it = pathToHandle.find(meshPath);
+                if (it != pathToHandle.end()) {
+                    auto &modelComp = registry.emplace<ModelComponent>(entity);
+                    modelComp.meshHandle = it->second;
+
+                    auto &material = registry.emplace<MaterialComponent>(entity);
+
+                    const tinygltf::Primitive &prim = mesh.primitives[primIdx];
+                    if (prim.material >= 0 && prim.material < static_cast<int>(model.materials.size())) {
+                        const tinygltf::Material &mat = model.materials[prim.material];
+                        const auto &pbr = mat.pbrMetallicRoughness;
+
+                        if (pbr.baseColorFactor.size() == 4) {
+                            material.baseColor = glm::vec4(
+                                pbr.baseColorFactor[0],
+                                pbr.baseColorFactor[1],
+                                pbr.baseColorFactor[2],
+                                pbr.baseColorFactor[3]
+                            );
+                        } else {
+                            material.baseColor = glm::vec4(1.0f);
+                        }
+
+                        if (pbr.baseColorTexture.index >= 0) {
+                            int texIdx = pbr.baseColorTexture.index;
+                            if (texIdx >= 0 && texIdx < static_cast<int>(model.textures.size())) {
+                                int imgIdx = model.textures[texIdx].source;
+
+                                if (imgIdx >= 0 && imgIdx < static_cast<int>(model.images.size())) {
+                                    const tinygltf::Image &image = model.images[imgIdx];
+
+                                    std::string imagePath;
+                                    if (!image.name.empty()) {
+                                        imagePath = virtualPath + "#" + image.name;
+                                    } else {
+                                        imagePath = virtualPath + "#image" + std::to_string(imgIdx);
+                                    }
+
+                                    auto texIt = pathToHandle.find(imagePath);
+                                    if (texIt != pathToHandle.end()) {
+                                        material.albedoTexture = texIt->second;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (mat.normalTexture.index >= 0) {
+                            int texIdx = mat.normalTexture.index;
+                            if (texIdx >= 0 && texIdx < static_cast<int>(model.textures.size())) {
+                                int imgIdx = model.textures[texIdx].source;
+
+                                if (imgIdx >= 0 && imgIdx < static_cast<int>(model.images.size())) {
+                                    const tinygltf::Image &image = model.images[imgIdx];
+
+                                    std::string imagePath;
+                                    if (!image.name.empty()) {
+                                        imagePath = virtualPath + "#" + image.name;
+                                    } else {
+                                        imagePath = virtualPath + "#image" + std::to_string(imgIdx);
+                                    }
+
+                                    auto normIt = pathToHandle.find(imagePath);
+                                    if (normIt != pathToHandle.end()) {
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    outEntities.push_back(entity);
+                }
+            }
+        }
+
+        for (int childIdx: node.children) {
+            processNode(registry, model, childIdx, worldTransform, virtualPath, outEntities);
+        }
+    }
+
+    glm::mat4 AssetManager::getNodeTransform(const tinygltf::Node &node) {
+        auto mat = glm::mat4(1.0f);
+
+        if (node.matrix.size() == 16) {
+            mat = glm::make_mat4x4(node.matrix.data());
+        } else {
+            if (node.translation.size() == 3) {
+                glm::vec3 translation(node.translation[0], node.translation[1], node.translation[2]);
+                translation = glm::vec3(-translation.x, -translation.y, translation.z); // rotate 180 around Z
+                mat = glm::translate(mat, translation);
+            }
+
+            if (node.rotation.size() == 4) {
+                glm::quat rotation(
+                    static_cast<float>(node.rotation[3]), // w
+                    static_cast<float>(node.rotation[0]), // x
+                    static_cast<float>(node.rotation[1]), // y
+                    static_cast<float>(node.rotation[2]) // z
+                );
+                mat *= glm::mat4_cast(rotation);
+            }
+
+            if (node.scale.size() == 3) {
+                mat = glm::scale(mat, glm::vec3(
+                                     node.scale[0],
+                                     node.scale[1],
+                                     node.scale[2]
+                                 ));
+            }
+        }
+
+        return mat;
     }
 }

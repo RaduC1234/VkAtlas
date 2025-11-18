@@ -41,7 +41,7 @@ namespace Atlas {
         Device(Device &&) = delete;
         Device &operator=(Device &&) = delete;
 
-        VkCommandPool getCommandPool() { return commandPool; }
+        VkCommandPool getCommandPool() const { return commandPool; }
         const VkInstance &getInstance() const { return instance; }
         const VkPhysicalDevice &getPhysicalDevice() const { return physicalDevice; }
         VkDevice device() { return device_; }

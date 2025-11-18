@@ -23,6 +23,8 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
 layout(push_constant) uniform Push {
     mat4 modelMatrix;
     mat4 normalMatrix;
+    vec4 baseColor;
+    uint textureIndex;// Index into the bindless texture array
 } push;
 
 void main() {

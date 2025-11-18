@@ -3,13 +3,10 @@
 #include "Window.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/Renderer.hpp"
-
-#include <entt/entt.hpp>
+#include "entity/Scene.hpp"
 
 #include <memory>
 
-#include "renderer/Buffer.hpp"
-#include "renderer/Descriptors.hpp"
 
 namespace Atlas {
     struct ApplicationSpecification {
@@ -28,14 +25,12 @@ namespace Atlas {
         void run();
 
     private:
-        void loadGameObjects();
-
         ApplicationSpecification specification;
 
         std::unique_ptr<Window> window = Window::create({specification.pNativeApp, 1200, 800});
         Device device{*window};
         Renderer renderer{*window, device};
 
-        entt::registry registry;
+        std::unique_ptr<Scene> currentScene;
     };
 }

@@ -129,14 +129,14 @@ namespace Atlas {
 
     void Buffer::uploadData(const void *data, VkDeviceSize size, VkDeviceSize offset) {
         map();
-        std::memcpy(static_cast<int8_t *>(mapped_) + offset, data, static_cast<size_t>(size));
+        std::memcpy(static_cast<int8_t *>(mapped_) + offset, data, size);
         // Optional: flush if needed for non-coherent memory
     }
 
     void Buffer::writeToIndex(const void *data, int index) {
         assert(mapped_ && "Buffer must be mapped before writing");
         assert(index >= 0 && static_cast<uint32_t>(index) < instanceCount_);
-        std::memcpy(static_cast<char *>(mapped_) + index * alignmentSize_, data, static_cast<size_t>(instanceSize_));
+        std::memcpy(static_cast<char *>(mapped_) + index * alignmentSize_, data, instanceSize_);
     }
 
     void Buffer::flushIndex(int index) {

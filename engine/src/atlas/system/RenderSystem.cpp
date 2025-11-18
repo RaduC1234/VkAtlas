@@ -27,6 +27,7 @@ namespace Atlas {
     struct SimplePushConstantData {
         glm::mat4 modelMatrix{1.0f};
         glm::mat4 normalMatrix{1.0f};
+        glm::vec4 baseColor{1.0f};
         uint32_t textureIndex{0};
     };
 
@@ -258,6 +259,7 @@ namespace Atlas {
             SimplePushConstantData push{};
             push.modelMatrix = transform.mat4();
             push.normalMatrix = transform.normalMatrix();
+            push.baseColor = material.baseColor;
 
             AssetHandle textureHandle = material.albedoTexture != INVALID_ASSET_HANDLE
                 ? material.albedoTexture

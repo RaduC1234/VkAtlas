@@ -1,7 +1,5 @@
 #pragma once
 
-#include <fstream>
-
 #include "Device.hpp"
 
 namespace Atlas {
@@ -47,7 +45,7 @@ namespace Atlas {
             const std::string &fragFilepath,
             const PipelineConfigInfo &configInfo);
 
-        void createShaderModule(const std::vector<char> &code, VkShaderModule* shaderModule);
+        void createShaderModule(const std::vector<char> &code, VkShaderModule* shaderModule) const;
 
         Device& device;
         VkPipeline graphicsPipeline;

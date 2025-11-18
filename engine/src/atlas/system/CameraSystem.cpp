@@ -1,10 +1,10 @@
 #include "CameraSystem.hpp"
 
-#include <entt/entt.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
 #include "entity/Object.hpp"
+
 
 namespace Atlas {
     CameraSystem::CameraSystem(Window &window): window{window} {
@@ -12,7 +12,7 @@ namespace Atlas {
         this->lastMousePosition = {x, y};
     }
 
-    void CameraSystem::update(entt::registry &registry, float deltaTime) const {
+    void CameraSystem::update(entt::registry &registry, float deltaTime, float screenAspect) const {
         if (Mouse::isButtonPressed(keyMappings.lockCamera)) {
             window.setCursorMode(WINDOW_CURSOR_DISABLED);
         } else {
@@ -77,6 +77,7 @@ namespace Atlas {
             }
 
             camComp.camera.setViewYXZ(tf.translation, tf.rotation);
+            camComp.camera.setPerspectiveProjection(glm::radians(50.0f), screenAspect, 0.1f, 100.0f);
         }
     }
 }

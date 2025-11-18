@@ -51,7 +51,7 @@ namespace Atlas {
             };
         }
 
-        glm::mat3 normalMatrix() {
+        glm::mat3 normalMatrix() const {
             const float c3 = glm::cos(rotation.z);
             const float s3 = glm::sin(rotation.z);
             const float c2 = glm::cos(rotation.x);
@@ -89,7 +89,9 @@ namespace Atlas {
     };
 
     struct MaterialComponent {
+        glm::vec4 baseColor = glm::vec4{1.0f};
         AssetHandle albedoTexture = INVALID_ASSET_HANDLE;
+
         //AssetHandle normalMap = INVALID_ASSET_HANDLE;
         //AssetHandle specularMap = INVALID_ASSET_HANDLE;
     };

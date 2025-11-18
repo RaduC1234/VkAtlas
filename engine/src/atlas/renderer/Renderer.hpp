@@ -24,6 +24,14 @@ namespace Atlas {
             return commandBuffers[currentFrameIndex];
         }
 
+         Window& getWindow() const {
+            return window;
+        }
+
+        Device& getDevice() const {
+            return device;
+        }
+
         int getFrameIndex() const {
             assert(isFrameStarted && "Cannot get frame index when frame not in progress");
             return currentFrameIndex;
