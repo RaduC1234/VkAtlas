@@ -81,8 +81,8 @@ elseif (WIN32)
     add_custom_command(TARGET atlas_engine POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_BINARY_DIR}/engine/atlas_engine.dll"
-            "${CMAKE_BINARY_DIR}/windows"
-            COMMENT "Copying atlas_engine.dll to windows folder"
+            "${CMAKE_BINARY_DIR}/desktop"
+            COMMENT "Copying atlas_engine.dll to desktop folder"
     )
 
     add_custom_target(compile_shaders ALL

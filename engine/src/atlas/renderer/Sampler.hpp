@@ -33,7 +33,7 @@ namespace Atlas {
         void createTextureSampler();
 
         void transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout);
-        void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+        void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const;
 
         Device &device;
 

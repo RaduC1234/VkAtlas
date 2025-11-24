@@ -20,7 +20,7 @@ namespace Atlas {
 
         currentScene = std::make_unique<Scene>(renderer);
 
-        auto sceneRegistry = AssetManager::get().loadGltfAsScene("models/Cabinet.glb");
+        auto sceneRegistry = AssetManager::get().loadGltfAsScene("models/WorkSpace.glb");
 
         if (currentScene) {
             currentScene->onLoad(std::move(sceneRegistry));
@@ -44,7 +44,7 @@ namespace Atlas {
             window->pollEvents();
 
             auto newTime = std::chrono::high_resolution_clock::now();
-            float frameTime = std::chrono::duration_cast<std::chrono::duration<float>>(newTime - currentTime).count();
+            float deltaTime = std::chrono::duration_cast<std::chrono::duration<float>>(newTime - currentTime).count();
             currentTime = newTime;
 
             float aspect = renderer.getAspectRatio();
@@ -53,7 +53,7 @@ namespace Atlas {
             if (auto commandBuffer = renderer.beginFrame()) {
                 // Update scene
                 if (currentScene) {
-                    currentScene->onUpdate(frameTime);
+                    currentScene->onUpdate(deltaTime);
                 }
 
                 // ImGui frame
@@ -66,7 +66,7 @@ namespace Atlas {
                 renderer.beginSwapChainRenderPass(commandBuffer);
 
                 if (currentScene) {
-                    currentScene->onRender(frameTime, aspect);
+                    currentScene->onRender(deltaTime, aspect);
                 }
 
                 imGui.endFrame(commandBuffer);

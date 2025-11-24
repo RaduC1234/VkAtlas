@@ -99,3 +99,7 @@ npm-debug.log*
 !.gitignore_local
 
 imgui.ini
+
+/assets/**
+!/assets/shader/
+!/assets/shader/**

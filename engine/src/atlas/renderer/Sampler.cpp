@@ -183,7 +183,7 @@ namespace Atlas {
         imageLayout = newLayout;
     }
 
-    void Sampler::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
+    void Sampler::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const {
         VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
         VkBufferImageCopy region{};

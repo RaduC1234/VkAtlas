@@ -7,7 +7,7 @@ namespace Atlas {
     class Color {
     public:
         constexpr Color() = default;
-        constexpr Color(glm::vec3 color) : color(glm::vec4(color, 1.0f)) {}
+        constexpr Color(const glm::vec3 color) : color(glm::vec4(color, 1.0f)) {}
         constexpr Color(int r, int b, int g, int a) : color(r / 255.f, g / 255.f, b / 255.f, a / 255.f) {}
         constexpr Color(float r, float g, float b, float a = 1.0f) : color(r, g, b, a) {}
 
