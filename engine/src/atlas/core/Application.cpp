@@ -7,7 +7,10 @@
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+
+#ifdef _WIN32
 #include <imgui.h>
+#endif
 
 #include "entity/Object.hpp"
 #include "renderer/ImGuiLayer.hpp"
@@ -20,7 +23,7 @@ namespace Atlas {
 
         currentScene = std::make_unique<Scene>(renderer);
 
-        auto sceneRegistry = AssetManager::get().loadGltfAsScene("models/WorkSpace.glb");
+        auto sceneRegistry = AssetManager::get().loadGltfAsScene("models/Cabinet.glb");
 
         if (currentScene) {
             currentScene->onLoad(std::move(sceneRegistry));
@@ -44,7 +47,7 @@ namespace Atlas {
             window->pollEvents();
 
             auto newTime = std::chrono::high_resolution_clock::now();
-            float deltaTime = std::chrono::duration_cast<std::chrono::duration<float>>(newTime - currentTime).count();
+            float deltaTime = std::chrono::duration_cast<std::chrono::duration<float> >(newTime - currentTime).count();
             currentTime = newTime;
 
             float aspect = renderer.getAspectRatio();
@@ -59,10 +62,11 @@ namespace Atlas {
                 // ImGui frame
                 imGui.beginFrame();
 
+#ifdef _WIN32
                 ImGui::Begin("Debug Settings");
                 ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
                 ImGui::End();
-
+#endif
                 renderer.beginSwapChainRenderPass(commandBuffer);
 
                 if (currentScene) {

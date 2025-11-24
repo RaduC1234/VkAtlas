@@ -37,9 +37,10 @@ namespace Atlas {
         initInfo.DescriptorPool = descriptorPool;
         initInfo.MinImageCount = 2;
         initInfo.ImageCount = imageCount;
-        initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-
-        initInfo.RenderPass = renderPass;
+        initInfo.UseDynamicRendering = false;
+        initInfo.PipelineInfoMain.RenderPass = renderPass;
+        initInfo.PipelineInfoMain.Subpass = 0;
+        initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
         ImGui_ImplVulkan_Init(&initInfo);
     }
