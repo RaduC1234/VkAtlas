@@ -1,0 +1,27 @@
+[submodule "engine/dependencies/entt"]
+	path = engine/dependencies/entt
+	url = https://github.com/skypjack/entt
+[submodule "engine/dependencies/fmt"]
+	path = engine/dependencies/fmt
+	url = https://github.com/fmtlib/fmt
+[submodule "engine/dependencies/glfw"]
+	path = engine/dependencies/glfw
+	url = https://github.com/glfw/glfw
+[submodule "engine/dependencies/glm"]
+	path = engine/dependencies/glm
+	url = https://github.com/g-truc/glm
+[submodule "engine/dependencies/imgui"]
+	path = engine/dependencies/imgui
+	url = https://github.com/ocornut/imgui
+[submodule "engine/dependencies/stb"]
+	path = engine/dependencies/stb
+	url = https://github.com/nothings/stb
+[submodule "engine/dependencies/tinygltf"]
+	path = engine/dependencies/tinygltf
+	url = https://github.com/syoyo/tinygltf
+[submodule "engine/dependencies/tinyobjloader"]
+	path = engine/dependencies/tinyobjloader
+	url = https://github.com/tinyobjloader/tinyobjloader
+[submodule "engine/dependencies/VulkanMemoryAllocator"]
+	path = engine/dependencies/VulkanMemoryAllocator
+	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
