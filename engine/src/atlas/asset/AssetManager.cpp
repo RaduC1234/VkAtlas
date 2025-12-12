@@ -292,7 +292,7 @@ namespace Atlas {
         return it != handleToPath.end() ? it->second : "";
     }
 
-    std::vector<char> AssetManager::loadTextFileAsU8(const std::string &path) {
+    std::vector<char> AssetManager::loadFileAsU8(const std::string &path) {
         std::filesystem::path filePath = get().getAssetsPath() / path;
 
         std::ifstream file(filePath, std::ios::binary | std::ios::ate);
@@ -340,8 +340,8 @@ namespace Atlas {
         }
     }
 
-    std::string AssetManager::loadTextFileAsString(const std::string &path) {
-        const auto data = loadTextFileAsU8(path);
+    std::string AssetManager::loadFileAsString(const std::string &path) {
+        const auto data = loadFileAsU8(path);
         return {data.begin(), data.end()};
     }
 
@@ -432,16 +432,20 @@ namespace Atlas {
 
         std::filesystem::path fullPath = getAssetsPath() / virtualPath;
 
+        std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
+        size_t fileSize = file.tellg();
+        file.seekg(0);
+        std::vector<uint8_t> fileBuffer(fileSize);
+        file.read(reinterpret_cast<char *>(fileBuffer.data()), fileSize);
+        file.close();
+
         tinygltf::Model model;
         tinygltf::TinyGLTF loader;
         std::string err, warn;
 
-        bool success = false;
-        if (fullPath.extension() == ".glb") {
-            success = loader.LoadBinaryFromFile(&model, &err, &warn, fullPath.string());
-        } else {
-            success = loader.LoadASCIIFromFile(&model, &err, &warn, fullPath.string());
-        }
+        loader.RemoveImageLoader();
+
+        bool success = loader.LoadBinaryFromMemory(&model, &err, &warn, fileBuffer.data(), fileBuffer.size());
 
         if (!warn.empty()) AT_WARN("glTF warning: {}", warn);
         if (!success) {
@@ -449,8 +453,7 @@ namespace Atlas {
             return allAssets; // Return empty vector
         }
 
-        AT_INFO("Loading glTF file: {} ({} meshes, {} images)",
-                virtualPath, model.meshes.size(), model.images.size());
+        AT_INFO("Loading glTF file: {} ({} meshes, {} images)", virtualPath, model.meshes.size(), model.images.size());
 
         // Thread-safe containers for results
         std::mutex handleMutex;
@@ -458,6 +461,8 @@ namespace Atlas {
 
         // Get executor service
         auto &executor = device.getExecutor();
+
+        AT_INFO("Loading assets...");
 
         // ========================================================================
         // STEP 1: Load all images in parallel
@@ -476,29 +481,64 @@ namespace Atlas {
                         return;
                     }
 
-                    int width = image.width;
-                    int height = image.height;
-                    int channels = image.component;
+                    int width = 0, height = 0;
+                    unsigned char* pixelData = nullptr;
+                    bool needsFreeing = false;
 
-                    // Convert to RGBA if needed
-                    std::vector<unsigned char> rgbaData;
-                    const unsigned char *pixelData = nullptr;
+                    // Check if tinygltf already decoded the image (bufferView-based images)
+                    if (image.width > 0 && image.height > 0 && image.component > 0) {
+                        // Image is already decoded by tinygltf
+                        width = image.width;
+                        height = image.height;
 
-                    if (channels == 4) {
-                        pixelData = image.image.data();
-                    } else if (channels == 3) {
-                        // Convert RGB to RGBA
-                        rgbaData.resize(width * height * 4);
-                        for (int i = 0; i < width * height; ++i) {
-                            rgbaData[i * 4 + 0] = image.image[i * 3 + 0];
-                            rgbaData[i * 4 + 1] = image.image[i * 3 + 1];
-                            rgbaData[i * 4 + 2] = image.image[i * 3 + 2];
-                            rgbaData[i * 4 + 3] = 255;
+                        // Convert to RGBA if needed
+                        if (image.component == 4) {
+                            // Already RGBA, use directly
+                            pixelData = const_cast<unsigned char*>(image.image.data());
+                            needsFreeing = false;
+                        } else {
+                            // Convert to RGBA
+                            size_t pixelCount = width * height;
+                            pixelData = new unsigned char[pixelCount * 4];
+                            needsFreeing = true;
+
+                            for (size_t i = 0; i < pixelCount; ++i) {
+                                if (image.component == 1) {
+                                    // Grayscale
+                                    pixelData[i * 4 + 0] = image.image[i];
+                                    pixelData[i * 4 + 1] = image.image[i];
+                                    pixelData[i * 4 + 2] = image.image[i];
+                                    pixelData[i * 4 + 3] = 255;
+                                } else if (image.component == 2) {
+                                    // Grayscale + Alpha
+                                    pixelData[i * 4 + 0] = image.image[i * 2 + 0];
+                                    pixelData[i * 4 + 1] = image.image[i * 2 + 0];
+                                    pixelData[i * 4 + 2] = image.image[i * 2 + 0];
+                                    pixelData[i * 4 + 3] = image.image[i * 2 + 1];
+                                } else if (image.component == 3) {
+                                    // RGB
+                                    pixelData[i * 4 + 0] = image.image[i * 3 + 0];
+                                    pixelData[i * 4 + 1] = image.image[i * 3 + 1];
+                                    pixelData[i * 4 + 2] = image.image[i * 3 + 2];
+                                    pixelData[i * 4 + 3] = 255;
+                                }
+                            }
                         }
-                        pixelData = rgbaData.data();
                     } else {
-                        AT_ERROR("Unsupported image channel count: {}", channels);
-                        return;
+                        // Image is compressed (PNG/JPEG), decode with stbi in parallel
+                        int channels = 0;
+                        pixelData = stbi_load_from_memory(
+                            image.image.data(),
+                            static_cast<int>(image.image.size()),
+                            &width, &height, &channels,
+                            STBI_rgb_alpha
+                        );
+                        needsFreeing = true; // stbi allocated memory
+
+                        if (!pixelData) {
+                            AT_ERROR("Failed to decode image {}: {}", imgIdx, stbi_failure_reason());
+                            return;
+                        }
                     }
 
                     // Determine if this is likely a normal map based on name
@@ -506,7 +546,9 @@ namespace Atlas {
                     std::string imgName = image.name;
                     std::transform(imgName.begin(), imgName.end(), imgName.begin(), ::tolower);
                     if (imgName.find("normal") != std::string::npos ||
-                        imgName.find("nrm") != std::string::npos) {
+                        imgName.find("nrm") != std::string::npos ||
+                        imgName.find("_n") != std::string::npos ||
+                        imgName.find("norm") != std::string::npos) {
                         isNormalMap = true;
                     }
 
@@ -517,13 +559,26 @@ namespace Atlas {
                         texturePath = virtualPath + "#" + image.name;
                     }
 
-                    // Thread-safe creation
-                    std::lock_guard<std::mutex> lock(handleMutex);
-                    AssetHandle handle = getOrCreateTexture(pixelData, width, height, format, texturePath);
-                    imageHandles[imgIdx] = handle;
+                    // Thread-safe creation (upload the decoded pixels)
+                    {
+                        std::lock_guard<std::mutex> lock(handleMutex);
+                        AssetHandle handle = getOrCreateTexture(pixelData, static_cast<uint32_t>(width), static_cast<uint32_t>(height), format, texturePath);
+                        imageHandles[imgIdx] = handle;
+                    }
+
+                    // Free decoded pixel data if needed
+                    if (needsFreeing) {
+                        if (image.width > 0) {
+                            // We allocated with new[]
+                            delete[] pixelData;
+                        } else {
+                            // stbi allocated
+                            stbi_image_free(pixelData);
+                        }
+                    }
 
                     AT_TRACE("Loaded image[{}]: {} (handle: {}, {}x{}, {})",
-                             imgIdx, texturePath, handle, width, height,
+                             imgIdx, texturePath, imageHandles[imgIdx], width, height,
                              isNormalMap ? "normal" : "albedo");
                 }));
         }
@@ -965,6 +1020,54 @@ namespace Atlas {
                     outEntities.push_back(entity);
                 }
             }
+        }
+
+        // KHR_lights_punctual
+        if (node.light >= 0 && node.light < static_cast<int>(model.lights.size())) {
+            const tinygltf::Light &gltfLight = model.lights[node.light];
+
+            auto entity = registry.create();
+
+            glm::vec3 translation, scale, skew;
+            glm::quat rotation;
+            glm::vec4 perspective;
+            glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
+
+            auto &transform = registry.emplace<TransformComponent>(entity);
+            transform.translation = translation;
+            transform.rotation = glm::eulerAngles(rotation);
+            transform.scale = scale;
+
+            auto &light = registry.emplace<LightComponent>(entity);
+
+            if (gltfLight.type == "point") {
+                light.type = LightType::POINT;
+            } else if (gltfLight.type == "spot") {
+                light.type = LightType::SPOT;
+                light.innerConeAngle = static_cast<float>(gltfLight.spot.innerConeAngle);
+                light.outerConeAngle = static_cast<float>(gltfLight.spot.outerConeAngle);
+            } else if (gltfLight.type == "directional") {
+                light.type = LightType::DIRECTIONAL;
+            }
+
+            if (gltfLight.color.size() == 3) {
+                light.color = glm::vec3(
+                    static_cast<float>(gltfLight.color[0]),
+                    static_cast<float>(gltfLight.color[1]),
+                    static_cast<float>(gltfLight.color[2])
+                );
+            } else {
+                light.color = glm::vec3(1.0f);
+            }
+
+            light.intensity = static_cast<float>(gltfLight.intensity);
+            light.range = static_cast<float>(gltfLight.range);
+
+            outEntities.push_back(entity);
+
+            AT_TRACE("Created light entity: type={}, color=({}, {}, {}), intensity={}, range={}",
+                     gltfLight.type, light.color.r, light.color.g, light.color.b,
+                     light.intensity, light.range);
         }
 
         for (int childIdx: node.children) {

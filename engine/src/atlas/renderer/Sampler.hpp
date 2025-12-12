@@ -44,5 +44,6 @@ namespace Atlas {
         VkImageLayout imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         uint32_t width, height;
+        VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
     };
 }

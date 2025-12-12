@@ -125,10 +125,10 @@ namespace Atlas {
          * @param path Path to the resource relative to assets directory
          * @return Vector of characters containing the file data
          */
-        static std::vector<char> loadTextFileAsU8(const std::string &path);
+        static std::vector<char> loadFileAsU8(const std::string &path);
         static void saveFileAsU8(const std::vector<char> &data, const std::string &path);
 
-        static std::string loadTextFileAsString(const std::string &path);
+        static std::string loadFileAsString(const std::string &path);
         static void saveFileAsString(const std::string &data, const std::string &path);
 #pragma endregion
         /**
