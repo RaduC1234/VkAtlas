@@ -3,9 +3,10 @@
 #include "Window.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/Renderer.hpp"
-#include "entity/Scene.hpp"
 
 #include <memory>
+
+#include "scene/Scene.hpp"
 
 
 namespace Atlas {

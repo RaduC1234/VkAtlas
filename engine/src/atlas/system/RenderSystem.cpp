@@ -15,14 +15,7 @@
 #include "renderer/SwapChain.hpp"
 
 namespace Atlas {
-    struct alignas(16) GlobalUbo {
-        glm::mat4 projection{1.0f};
-        glm::mat4 view{1.0f};
-        glm::vec4 ambientColor{1.0f, 1.0f, 1.0f, 0.002f};
-        glm::vec3 lightPosition{-1.0f};
-        float padding1;
-        glm::vec4 lightColor{1.0f};
-    };
+
 
     struct SimplePushConstantData {
         glm::mat4 modelMatrix{1.0f};
@@ -31,9 +24,9 @@ namespace Atlas {
         uint32_t textureIndex{0};
     };
 
-    RenderSystem::RenderSystem(Device &device, VkRenderPass renderPass): device(device) {
+    RenderSystem::RenderSystem(Device &device, VkRenderPass renderPass, const DescriptorSetLayout& globalSetLayout): device(device) {
         createDescriptors();
-        createPipelineLayout();
+        createPipelineLayout(globalSetLayout);
         createPipeline(renderPass);
 
         const AssetHandle defaultTexture = AssetManager::get().createDefaultWhiteTexture();
@@ -47,38 +40,6 @@ namespace Atlas {
     }
 
     void RenderSystem::createDescriptors() {
-        // Create UBO buffers for each frame in flight
-        uboBuffers.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
-        for (auto &uboBuffer: uboBuffers) {
-            uboBuffer = std::make_unique<Buffer>(
-                device,
-                sizeof(GlobalUbo),
-                1,
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                VMA_MEMORY_USAGE_AUTO,
-                device.properties.limits.minUniformBufferOffsetAlignment,
-                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-            );
-            uboBuffer->map();
-        }
-
-        globalSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
-                .build();
-
-        globalPool = DescriptorPool::Builder(device)
-                .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
-                .build();
-
-        globalDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
-        for (int i = 0; i < globalDescriptorSets.size(); i++) {
-            auto bufferInfo = uboBuffers[i]->descriptorInfo();
-            DescriptorWriter(*globalSetLayout, *globalPool)
-                    .writeBuffer(0, &bufferInfo)
-                    .build(globalDescriptorSets[i]);
-        }
-
         textureSetLayout = DescriptorSetLayout::Builder(device)
                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1024)
                .setBindingFlags(0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
@@ -96,14 +57,14 @@ namespace Atlas {
         }
     }
 
-    void RenderSystem::createPipelineLayout() {
+    void RenderSystem::createPipelineLayout(const DescriptorSetLayout& globalSetLayout) {
         VkPushConstantRange pushConstantRange{};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(SimplePushConstantData);
 
         std::vector<VkDescriptorSetLayout> descriptorSetLayouts{
-            globalSetLayout->getDescriptorSetLayout(),
+            globalSetLayout.getDescriptorSetLayout(),
             textureSetLayout->getDescriptorSetLayout()
         };
 
@@ -211,18 +172,7 @@ namespace Atlas {
         }
     }
 
-    void RenderSystem::updateUBO(int frameIndex, const glm::mat4 &projection, const glm::mat4 &view, const glm::vec4 &ambientColor, const glm::vec3 &lightPosition, const glm::vec4 &lightColor) {
-        GlobalUbo ubo{};
-        ubo.projection = projection;
-        ubo.view = view;
-        ubo.ambientColor = ambientColor;
-        ubo.lightPosition = lightPosition;
-        ubo.lightColor = lightColor;
-
-        uboBuffers[frameIndex]->uploadData(&ubo, sizeof(GlobalUbo));
-    }
-
-    void RenderSystem::render(entt::registry &registry, VkCommandBuffer commandBuffer, int frameIndex) {
+    void RenderSystem::render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet) {
         pipeline->bind(commandBuffer);
 
         vkCmdBindDescriptorSets(
@@ -230,7 +180,7 @@ namespace Atlas {
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             pipelineLayout,
             0, 1,
-            &globalDescriptorSets[frameIndex],
+            &globalSet,
             0,
             nullptr
         );

@@ -10,7 +10,7 @@
 namespace Atlas {
     class RenderSystem {
     public:
-        RenderSystem(Device &device, VkRenderPass renderPass);
+        RenderSystem(Device &device, VkRenderPass renderPass, const DescriptorSetLayout& globalSetLayout);
         ~RenderSystem();
 
         RenderSystem(const RenderSystem&) = delete;
@@ -20,14 +20,11 @@ namespace Atlas {
 
         void prepareTextures(entt::registry &registry);
 
-        void updateUBO(int frameIndex, const glm::mat4& projection, const glm::mat4& view,
-                       const glm::vec4& ambientColor, const glm::vec3& lightPosition, const glm::vec4& lightColor);
-
-        void render(entt::registry &registry, VkCommandBuffer commandBuffer, int frameIndex);
+        void render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet);
 
     private:
         void createDescriptors();
-        void createPipelineLayout();
+        void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
         void createPipeline(VkRenderPass renderPass);
         void commitSamplersToDescriptors();
 
@@ -35,12 +32,6 @@ namespace Atlas {
 
         std::unique_ptr<Pipeline> pipeline;
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-
-        // Global descriptors (UBO)
-        std::unique_ptr<DescriptorSetLayout> globalSetLayout;
-        std::unique_ptr<DescriptorPool> globalPool;
-        std::vector<std::unique_ptr<Buffer>> uboBuffers;
-        std::vector<VkDescriptorSet> globalDescriptorSets;
 
         // Bindless texture descriptors
         std::unique_ptr<DescriptorSetLayout> textureSetLayout;

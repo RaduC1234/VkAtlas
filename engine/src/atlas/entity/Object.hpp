@@ -1,16 +1,10 @@
 #pragma once
 
-#include <memory>
-
-#include "renderer/Mesh.hpp"
-#include "renderer/Color.hpp"
 #include "renderer/Camera.hpp"
 #include "asset/AssetManager.hpp"
 
 #include <glm/glm.hpp>
 #include <entt/entt.hpp>
-
-#include "renderer/Sampler.hpp"
 
 namespace Atlas {
     struct TransformComponent {
@@ -94,6 +88,10 @@ namespace Atlas {
 
         //AssetHandle normalMap = INVALID_ASSET_HANDLE;
         //AssetHandle specularMap = INVALID_ASSET_HANDLE;
+    };
+
+    struct SkyboxComponent {
+        AssetHandle skyBoxHandle = INVALID_ASSET_HANDLE;
     };
 
     enum LightType {

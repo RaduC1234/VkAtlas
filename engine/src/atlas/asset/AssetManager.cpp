@@ -292,6 +292,96 @@ namespace Atlas {
         return it != handleToPath.end() ? it->second : "";
     }
 
+    bool AssetManager::freeTexture(AssetHandle handle) {
+        if (handle == INVALID_ASSET_HANDLE) {
+            return false;
+        }
+
+        auto it = texturePool.find(handle);
+        if (it == texturePool.end()) {
+            return false;
+        }
+
+        // Get the path before removing from handleToPath
+        std::string path = getPath(handle);
+
+        // Get the texture's hash to remove from hashToHandle
+        size_t textureHash = it->second->getHash();
+
+        // Remove from all internal maps
+        texturePool.erase(it);
+        handleToPath.erase(handle);
+        if (!path.empty()) {
+            pathToHandle.erase(path);
+        }
+
+        // Remove from hash-based lookup if this handle owns the hash
+        auto hashIt = hashToHandle.find(textureHash);
+        if (hashIt != hashToHandle.end() && hashIt->second == handle) {
+            hashToHandle.erase(hashIt);
+        }
+
+        AT_TRACE("Freed texture asset: {} (handle: {})", path, handle);
+        return true;
+    }
+
+    bool AssetManager::freeMesh(AssetHandle handle) {
+        if (handle == INVALID_ASSET_HANDLE) {
+            return false;
+        }
+
+        auto it = meshPool.find(handle);
+        if (it == meshPool.end()) {
+            return false;
+        }
+
+        // Get the path before removing from handleToPath
+        std::string path = getPath(handle);
+
+        // Get the mesh's hash to remove from hashToHandle
+        size_t meshHash = it->second->getHash();
+
+        // Remove from all internal maps
+        meshPool.erase(it);
+        handleToPath.erase(handle);
+        if (!path.empty()) {
+            pathToHandle.erase(path);
+        }
+
+        // Remove from hash-based lookup if this handle owns the hash
+        auto hashIt = hashToHandle.find(meshHash);
+        if (hashIt != hashToHandle.end() && hashIt->second == handle) {
+            hashToHandle.erase(hashIt);
+        }
+
+        AT_TRACE("Freed mesh asset: {} (handle: {})", path, handle);
+        return true;
+    }
+
+    bool AssetManager::freeCubemap(AssetHandle handle) {
+        if (handle == INVALID_ASSET_HANDLE) {
+            return false;
+        }
+
+        // TODO: Implement when cubemap pool is added
+        AT_WARN("freeCubemap not yet implemented (handle: {})", handle);
+        return false;
+    }
+
+    bool AssetManager::freeAsset(AssetHandle handle) {
+        if (handle == INVALID_ASSET_HANDLE) {
+            return false;
+        }
+
+        // Try to free from each pool
+        if (freeTexture(handle)) return true;
+        if (freeMesh(handle)) return true;
+        if (freeCubemap(handle)) return true;
+
+        AT_WARN("Asset handle {} not found in any pool", handle);
+        return false;
+    }
+
     std::vector<char> AssetManager::loadFileAsU8(const std::string &path) {
         std::filesystem::path filePath = get().getAssetsPath() / path;
 

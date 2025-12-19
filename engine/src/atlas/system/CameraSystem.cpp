@@ -3,6 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
+#include "core/Log.hpp"
 #include "entity/Object.hpp"
 
 
