@@ -54,17 +54,14 @@ namespace Atlas {
         instance = std::make_shared<DesktopAssetManager>(device, nativeApp);
         AT_INFO("Created Desktop AssetManager instance");
 #else
-        AT_ERROR("Unsupported platform for AssetManager");
-        throw std::runtime_error("Unsupported platform for AssetManager");
+#error Unsupported platform for AssetManager
 #endif
         return *instance;
     }
 
     AssetManager &AssetManager::get() {
-        if (!instance) {
-            AT_ERROR("AssetManager not initialized! Call AssetManager::create() first.");
-            throw std::runtime_error("AssetManager::get() called before create()");
-        }
+        assert(instance && "AssetManager::get() called before create()");
+
         return *instance;
     }
 
@@ -190,6 +187,107 @@ namespace Atlas {
         return handle;
     }
 
+    AssetHandle AssetManager::loadCubemap(const std::string &virtualPath) {
+        auto it = pathToHandle.find(virtualPath);
+        if (it != pathToHandle.end()) {
+            AT_TRACE("Cubemap already loaded: {} (handle: {})", virtualPath, it->second);
+            return it->second;
+        }
+        AssetHandle handle = nextHandle++;
+        pathToHandle[virtualPath] = handle;
+        handleToPath[handle] = virtualPath;
+
+        std::filesystem::path fullPath = getAssetsPath() / virtualPath;
+
+        // Check if file exists
+        if (!std::filesystem::exists(fullPath)) {
+            AT_ERROR("Cubemap file not found: {}", fullPath.string());
+            pathToHandle.erase(virtualPath);
+            handleToPath.erase(handle);
+            return INVALID_ASSET_HANDLE;
+        }
+
+        // Determine if this is an HDR file or a regular cubemap texture
+        std::string extension = fullPath.extension().string();
+        std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+
+        try {
+            std::shared_ptr<Cubemap> cubemap;
+
+            if (extension == ".hdr") {
+                // Load HDR equirectangular and convert to cubemap
+                cubemap = Cubemap::create(device, fullPath.string());
+            } else {
+                // For non-HDR files, we need 6 face images
+                // This path should use the 6-face overload instead
+                AT_ERROR("Single texture cubemap loading requires HDR format. Use loadCubemap with 6 faces for other formats: {}", fullPath.string());
+                pathToHandle.erase(virtualPath);
+                handleToPath.erase(handle);
+                return INVALID_ASSET_HANDLE;
+            }
+
+            cubemapPool[handle] = cubemap;
+            AT_TRACE("Loaded cubemap: {} (handle: {})", virtualPath, handle);
+            return handle;
+        } catch (const std::exception &e) {
+            AT_ERROR("Failed to load cubemap: {} - {}", fullPath.string(), e.what());
+            pathToHandle.erase(virtualPath);
+            handleToPath.erase(handle);
+            return INVALID_ASSET_HANDLE;
+        }
+    }
+
+    AssetHandle AssetManager::loadCubemap(const std::string &right, const std::string &left,
+                                          const std::string &top, const std::string &bottom,
+                                          const std::string &front, const std::string &back) {
+        // Create a composite virtual path for the cubemap
+        std::string virtualPath = "cubemap://" + right + "|" + left + "|" + top + "|" + bottom + "|" + front + "|" + back;
+
+        auto it = pathToHandle.find(virtualPath);
+        if (it != pathToHandle.end()) {
+            AT_TRACE("Cubemap already loaded: {} (handle: {})", virtualPath, it->second);
+            return it->second;
+        }
+
+        AssetHandle handle = nextHandle++;
+        pathToHandle[virtualPath] = handle;
+        handleToPath[handle] = virtualPath;
+
+        try {
+            // Resolve all face paths to full filesystem paths
+            std::array<std::string, 6> facePaths = {
+                (getAssetsPath() / right).string(),
+                (getAssetsPath() / left).string(),
+                (getAssetsPath() / top).string(),
+                (getAssetsPath() / bottom).string(),
+                (getAssetsPath() / front).string(),
+                (getAssetsPath() / back).string()
+            };
+
+            // Verify all files exist
+            for (size_t i = 0; i < facePaths.size(); ++i) {
+                if (!std::filesystem::exists(facePaths[i])) {
+                    AT_ERROR("Cubemap face file not found: {}", facePaths[i]);
+                    pathToHandle.erase(virtualPath);
+                    handleToPath.erase(handle);
+                    return INVALID_ASSET_HANDLE;
+                }
+            }
+
+            // Create the cubemap using the 6-face method
+            auto cubemap = Cubemap::create(device, facePaths);
+            cubemapPool[handle] = cubemap;
+
+            AT_TRACE("Loaded 6-face cubemap (handle: {})", handle);
+            return handle;
+        } catch (const std::exception &e) {
+            AT_ERROR("Failed to load 6-face cubemap: {}", e.what());
+            pathToHandle.erase(virtualPath);
+            handleToPath.erase(handle);
+            return INVALID_ASSET_HANDLE;
+        }
+    }
+
     AssetHandle AssetManager::createSphere(float radius, uint32_t segments, uint32_t rings) {
         std::string virtualPath = "procedural://sphere_r" + std::to_string(radius) +
                                   "_s" + std::to_string(segments) +
@@ -287,6 +385,13 @@ namespace Atlas {
         return it != meshPool.end() ? it->second : nullptr;
     }
 
+    std::shared_ptr<Cubemap> AssetManager::getCubemap(AssetHandle handle) {
+        if (handle == INVALID_ASSET_HANDLE) return nullptr;
+
+        auto it = cubemapPool.find(handle);
+        return it != cubemapPool.end() ? it->second : nullptr;
+    }
+
     std::string AssetManager::getPath(AssetHandle handle) const {
         auto it = handleToPath.find(handle);
         return it != handleToPath.end() ? it->second : "";
@@ -363,9 +468,23 @@ namespace Atlas {
             return false;
         }
 
-        // TODO: Implement when cubemap pool is added
-        AT_WARN("freeCubemap not yet implemented (handle: {})", handle);
-        return false;
+        auto it = cubemapPool.find(handle);
+        if (it == cubemapPool.end()) {
+            return false;
+        }
+
+        // Get the path before removing from handleToPath
+        std::string path = getPath(handle);
+
+        // Remove from all internal maps
+        cubemapPool.erase(it);
+        handleToPath.erase(handle);
+        if (!path.empty()) {
+            pathToHandle.erase(path);
+        }
+
+        AT_TRACE("Freed cubemap asset: {} (handle: {})", path, handle);
+        return true;
     }
 
     bool AssetManager::freeAsset(AssetHandle handle) {
@@ -535,7 +654,7 @@ namespace Atlas {
 
         loader.RemoveImageLoader();
 
-        bool success = loader.LoadBinaryFromMemory(&model, &err, &warn, fileBuffer.data(), fileBuffer.size());
+        bool success = loader.LoadBinaryFromMemory(&model, &err, &warn, fileBuffer.data(), static_cast<const uint32_t>(fileBuffer.size()));
 
         if (!warn.empty()) AT_WARN("glTF warning: {}", warn);
         if (!success) {
@@ -572,7 +691,7 @@ namespace Atlas {
                     }
 
                     int width = 0, height = 0;
-                    unsigned char* pixelData = nullptr;
+                    unsigned char *pixelData = nullptr;
                     bool needsFreeing = false;
 
                     // Check if tinygltf already decoded the image (bufferView-based images)
@@ -584,7 +703,7 @@ namespace Atlas {
                         // Convert to RGBA if needed
                         if (image.component == 4) {
                             // Already RGBA, use directly
-                            pixelData = const_cast<unsigned char*>(image.image.data());
+                            pixelData = const_cast<unsigned char *>(image.image.data());
                             needsFreeing = false;
                         } else {
                             // Convert to RGBA

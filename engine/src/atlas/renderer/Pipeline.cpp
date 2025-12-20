@@ -170,8 +170,5 @@ namespace Atlas {
         configInfo.dynamicStateInfo.pDynamicStates = configInfo.dynamicStateEnables.data();
         configInfo.dynamicStateInfo.dynamicStateCount = static_cast<uint32_t>(configInfo.dynamicStateEnables.size());
         configInfo.dynamicStateInfo.flags = 0;
-
-        configInfo.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
-        configInfo.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
     }
 }

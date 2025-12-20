@@ -9,25 +9,26 @@
 namespace Atlas {
     class SkyboxSystem {
     public:
-        SkyboxSystem(Device& device, VkRenderPass renderPass);
+        SkyboxSystem(Device& device, VkRenderPass renderPass, const DescriptorSetLayout& globalSetLayout);
         ~SkyboxSystem();
 
-        void render(VkCommandBuffer commandBuffer, Camera& camera);
+        SkyboxSystem(const SkyboxSystem&) = delete;
+        SkyboxSystem &operator=(const SkyboxSystem&) = delete;
+
+        void render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet);
     private:
         Device& device;
         std::unique_ptr<Pipeline> pipeline;
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-        std::unique_ptr<Buffer> uniformBuffer;
 
-        std::unique_ptr<DescriptorSetLayout> descriptorSetLayout;
-        std::unique_ptr<DescriptorPool> descriptorPool;
-        VkDescriptorSet descriptorSet{VK_NULL_HANDLE};
+        std::unique_ptr<DescriptorSetLayout> samplerCubeSetLayout;
+        std::unique_ptr<DescriptorPool> samplerCubePool;
+        VkDescriptorSet samplerSet{VK_NULL_HANDLE};
 
-        AssetHandle cubemapHandle{INVALID_ASSET_HANDLE};
-        AssetHandle boundCubemap{INVALID_ASSET_HANDLE};
-
+        void createDescriptors();
+        void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
         void createPipeline(VkRenderPass renderPass);
-        void createCubeVertexBuffer();
-        void updateDescriptor();
+
+        AssetHandle boundCubemapHandle = INVALID_ASSET_HANDLE;
     };
 }

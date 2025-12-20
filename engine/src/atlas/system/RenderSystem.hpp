@@ -16,8 +16,6 @@ namespace Atlas {
         RenderSystem(const RenderSystem&) = delete;
         RenderSystem &operator=(const RenderSystem&) = delete;
 
-        uint32_t registerTexture(AssetHandle handle);
-
         void prepareTextures(entt::registry &registry);
 
         void render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet);
@@ -27,6 +25,8 @@ namespace Atlas {
         void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
         void createPipeline(VkRenderPass renderPass);
         void commitSamplersToDescriptors();
+
+        uint32_t registerTexture(AssetHandle handle);
 
         Device &device;
 

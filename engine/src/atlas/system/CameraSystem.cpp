@@ -34,6 +34,10 @@ namespace Atlas {
 
         auto view = registry.view<TransformComponent, CameraComponent>();
 
+        if (view.size_hint() > 1) {
+            AT_WARN("Multiple camera entities detected. All will be updated but only one used for rendering.");
+        }
+
         for (auto entity: view) {
             auto &tf = view.get<TransformComponent>(entity);
             auto &camComp = view.get<CameraComponent>(entity);

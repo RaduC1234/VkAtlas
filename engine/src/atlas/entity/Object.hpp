@@ -91,7 +91,7 @@ namespace Atlas {
     };
 
     struct SkyboxComponent {
-        AssetHandle skyBoxHandle = INVALID_ASSET_HANDLE;
+        AssetHandle cubemapHandle = INVALID_ASSET_HANDLE;
     };
 
     enum LightType {

@@ -12,11 +12,8 @@
 
 #include "entity/Object.hpp"
 #include "renderer/Buffer.hpp"
-#include "renderer/SwapChain.hpp"
 
 namespace Atlas {
-
-
     struct SimplePushConstantData {
         glm::mat4 modelMatrix{1.0f};
         glm::mat4 normalMatrix{1.0f};
@@ -24,7 +21,7 @@ namespace Atlas {
         uint32_t textureIndex{0};
     };
 
-    RenderSystem::RenderSystem(Device &device, VkRenderPass renderPass, const DescriptorSetLayout& globalSetLayout): device(device) {
+    RenderSystem::RenderSystem(Device &device, VkRenderPass renderPass, const DescriptorSetLayout &globalSetLayout): device(device) {
         createDescriptors();
         createPipelineLayout(globalSetLayout);
         createPipeline(renderPass);
@@ -41,10 +38,10 @@ namespace Atlas {
 
     void RenderSystem::createDescriptors() {
         textureSetLayout = DescriptorSetLayout::Builder(device)
-               .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1024)
-               .setBindingFlags(0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
-               .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
-               .build();
+                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1024)
+                .setBindingFlags(0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
+                .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
+                .build();
 
         bindlessTexturePool = DescriptorPool::Builder(device)
                 .setMaxSets(1)
@@ -57,7 +54,7 @@ namespace Atlas {
         }
     }
 
-    void RenderSystem::createPipelineLayout(const DescriptorSetLayout& globalSetLayout) {
+    void RenderSystem::createPipelineLayout(const DescriptorSetLayout &globalSetLayout) {
         VkPushConstantRange pushConstantRange{};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
@@ -85,13 +82,19 @@ namespace Atlas {
 
         PipelineConfigInfo pipelineConfig{};
         Pipeline::defaultPipelineConfigInfo(pipelineConfig);
+
+        pipelineConfig.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
+        pipelineConfig.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
+
         pipelineConfig.renderPass = renderPass;
         pipelineConfig.pipelineLayout = pipelineLayout;
+
         pipeline = std::make_unique<Pipeline>(
             device,
             "shaders/simple_shader.vert.spv",
             "shaders/simple_shader.frag.spv",
-            pipelineConfig);
+            pipelineConfig
+        );
     }
 
     uint32_t RenderSystem::registerTexture(AssetHandle handle) {
@@ -175,27 +178,10 @@ namespace Atlas {
     void RenderSystem::render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet) {
         pipeline->bind(commandBuffer);
 
-        vkCmdBindDescriptorSets(
-            commandBuffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipelineLayout,
-            0, 1,
-            &globalSet,
-            0,
-            nullptr
-        );
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &globalSet, 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &bindlessTextureSet, 0, nullptr);
 
-        vkCmdBindDescriptorSets(
-            commandBuffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipelineLayout,
-            1, 1,
-            &bindlessTextureSet,
-            0,
-            nullptr
-        );
-
-        auto& assetManager = AssetManager::get();
+        auto &assetManager = AssetManager::get();
         auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
 
         for (auto entity: view) {
@@ -212,8 +198,8 @@ namespace Atlas {
             push.baseColor = material.baseColor;
 
             AssetHandle textureHandle = material.albedoTexture != INVALID_ASSET_HANDLE
-                ? material.albedoTexture
-                : defaultWhiteTextureHandle;
+                                            ? material.albedoTexture
+                                            : defaultWhiteTextureHandle;
 
             push.textureIndex = handleToGPUIndex[textureHandle];
 

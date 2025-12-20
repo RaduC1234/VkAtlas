@@ -42,28 +42,19 @@ namespace Atlas {
 
         cameraSystem = std::make_unique<CameraSystem>(renderer.getWindow());
         renderSystem = std::make_unique<RenderSystem>(renderer.getDevice(), renderer.getSwapChainRenderPass(), *globalSetLayout);
+        skyboxSystem = std::make_unique<SkyboxSystem>(renderer.getDevice(), renderer.getSwapChainRenderPass(), *globalSetLayout);
     }
 
     void Scene::onLoad(entt::registry &&loadedRegistry) {
         this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet.glb");
 
-        std::vector<entt::entity> cameraEntities;
-        for (auto e: registry.view<CameraComponent>()) {
-            cameraEntities.push_back(e);
-        }
+        auto cameraEntity = registry.create();
+        registry.emplace<TransformComponent>(cameraEntity);
+        registry.emplace<CameraComponent>(cameraEntity, camera);
 
-        for (auto entity: cameraEntities) {
-            registry.remove<CameraComponent>(entity);
-            registry.emplace<CameraComponent>(entity, camera);
-        }
-
-        bool hasCameraEntity = !cameraEntities.empty();
-
-        if (!hasCameraEntity) {
-            auto cameraObj = registry.create();
-            registry.emplace<TransformComponent>(cameraObj);
-            registry.emplace<CameraComponent>(cameraObj, camera);
-        }
+        AssetHandle skybox = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k.hdr");
+        auto skyboxEntity = registry.create();
+        registry.emplace<SkyboxComponent>(skyboxEntity, skybox);
     }
 
     void Scene::onUpdate(float deltaTime) {
@@ -92,8 +83,8 @@ namespace Atlas {
         };
         uboBuffers[frameIndex]->uploadData(&ubo, sizeof(GlobalUbo));
 
-
         if (auto commandBuffer = renderer.getCurrentCommandBuffer()) {
+            skyboxSystem->render(registry, commandBuffer, globalDescriptorSets[frameIndex]);
             renderSystem->render(registry, commandBuffer, globalDescriptorSets[frameIndex]);
         }
     }

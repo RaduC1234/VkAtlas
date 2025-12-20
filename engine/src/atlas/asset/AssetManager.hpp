@@ -25,7 +25,6 @@ namespace Atlas {
 
     class AssetManager {
     public:
-
 #pragma region Class methods
         virtual ~AssetManager() = default;
 
@@ -67,14 +66,22 @@ namespace Atlas {
         /**
          * @brief Load a skybox/cubemap asset and return its handle
          *
-         * The virtualPath should point to either a cubemap descriptor or a folder
-         * containing the 6 faces. The implementation is platform/engine-specific
-         * and is expected to create a Cubemap asset and return its handle.
+         * This overload accepts a single HDR/equirectangular image or a cubemap descriptor path.
+         * If an equirectangular HDR is provided the implementation should convert it to a cubemap.
          *
-         * @param virtualPath Virtual path to the skybox resource
+         * @param virtualPath Path to an HDR or cubemap resource
          * @return AssetHandle for the created/loaded cubemap, or INVALID_ASSET_HANDLE on failure
          */
-        AssetHandle loadSkybox(const std::string &virtualPath);
+        AssetHandle loadCubemap(const std::string &virtualPath);
+
+        /**
+         * @brief Load a cubemap from six individual face images and return its handle
+         *
+         * Faces are provided in the order: right, left, top, bottom, front, back.
+         *
+         * @return AssetHandle for the created cubemap, or INVALID_ASSET_HANDLE on failure
+         */
+        AssetHandle loadCubemap(const std::string &right, const std::string &left, const std::string &top, const std::string &bottom, const std::string &front, const std::string &back);
 
         /**
          * @brief Create a procedural sphere mesh and return its handle
@@ -277,7 +284,7 @@ namespace Atlas {
             // The full JSON scene loader can be implemented in the .cpp if the
             // project needs a non-header definition or more complex parsing.
             // TODO: implement JSON parsing that populates and returns a registry.
-            (void)filePath; // silence unused parameter warning
+            (void) filePath; // silence unused parameter warning
             return entt::registry{};
         }
 
@@ -363,5 +370,6 @@ namespace Atlas {
         // Resource pools
         std::unordered_map<AssetHandle, std::shared_ptr<Sampler> > texturePool;
         std::unordered_map<AssetHandle, std::shared_ptr<Mesh> > meshPool;
+        std::unordered_map<AssetHandle, std::shared_ptr<Cubemap> > cubemapPool;
     };
 }

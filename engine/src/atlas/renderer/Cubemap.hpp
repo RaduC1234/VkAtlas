@@ -27,8 +27,8 @@ namespace Atlas {
         Cubemap(Device &device) : device(device) {}
 
         void transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout);
-        void copyBufferToImage(VkBuffer buffer);
-        void createImageView();
+        void copyBufferToImage(VkBuffer buffer, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);
+        void createImageView(VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);
         void createSampler();
 
         Device &device;

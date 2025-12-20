@@ -6,6 +6,7 @@
 #include "renderer/Renderer.hpp"
 #include "system/CameraSystem.hpp"
 #include "system/RenderSystem.hpp"
+#include "system/SkyboxSystem.hpp"
 
 #ifdef _WIN32
 #include <imgui.h>
@@ -38,13 +39,15 @@ namespace Atlas {
         Renderer& renderer;
         Camera camera{};
 
-        std::unique_ptr<CameraSystem> cameraSystem;
-        std::unique_ptr<RenderSystem> renderSystem;
-
         // Global descriptors (UBO)
         std::unique_ptr<DescriptorSetLayout> globalSetLayout;
         std::unique_ptr<DescriptorPool> globalPool;
         std::vector<std::unique_ptr<Buffer>> uboBuffers;
         std::vector<VkDescriptorSet> globalDescriptorSets;
+
+        // Systems
+        std::unique_ptr<CameraSystem> cameraSystem;
+        std::unique_ptr<RenderSystem> renderSystem;
+        std::unique_ptr<SkyboxSystem> skyboxSystem;
     };
 }
