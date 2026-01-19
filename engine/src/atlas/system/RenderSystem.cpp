@@ -18,7 +18,7 @@ namespace Atlas {
         glm::mat4 modelMatrix{1.0f};
         glm::mat4 normalMatrix{1.0f};
         glm::vec4 baseColor{1.0f};
-        uint32_t textureIndex{0};
+        glm::ivec4 texturesIndexes{0}; // alberto,  normal, metallicRoughness
     };
 
     RenderSystem::RenderSystem(Device &device, VkRenderPass renderPass, const DescriptorSetLayout &globalSetLayout): device(device) {
@@ -168,6 +168,20 @@ namespace Atlas {
                     newTexturesRegistered = true;
                 }
             }
+
+            if (material.normalMap != INVALID_ASSET_HANDLE) {
+                if (handleToGPUIndex.find(material.normalMap) == handleToGPUIndex.end()) {
+                    registerTexture(material.normalMap);
+                    newTexturesRegistered = true;
+                }
+            }
+
+            if (material.metallicRoughnessMap != INVALID_ASSET_HANDLE) {
+                if (handleToGPUIndex.find(material.metallicRoughnessMap) == handleToGPUIndex.end()) {
+                    registerTexture(material.metallicRoughnessMap);
+                    newTexturesRegistered = true;
+                }
+            }
         }
 
         if (newTexturesRegistered) {
@@ -197,11 +211,24 @@ namespace Atlas {
             push.normalMatrix = transform.normalMatrix();
             push.baseColor = material.baseColor;
 
-            AssetHandle textureHandle = material.albedoTexture != INVALID_ASSET_HANDLE
+            AssetHandle albertoHandle = material.albedoTexture != INVALID_ASSET_HANDLE
                                             ? material.albedoTexture
                                             : defaultWhiteTextureHandle;
 
-            push.textureIndex = handleToGPUIndex[textureHandle];
+            AssetHandle normalHandle = material.normalMap != INVALID_ASSET_HANDLE
+                                           ? material.normalMap
+                                           : defaultWhiteTextureHandle;
+
+            AssetHandle roughnessHandle = material.metallicRoughnessMap != INVALID_ASSET_HANDLE
+                                              ? material.albedoTexture
+                                              : defaultWhiteTextureHandle;
+
+            push.texturesIndexes = {
+                handleToGPUIndex[albertoHandle],
+                handleToGPUIndex[normalHandle],
+                handleToGPUIndex[roughnessHandle],
+                0
+            };
 
             vkCmdPushConstants(
                 commandBuffer,

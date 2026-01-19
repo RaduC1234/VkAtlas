@@ -21,5 +21,10 @@ for %%F in (%SHADER_DIR%\*.frag) do (
     glslc "%%F" -o "%%F.spv"
 )
 
+for %%F in (%SHADER_DIR%\*.comp) do (
+    echo Compiling %%F...
+    glslc "%%F" -o "%%F.spv"
+)
+
 echo Compilation completed!
 exit /b 0

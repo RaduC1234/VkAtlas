@@ -10,7 +10,7 @@ layout(push_constant) uniform Push {
     mat4 modelMatrix;
     mat4 normalMatrix;
     vec4 baseColor;
-    uint textureIndex;// Index into the bindless texture array
+    ivec4 texturesIndexes;// alberto,  normal, metallicRoughness
 } push;
 
 layout(set = 0, binding = 0) uniform GlobalUbo {
@@ -43,7 +43,7 @@ void main() {
     vec3 ambientLight = ubo.ambientLightColor.rgb * ubo.ambientLightColor.w;
     vec3 diffuseLight = lightColor * max(dot(normalize(fragNormalWorld), normalize(directionToLight)), 0.0);
 
-    vec3 texColor = texture(textures[nonuniformEXT(push.textureIndex)], fragUV).rgb;
+    vec3 texColor = texture(textures[nonuniformEXT(push.texturesIndexes.x)], fragUV).rgb;
 
     // Combine texture with vertex color and lighting
     vec3 finalColor = texColor * fragColor * push.baseColor.rgb;

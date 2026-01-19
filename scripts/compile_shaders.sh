@@ -9,7 +9,7 @@ if ! command -v glslc &> /dev/null; then
 fi
 
 # Compile all .vert and .frag shaders in the SHADER_DIR
-for shader in "$SHADER_DIR"/*.vert "$SHADER_DIR"/*.frag; do
+for shader in "$SHADER_DIR"/*.vert "$SHADER_DIR"/*.frag "$SHADER_DIR"/*comp; do
     # Skip if no files found
     [ -e "$shader" ] || continue
 

@@ -13,9 +13,9 @@ namespace Atlas {
 
         Color(const std::string &hex);
 
-        constexpr explicit operator glm::vec4() const { return color; }
+        constexpr operator glm::vec4() const { return color; }
 
-        constexpr explicit operator glm::vec3() const { return {color}; }
+        constexpr operator glm::vec3() const { return {color}; }
 
         static constexpr Color white() { return Color(1.0f, 1.0f, 1.0f, 1.0f); }
         static constexpr Color black() { return Color(0.0f, 0.0f, 0.0f, 1.0f); }

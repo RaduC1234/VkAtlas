@@ -24,7 +24,7 @@ layout(push_constant) uniform Push {
     mat4 modelMatrix;
     mat4 normalMatrix;
     vec4 baseColor;
-    uint textureIndex;// Index into the bindless texture array
+    uvec4 texturesIndexes;// alberto,  normal, metallicRoughness
 } push;
 
 void main() {

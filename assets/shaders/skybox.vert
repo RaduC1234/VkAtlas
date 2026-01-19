@@ -1,4 +1,3 @@
-// skybox.vert
 #version 450
 
 layout(location = 0) out vec3 fragTexCoord;
@@ -9,42 +8,42 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
 } ubo;
 
 const vec3 positions[36] = vec3[](
-// Back face
+// Back
 vec3(-1.0, -1.0, -1.0),
 vec3( 1.0,  1.0, -1.0),
 vec3( 1.0, -1.0, -1.0),
 vec3( 1.0,  1.0, -1.0),
 vec3(-1.0, -1.0, -1.0),
 vec3(-1.0,  1.0, -1.0),
-// Front face
+// Front
 vec3(-1.0, -1.0,  1.0),
 vec3( 1.0, -1.0,  1.0),
 vec3( 1.0,  1.0,  1.0),
 vec3( 1.0,  1.0,  1.0),
 vec3(-1.0,  1.0,  1.0),
 vec3(-1.0, -1.0,  1.0),
-// Left face
+// Left
 vec3(-1.0,  1.0,  1.0),
 vec3(-1.0,  1.0, -1.0),
 vec3(-1.0, -1.0, -1.0),
 vec3(-1.0, -1.0, -1.0),
 vec3(-1.0, -1.0,  1.0),
 vec3(-1.0,  1.0,  1.0),
-// Right face
+// Right
 vec3( 1.0,  1.0,  1.0),
 vec3( 1.0, -1.0, -1.0),
 vec3( 1.0,  1.0, -1.0),
 vec3( 1.0, -1.0, -1.0),
 vec3( 1.0,  1.0,  1.0),
 vec3( 1.0, -1.0,  1.0),
-// Bottom face
+// Bottom
 vec3(-1.0, -1.0, -1.0),
 vec3( 1.0, -1.0, -1.0),
 vec3( 1.0, -1.0,  1.0),
 vec3( 1.0, -1.0,  1.0),
 vec3(-1.0, -1.0,  1.0),
 vec3(-1.0, -1.0, -1.0),
-// Top face
+// Top
 vec3(-1.0,  1.0, -1.0),
 vec3( 1.0,  1.0,  1.0),
 vec3( 1.0,  1.0, -1.0),

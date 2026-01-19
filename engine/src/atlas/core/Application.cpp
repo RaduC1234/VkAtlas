@@ -9,6 +9,8 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
 #include "renderer/ImGuiLayer.hpp"
+#include "scene/OfficeScene.hpp"
+#include "scene/PBRTestScene.hpp"
 
 namespace Atlas {
     Application::Application(const ApplicationSpecification &spec) : specification(spec) {
@@ -16,7 +18,7 @@ namespace Atlas {
         this->window->setWindowIcon("assets/icons/android_robot.png");
         this->window->setTheme(Theme::DARK);
 
-        currentScene = std::make_unique<Scene>(renderer);
+        currentScene = std::make_unique<PBRTestScene>(renderer);
 
         if (currentScene) {
             currentScene->onLoad(NULL);
