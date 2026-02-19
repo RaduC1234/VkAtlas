@@ -1,6 +1,5 @@
-// Buffer.cpp
 #include "Buffer.hpp"
-#include "Device.hpp" // Assuming you have a Device class with VMA allocator access
+#include "Device.hpp"
 #include <stdexcept>
 #include <cstring>
 #include <cassert>

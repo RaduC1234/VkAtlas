@@ -18,7 +18,7 @@ namespace Atlas {
     void ImGuiLayer::beginFrame() {}
     void ImGuiLayer::endFrame(VkCommandBuffer commandBuffer) {}
 #else
-    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device){
+    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()){
         createDescriptorPool(device);
 
         IMGUI_CHECKVERSION();

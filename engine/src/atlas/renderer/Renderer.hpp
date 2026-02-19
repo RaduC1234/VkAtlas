@@ -12,38 +12,38 @@ namespace Atlas {
         Renderer(Window &window, Device &device);
         ~Renderer();
 
-        Renderer(const Renderer&) = delete;
-        Renderer& operator=(const Renderer&) = delete;
+        // Not copyable
+        Renderer(const Renderer &) = delete;
+        Renderer &operator=(const Renderer &) = delete;
 
+        // Window & device accessors
+        Window &getWindow() const { return window; }
+        Device &getDevice() const { return device; }
+
+        // Swap chain accessors
         VkRenderPass getSwapChainRenderPass() const { return swapChain->getRenderPass(); }
         float getAspectRatio() const { return swapChain->extentAspectRatio(); }
+        size_t getImageCount() const { return swapChain->imageCount(); }
+
+        // Frame state
         bool isFrameInProgress() const { return isFrameStarted; }
-
-        VkCommandBuffer getCurrentCommandBuffer() const {
-            assert(isFrameStarted && "Cannot get command buffer when frame not in progress");
-            return commandBuffers[currentFrameIndex];
-        }
-
-         Window& getWindow() const {
-            return window;
-        }
-
-        Device& getDevice() const {
-            return device;
-        }
 
         int getFrameIndex() const {
             assert(isFrameStarted && "Cannot get frame index when frame not in progress");
             return currentFrameIndex;
         }
 
-        size_t getImageCount() const { return swapChain->imageCount(); }
+        VkCommandBuffer getCurrentCommandBuffer() const {
+            assert(isFrameStarted && "Cannot get command buffer when frame not in progress");
+            return commandBuffers[currentFrameIndex];
+        }
 
+        // Frame lifecycle
         VkCommandBuffer beginFrame();
         void endFrame();
 
         void beginSwapChainRenderPass(VkCommandBuffer);
-        void endSwapChainRenderPass(VkCommandBuffer);
+        void endSwapChainRenderPass(VkCommandBuffer) const;
 
     private:
         void createCommandBuffers();
@@ -60,4 +60,3 @@ namespace Atlas {
         bool isFrameStarted{false};
     };
 }
-

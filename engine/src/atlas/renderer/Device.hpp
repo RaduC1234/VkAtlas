@@ -32,36 +32,34 @@ namespace Atlas {
         Device(Window &window);
         ~Device();
 
-        operator VkDevice() const { return this->device_; }
-
-        // Not copyable or movable
         Device(const Device &) = delete;
         Device &operator=(const Device &) = delete;
         Device(Device &&) = delete;
         Device &operator=(Device &&) = delete;
 
+        VkDevice device() const { return device_; }
+        VkSurfaceKHR surface() const { return surface_; }
+        VkQueue graphicsQueue() const { return graphicsQueue_; }
+        VkQueue presentQueue() const { return presentQueue_; }
         VkCommandPool getCommandPool() const { return commandPool; }
         const VkInstance &getInstance() const { return instance; }
         const VkPhysicalDevice &getPhysicalDevice() const { return physicalDevice; }
-        VkDevice device() { return device_; }
-        VkSurfaceKHR surface() { return surface_; }
-        VkQueue graphicsQueue() { return graphicsQueue_; }
-        VkQueue presentQueue() { return presentQueue_; }
-
-        SwapChainSupportDetails getSwapChainSupport() { return querySwapChainSupport(physicalDevice); }
-        uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-        QueueFamilyIndices findPhysicalQueueFamilies() { return findQueueFamilies(physicalDevice); }
-        VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
+        const VmaAllocator &allocator() const { return this->allocator_; }
+        ExecutorService &getExecutor() const { return *executor; }
 
         VkPhysicalDeviceProperties properties;
 
-        const VmaAllocator &allocator() const { return this->allocator_; }
+        SwapChainSupportDetails getSwapChainSupport() { return querySwapChainSupport(physicalDevice); }
+        QueueFamilyIndices findPhysicalQueueFamilies() { return findQueueFamilies(physicalDevice); }
+
+        uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+        VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
+
         VkCommandBuffer beginSingleTimeCommands();
         void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
 
-        ExecutorService &getExecutor() const { return *executor; }
-
     private:
+        // Initialization
         void createInstance();
         void setupDebugMessenger();
         void createSurface();
@@ -70,7 +68,7 @@ namespace Atlas {
         void createVmaAllocator();
         void createCommandPool();
 
-        // helper functions
+        // Helper functions
         bool checkValidationLayerSupport();
         std::vector<const char *> getRequiredExtensions();
         VkPhysicalDevice findBestDevice(const std::vector<VkPhysicalDevice> &devices);
@@ -78,27 +76,28 @@ namespace Atlas {
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
         bool checkDeviceExtensionSupport(VkPhysicalDevice device);
         void hasGflwRequiredInstanceExtensions();
-
         SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 
+        // Core handles
         VkInstance instance;
         VkDebugUtilsMessengerEXT debugMessenger;
         VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-        Atlas::Window &window;
-        VkCommandPool commandPool;
-
         VkDevice device_;
         VkSurfaceKHR surface_;
         VkQueue graphicsQueue_;
         VkQueue presentQueue_;
+        VkCommandPool commandPool;
+        Window &window;
 
+        // Allocator & services
+        VmaAllocator allocator_;
+        std::unique_ptr<ExecutorService> executor;
+
+        // Config
         const std::vector<const char *> validationLayers = {"VK_LAYER_KHRONOS_validation"};
         const std::vector<const char *> deviceExtensions = {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
             VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
         };
-
-        VmaAllocator allocator_;
-        std::unique_ptr<ExecutorService> executor;
     };
 }
