@@ -7,22 +7,50 @@
 #include "asset/AssetManager.hpp"
 
 namespace Atlas {
-    Pipeline::Pipeline(Device &device, const std::string &vertexVertCode, const std::string &fragmentVertCode, const PipelineConfigInfo &configInfo): device{device} {
-        createGraphicsPipeline(vertexVertCode, fragmentVertCode, configInfo);
+    Pipeline::Pipeline(Device &device, const std::string &vertexVertPath, const std::string &fragmentVertPath, const GraphicsPipelineConfigInfo &configInfo) : device{device}, type{PipelineType::Graphics} {
+        createGraphicsPipeline(vertexVertPath, fragmentVertPath, configInfo);
+    }
+
+    Pipeline::Pipeline(Device &device, const std::string &computeShaderPath, const ComputePipelineConfigInfo &configInfo) : device{device}, type{PipelineType::Compute} {
+        createComputePipeline(computeShaderPath, configInfo);
     }
 
     Pipeline::~Pipeline() {
-        vkDestroyShaderModule(device.device(), fragShaderModule, nullptr);
-        vkDestroyShaderModule(device.device(), vertShaderModule, nullptr);
+        switch (this->type) {
+            case PipelineType::Graphics: {
+                vkDestroyShaderModule(device.device(), fragShaderModule, nullptr);
+                vkDestroyShaderModule(device.device(), vertShaderModule, nullptr);
+                break;
+            }
+            case PipelineType::Compute: {
+                vkDestroyShaderModule(device.device(), compShaderModule, nullptr);
+                break;
+            }
+            default: {
+                assert("Invalid pipeline type in destructor");
+            }
+        }
 
-        vkDestroyPipeline(device.device(), graphicsPipeline, nullptr);
+        vkDestroyPipeline(device.device(), pipeline, nullptr);
     }
 
     void Pipeline::bind(VkCommandBuffer commandBuffer) {
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+        switch (this->type) {
+            case PipelineType::Graphics: {
+                vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                break;
+            }
+            case PipelineType::Compute: {
+                vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+                break;
+            }
+            default: {
+                throw std::runtime_error("Invalid pipeline type in bind()");
+            }
+        }
     }
 
-    void Pipeline::createGraphicsPipeline(const std::string &vertFilepath, const std::string &fragFilepath, const PipelineConfigInfo &configInfo) {
+    void Pipeline::createGraphicsPipeline(const std::string &vertFilepath, const std::string &fragFilepath, const GraphicsPipelineConfigInfo &configInfo) {
         assert(
             configInfo.pipelineLayout != VK_NULL_HANDLE &&
             "Cannot create graphics pipeline: no pipelineLayout provided in configInfo");
@@ -82,8 +110,30 @@ namespace Atlas {
         pipelineInfo.basePipelineIndex = -1;
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-        if (vkCreateGraphicsPipelines(device.device(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
+        if (vkCreateGraphicsPipelines(device.device(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create graphics pipeline.");
+        }
+    }
+
+    void Pipeline::createComputePipeline(const std::string &computeShaderPath, const ComputePipelineConfigInfo &configInfo) {
+        const auto computeCode = AssetManager::loadFileAsU8(computeShaderPath);
+
+        createShaderModule(computeCode, &compShaderModule);
+
+        VkPipelineShaderStageCreateInfo computeShaderStageInfo{};
+        computeShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        computeShaderStageInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        computeShaderStageInfo.module = compShaderModule;
+        computeShaderStageInfo.pName = "main";
+
+        VkComputePipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        pipelineInfo.stage = computeShaderStageInfo;
+        pipelineInfo.layout = configInfo.pipelineLayout;
+
+
+        if (vkCreateComputePipelines(device.device(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create compute pipeline.");
         }
     }
 
@@ -98,7 +148,7 @@ namespace Atlas {
         }
     }
 
-    void Pipeline::defaultPipelineConfigInfo(PipelineConfigInfo &configInfo) {
+    void Pipeline::defaultGraphicsPipelineConfigInfo(GraphicsPipelineConfigInfo &configInfo) {
         configInfo.inputAssemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         configInfo.inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         configInfo.inputAssemblyInfo.primitiveRestartEnable = VK_FALSE;
@@ -170,5 +220,8 @@ namespace Atlas {
         configInfo.dynamicStateInfo.pDynamicStates = configInfo.dynamicStateEnables.data();
         configInfo.dynamicStateInfo.dynamicStateCount = static_cast<uint32_t>(configInfo.dynamicStateEnables.size());
         configInfo.dynamicStateInfo.flags = 0;
+    }
+
+    void Pipeline::defaultComputePipelineConfigInfo(ComputePipelineConfigInfo &configInfo) {
     }
 }

@@ -6,6 +6,7 @@
 #include "renderer/Renderer.hpp"
 #include "system/CameraSystem.hpp"
 #include "system/RenderSystem.hpp"
+#include "system/RenderSystemV2.hpp"
 #include "system/SkyboxSystem.hpp"
 
 #ifdef _WIN32
@@ -13,8 +14,7 @@
 
 namespace Atlas {
     struct alignas(16) GlobalUbo {
-        glm::mat4 projection{1.0f};
-        glm::mat4 view{1.0f};
+        Camera::Data cameraData;
         glm::vec4 ambientColor{1.0f, 1.0f, 1.0f, 0.002f};
         glm::vec3 lightPosition{-1.0f};
         float padding1;
@@ -24,7 +24,7 @@ namespace Atlas {
     class OfficeScene : public Scene {
     public:
         explicit OfficeScene(Renderer &renderer);
-        virtual ~OfficeScene() = default;
+        ~OfficeScene() override = default;
 
         virtual void onLoad(entt::registry&& registry);
         virtual void onUpdate(float deltaTime);
@@ -40,7 +40,7 @@ namespace Atlas {
 
         // Systems
         std::unique_ptr<CameraSystem> cameraSystem;
-        std::unique_ptr<RenderSystem> renderSystem;
+        std::unique_ptr<RenderSystemV2> renderSystem;
         std::unique_ptr<SkyboxSystem> skyboxSystem;
     };
 }

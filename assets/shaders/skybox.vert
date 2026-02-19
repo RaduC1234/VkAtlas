@@ -54,7 +54,7 @@ vec3(-1.0,  1.0,  1.0)
 
 void main() {
     vec3 pos = positions[gl_VertexIndex];
-    fragTexCoord = pos;
+    fragTexCoord = vec3(pos.x, -pos.y, pos.z);
 
     mat4 viewRotationOnly = mat4(mat3(ubo.viewMatrix));
     vec4 clipPos = ubo.projectionMatrix * viewRotationOnly * vec4(pos, 1.0);

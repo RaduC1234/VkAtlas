@@ -8,6 +8,9 @@
 
 
 namespace Atlas {
+    /**
+     * @deprecated - use RenderSystemV2 with culling
+     */
     class RenderSystem {
     public:
         RenderSystem(Device &device, VkRenderPass renderPass, const DescriptorSetLayout& globalSetLayout);
@@ -16,7 +19,7 @@ namespace Atlas {
         RenderSystem(const RenderSystem&) = delete;
         RenderSystem &operator=(const RenderSystem&) = delete;
 
-        void prepareTextures(entt::registry &registry);
+        void prepare(entt::registry &registry);
 
         void render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet);
 

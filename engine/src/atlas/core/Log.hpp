@@ -5,6 +5,8 @@
 #include <mutex>
 
 #include <fmt/color.h>
+#include <fmt/format.h>
+#include <fmt/args.h>
 
 namespace Atlas {
     enum class LogLevel {
@@ -33,7 +35,10 @@ namespace Atlas {
 
         template<typename... Args>
         void log(LogLevel level, const std::string &format, Args &&... args) {
-            log(level, fmt::format(format, std::forward<Args>(args)...));
+            fmt::dynamic_format_arg_store<fmt::format_context> store;
+            (store.push_back(std::forward<Args>(args)), ...);
+            auto message = fmt::vformat(format, store);
+            log(level, message);
         }
 
     private:

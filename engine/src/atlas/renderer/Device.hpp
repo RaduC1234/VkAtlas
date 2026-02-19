@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include "core/Window.hpp"
@@ -21,16 +22,14 @@ namespace Atlas {
     };
 
     struct QueueFamilyIndices {
-        uint32_t graphicsFamily;
-        uint32_t presentFamily;
-        bool graphicsFamilyHasValue = false;
-        bool presentFamilyHasValue = false;
-        bool isComplete() { return graphicsFamilyHasValue && presentFamilyHasValue; }
+        std::optional<uint32_t> graphicsFamily;
+        std::optional<uint32_t> presentFamily;
+        bool isComplete() const { return graphicsFamily.has_value() && presentFamily.has_value(); }
     };
 
     class Device {
     public:
-        Device(Atlas::Window &window);
+        Device(Window &window);
         ~Device();
 
         operator VkDevice() const { return this->device_; }

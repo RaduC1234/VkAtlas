@@ -12,7 +12,19 @@
 
 namespace Atlas {
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
-        AT_ERROR("Error: Validation layer: {0}", pCallbackData->pMessage);
+        const char* message = pCallbackData && pCallbackData->pMessage ? pCallbackData->pMessage : "(no message)";
+
+        if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
+            AT_TRACE(message);
+        } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+            AT_INFO(message);
+        } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+            AT_WARN(message);
+        } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+            AT_ERROR(message);
+        } else {
+            AT_INFO(message);
+        }
 
         return VK_FALSE;
     }
@@ -123,7 +135,9 @@ namespace Atlas {
         }
     }
 
-    void Device::createSurface() { window.createWindowSurface(instance, &surface_); }
+    void Device::createSurface() {
+        window.createWindowSurface(instance, &surface_);
+    }
 
     void Device::pickPhysicalDevice() {
         uint32_t deviceCount = 0;
@@ -149,7 +163,7 @@ namespace Atlas {
         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-        std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily, indices.presentFamily};
+        std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
 
         float queuePriority = 1.0f;
         for (uint32_t queueFamily: uniqueQueueFamilies) {
@@ -165,9 +179,14 @@ namespace Atlas {
         VkPhysicalDeviceDescriptorIndexingFeatures indexingFeatures{};
         indexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
 
+        // Enable shaderDrawParameters for gl_BaseInstance in indirect rendering
+        VkPhysicalDeviceVulkan11Features vulkan11Features{};
+        vulkan11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        vulkan11Features.pNext = &indexingFeatures;
+
         VkPhysicalDeviceFeatures2 features2{};
         features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        features2.pNext = &indexingFeatures;
+        features2.pNext = &vulkan11Features;
 
         vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
 
@@ -183,13 +202,17 @@ namespace Atlas {
         indexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
         indexingFeatures.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
 
+        // Enable shaderDrawParameters for indirect rendering (gl_BaseInstance)
+        vulkan11Features.shaderDrawParameters = VK_TRUE;
+
         // Enable core features
         VkPhysicalDeviceFeatures deviceFeatures = {};
         deviceFeatures.samplerAnisotropy = VK_TRUE;
+        deviceFeatures.multiDrawIndirect = VK_TRUE;
 
         VkDeviceCreateInfo createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        createInfo.pNext = &indexingFeatures; // Chain descriptor indexing features
+        createInfo.pNext = &vulkan11Features; // Chain: vulkan11Features -> indexingFeatures
 
         createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
         createInfo.pQueueCreateInfos = queueCreateInfos.data();
@@ -211,8 +234,8 @@ namespace Atlas {
             throw std::runtime_error("failed to create logical device!");
         }
 
-        vkGetDeviceQueue(device_, indices.graphicsFamily, 0, &graphicsQueue_);
-        vkGetDeviceQueue(device_, indices.presentFamily, 0, &presentQueue_);
+        vkGetDeviceQueue(device_, indices.graphicsFamily.value(), 0, &graphicsQueue_);
+        vkGetDeviceQueue(device_, indices.presentFamily.value(), 0, &presentQueue_);
 
         AT_INFO("MaxPushConstantSize: {}", properties.limits.maxPushConstantsSize);
     }
@@ -233,7 +256,7 @@ namespace Atlas {
 
         VkCommandPoolCreateInfo poolInfo = {};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily;
+        poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
         poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
         if (vkCreateCommandPool(device_, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
@@ -333,13 +356,11 @@ namespace Atlas {
         for (const auto &queueFamily: queueFamilies) {
             if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 indices.graphicsFamily = i;
-                indices.graphicsFamilyHasValue = true;
             }
             VkBool32 presentSupport = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &presentSupport);
             if (queueFamily.queueCount > 0 && presentSupport) {
                 indices.presentFamily = i;
-                indices.presentFamilyHasValue = true;
             }
             if (indices.isComplete()) {
                 break;

@@ -30,8 +30,8 @@ namespace Atlas {
     void EditorUiSystem::createPipeline(VkRenderPass renderPass) {
         assert(pipelineLayout != VK_NULL_HANDLE && "Cannot create pipeline before pipeline layout!");
 
-        PipelineConfigInfo pipelineConfig{};
-        Pipeline::defaultPipelineConfigInfo(pipelineConfig);
+        GraphicsPipelineConfigInfo pipelineConfig{};
+        Pipeline::defaultGraphicsPipelineConfigInfo(pipelineConfig);
         pipelineConfig.bindingDescriptions.clear();
         pipelineConfig.attributeDescriptions.clear();
         pipelineConfig.renderPass = renderPass;

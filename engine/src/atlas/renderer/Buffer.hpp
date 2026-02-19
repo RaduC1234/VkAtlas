@@ -102,13 +102,20 @@ public:
     VkBuffer get() const { return buffer_; }
 
     /**
+     * @brief Returns the mapped pointer (if mapped).
+     */
+    void* getMapped() const { return mapped_; }
+
+    /**
      * @brief Static helper to copy from one buffer to another using a command buffer.
      * @param device The Vulkan device wrapper.
      * @param src Source buffer.
      * @param dst Destination buffer.
      * @param size Number of bytes to copy.
+     * @param srcOffset Byte offset in the source buffer.
+     * @param dstOffset Byte offset in the destination buffer.
      */
-    static void copy(Device& device, VkBuffer src, VkBuffer dst, VkDeviceSize size);
+    static void copy(Device &device, VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
 
 private:
     /**

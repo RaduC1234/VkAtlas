@@ -1,6 +1,17 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : require
 
+struct CameraData {
+    mat4 projection;
+    mat4 view;
+    mat4 viewProjection;
+    vec4 frustumPlanes[6];
+    vec3 position;
+    float nearPlane;
+    vec3 direction;
+    float farPlane;
+};
+
 layout(location = 0) in vec3 fragColor;
 layout(location = 1) in vec3 fragPosWorld;
 layout(location = 2) in vec3 fragNormalWorld;
@@ -14,8 +25,7 @@ layout(push_constant) uniform Push {
 } push;
 
 layout(set = 0, binding = 0) uniform GlobalUbo {
-    mat4 projectionMatrix;
-    mat4 viewMatrix;
+    CameraData cameraData;
     vec4 ambientLightColor;// w is intensity
     vec3 lightPosition;
     float padding1;

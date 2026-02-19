@@ -80,8 +80,8 @@ namespace Atlas {
     void RenderSystem::createPipeline(VkRenderPass renderPass) {
         assert(pipelineLayout != VK_NULL_HANDLE && "Cannot create pipeline before pipeline layout");
 
-        PipelineConfigInfo pipelineConfig{};
-        Pipeline::defaultPipelineConfigInfo(pipelineConfig);
+        GraphicsPipelineConfigInfo pipelineConfig{};
+        Pipeline::defaultGraphicsPipelineConfigInfo(pipelineConfig);
 
         pipelineConfig.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
         pipelineConfig.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
@@ -155,7 +155,7 @@ namespace Atlas {
         waitingToBeCommitedSamplers.clear();
     }
 
-    void RenderSystem::prepareTextures(entt::registry &registry) {
+    void RenderSystem::prepare(entt::registry &registry) {
         bool newTexturesRegistered = false;
 
         auto view = registry.view<MaterialComponent>();
@@ -201,9 +201,9 @@ namespace Atlas {
         for (auto entity: view) {
             auto &transform = view.get<TransformComponent>(entity);
             auto &material = view.get<MaterialComponent>(entity);
-            auto &modelComp = view.get<ModelComponent>(entity);
+            auto &model = view.get<ModelComponent>(entity);
 
-            auto mesh = assetManager.getMesh(modelComp.meshHandle);
+            auto mesh = assetManager.getMesh(model.meshHandle);
             if (!mesh) continue; // skip if mesh not loaded. todo: implement resource streaming
 
             SimplePushConstantData push{};
@@ -220,7 +220,7 @@ namespace Atlas {
                                            : defaultWhiteTextureHandle;
 
             AssetHandle roughnessHandle = material.metallicRoughnessMap != INVALID_ASSET_HANDLE
-                                              ? material.albedoTexture
+                                              ? material.metallicRoughnessMap
                                               : defaultWhiteTextureHandle;
 
             push.texturesIndexes = {

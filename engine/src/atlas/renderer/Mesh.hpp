@@ -41,6 +41,9 @@ namespace Atlas {
         void bind(VkCommandBuffer commandBuffer);
         void draw(VkCommandBuffer commandBuffer);
 
+        const std::vector<Vertex>& getVertices() const { return vertices_; }
+        const std::vector<uint32_t>& getIndices() const { return indices_; }
+
         static std::unique_ptr<Mesh> createSphere(Device& device, float radius = 1.0f, uint32_t segments = 32, uint32_t rings = 16);
         static std::unique_ptr<Mesh> createCube(Device &device, float size = 1.0f);
         static std::unique_ptr<Mesh> createPlane(Device &device, float width, float height);
@@ -52,6 +55,9 @@ namespace Atlas {
         void createIndexBuffers(const std::vector<uint32_t> &indices);
 
         Device &device;
+
+        std::vector<Vertex> vertices_;
+        std::vector<uint32_t> indices_;
 
         std::unique_ptr<Buffer> vertexBuffer;
         uint32_t vertexCount;

@@ -4,9 +4,15 @@
 
 namespace Atlas {
 
-    struct PipelineConfigInfo {
-        PipelineConfigInfo(const PipelineConfigInfo&) = delete;
-        PipelineConfigInfo& operator=(const PipelineConfigInfo&) = delete;
+    enum class PipelineType {
+        Graphics,
+        Compute
+    };
+
+    struct GraphicsPipelineConfigInfo {
+        GraphicsPipelineConfigInfo() = default;
+        GraphicsPipelineConfigInfo(const GraphicsPipelineConfigInfo&) = delete;
+        GraphicsPipelineConfigInfo& operator=(const GraphicsPipelineConfigInfo&) = delete;
 
         std::vector<VkVertexInputBindingDescription> bindingDescriptions{};
         std::vector<VkVertexInputAttributeDescription> attributeDescriptions{};
@@ -24,32 +30,51 @@ namespace Atlas {
         uint32_t subpass = 0;
     };
 
+    struct ComputePipelineConfigInfo {
+        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+    };
+
     class Pipeline {
     public:
         Pipeline(Device& device,
-            const std::string &vertexVertCode,
-            const std::string &fragmentVertCode,
-            const PipelineConfigInfo& configInfo);
+            const std::string &vertexVertPath,
+            const std::string &fragmentVertPath,
+            const GraphicsPipelineConfigInfo& configInfo);
+
+        Pipeline(Device& device,
+                 const std::string& computeShaderPath,
+                 const ComputePipelineConfigInfo& configInfo);
 
         ~Pipeline();
 
         Pipeline(const Pipeline&) = delete;
         Pipeline& operator=(const Pipeline&) = delete;
 
+        PipelineType getType() const { return type; }
+
         void bind(VkCommandBuffer commandBuffer);
-        static void defaultPipelineConfigInfo(PipelineConfigInfo &configInfo);
+
+        static void defaultGraphicsPipelineConfigInfo(GraphicsPipelineConfigInfo &configInfo);
+        static void defaultComputePipelineConfigInfo(ComputePipelineConfigInfo &configInfo);
 
     private:
         void createGraphicsPipeline(
             const std::string &vertFilepath,
             const std::string &fragFilepath,
-            const PipelineConfigInfo &configInfo);
+            const GraphicsPipelineConfigInfo &configInfo);
+
+        void createComputePipeline(
+            const std::string & computeShaderPath,
+            const ComputePipelineConfigInfo& configInfo);
 
         void createShaderModule(const std::vector<char> &code, VkShaderModule* shaderModule) const;
 
         Device& device;
-        VkPipeline graphicsPipeline;
+        const PipelineType type;
+        VkPipeline pipeline;
+
         VkShaderModule vertShaderModule;
         VkShaderModule fragShaderModule;
+        VkShaderModule compShaderModule;
     };
 }

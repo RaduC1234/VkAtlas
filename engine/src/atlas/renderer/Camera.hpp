@@ -7,6 +7,17 @@
 namespace Atlas {
     class Camera {
     public:
+        struct alignas(16) Data {
+            glm::mat4 projection;
+            glm::mat4 view;
+            glm::mat4 viewProjection;
+            glm::vec4 frustumPlanes[6];
+            glm::vec3 position;
+            float nearPlane;
+            glm::vec3 direction;
+            float farPlane;
+        };
+        
         void setOrthographicProjection(float left, float right, float top, float bottom, float near, float far);
         void setPerspectiveProjection(float fovY, float aspect, float near, float far);
 
@@ -17,8 +28,12 @@ namespace Atlas {
         const glm::mat4& getProjection() const { return projectionMatrix; }
         const glm::mat4& getView() const { return viewMatrix; }
 
+        Data getData() const;
+
     private:
         glm::mat4 projectionMatrix{1.0f};
         glm::mat4 viewMatrix{1.0f};
+        float nearPlane{0.1f};
+        float farPlane{100.0f};
     };
 }

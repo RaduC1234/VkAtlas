@@ -32,7 +32,7 @@ namespace Atlas {
         initInfo.Instance = device.getInstance();
         initInfo.PhysicalDevice = device.getPhysicalDevice();
         initInfo.Device = device.device();
-        initInfo.QueueFamily = device.findPhysicalQueueFamilies().graphicsFamily;
+        initInfo.QueueFamily = device.findPhysicalQueueFamilies().graphicsFamily.value();
         initInfo.Queue = device.graphicsQueue();
         initInfo.DescriptorPool = descriptorPool;
         initInfo.MinImageCount = 2;

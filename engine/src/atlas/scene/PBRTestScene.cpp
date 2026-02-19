@@ -90,7 +90,7 @@ namespace Atlas {
         ImGui::End();
 #endif
 
-        renderSystem->prepareTextures(registry);
+        renderSystem->prepare(registry);
 
         int frameIndex = renderer.getFrameIndex();
 

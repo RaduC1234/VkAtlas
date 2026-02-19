@@ -13,12 +13,12 @@
 #include "scene/PBRTestScene.hpp"
 
 namespace Atlas {
-    Application::Application(const ApplicationSpecification &spec) : specification(spec) {
-        AssetManager::create(this->device, spec.pNativeApp);
+    Application::Application(const ApplicationSpecification &specification) : specification(specification) {
+        AssetManager::create(this->device, specification.pNativeApp);
         this->window->setWindowIcon("assets/icons/android_robot.png");
         this->window->setTheme(Theme::DARK);
 
-        currentScene = std::make_unique<PBRTestScene>(renderer);
+        currentScene = std::make_unique<OfficeScene>(renderer);
 
         if (currentScene) {
             currentScene->onLoad(NULL);
@@ -45,7 +45,6 @@ namespace Atlas {
             currentTime = newTime;
 
             float aspect = renderer.getAspectRatio();
-
 
             if (auto commandBuffer = renderer.beginFrame()) {
                 if (currentScene) {

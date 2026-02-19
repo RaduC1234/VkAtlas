@@ -110,7 +110,7 @@ namespace Atlas {
          * @param height Plane height along Z
          * @return AssetHandle for the created plane mesh
          */
-        AssetHandle createPlane(float width, float height);
+        AssetHandle createPlane(float width = 1, float height = 1);
 
         /**
          * @brief Load a glTF file (GLTF/GLB) and create mesh and texture assets.

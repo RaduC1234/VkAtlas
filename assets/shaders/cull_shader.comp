@@ -1,0 +1,96 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+struct CameraData {
+    mat4 projection;
+    mat4 view;
+    mat4 viewProjection;
+    vec4 frustumPlanes[6];
+    vec3 position;
+    float nearPlane;
+    vec3 direction;
+    float farPlane;
+};
+
+struct GPUInstanceData {
+    mat4 transform;
+    vec4 boundingSphere;
+    vec3 aabbMin;
+    uint meshID;
+    vec3 aabbMax;
+    uint pad;
+};
+
+struct GPUMeshData {
+    uint vertexOffset;
+    uint indexOffset;
+    uint indexCount;
+    uint pad;
+};
+
+struct DrawCommand {
+    uint indexCount;
+    uint instanceCount;
+    uint firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+
+// Set 0: Global UBO (reuse from graphics!)
+layout(set = 0, binding = 0) uniform GlobalUbo {
+    CameraData camera;
+} camera;
+
+// Set 1: Culling-specific buffers
+layout(set = 1, binding = 0) readonly buffer InstanceBuffer {
+    GPUInstanceData instances[];
+};
+
+layout(set = 1, binding = 1) readonly buffer MeshBuffer {
+    GPUMeshData meshes[];
+};
+
+layout(set = 1, binding = 2) writeonly buffer DrawCommandBuffer {
+    DrawCommand drawCommands[];
+};
+
+layout(set = 1, binding = 3) buffer DrawCount {
+    uint count;
+};
+
+layout(push_constant) uniform PushConstants {
+    uint totalInstances;
+} push;
+
+void main() {
+    uint instanceID = gl_GlobalInvocationID.x;
+
+    if (instanceID >= push.totalInstances) {
+        return;
+    }
+
+    GPUInstanceData instance = instances[instanceID];
+
+    // Simple distance cull using camera from global UBO
+    vec3 center = instance.boundingSphere.xyz;
+    float distance = length(camera.camera.position - center);
+
+    if (distance > 100.0) {
+        return;// CULLED
+    }
+
+    // VISIBLE
+    GPUMeshData mesh = meshes[instance.meshID];
+
+    uint drawIndex = atomicAdd(count, 1);
+
+    DrawCommand cmd;
+    cmd.indexCount = mesh.indexCount;
+    cmd.instanceCount = 1;
+    cmd.firstIndex = mesh.indexOffset;
+    cmd.vertexOffset = int(mesh.vertexOffset);
+    cmd.firstInstance = instanceID;
+
+    drawCommands[drawIndex] = cmd;
+}

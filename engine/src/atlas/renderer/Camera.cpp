@@ -74,4 +74,42 @@ namespace Atlas {
         viewMatrix[3][1] = -glm::dot(v, position);
         viewMatrix[3][2] = -glm::dot(w, position);
     }
+
+    Camera::Data Camera::getData() const {
+        Data data{};
+        data.projection = this->projectionMatrix;
+        data.view = this->viewMatrix;
+        data.viewProjection = this->projectionMatrix * this->viewMatrix;
+
+        glm::vec4 row0 = glm::vec4(data.viewProjection[0][0], data.viewProjection[1][0], data.viewProjection[2][0], data.viewProjection[3][0]);
+        glm::vec4 row1 = glm::vec4(data.viewProjection[0][1], data.viewProjection[1][1], data.viewProjection[2][1], data.viewProjection[3][1]);
+        glm::vec4 row2 = glm::vec4(data.viewProjection[0][2], data.viewProjection[1][2], data.viewProjection[2][2], data.viewProjection[3][2]);
+        glm::vec4 row3 = glm::vec4(data.viewProjection[0][3], data.viewProjection[1][3], data.viewProjection[2][3], data.viewProjection[3][3]);
+
+        glm::vec4 planes[6];
+        planes[0] = row3 + row0; // left
+        planes[1] = row3 - row0; // right
+        planes[2] = row3 + row1; // bottom
+        planes[3] = row3 - row1; // top
+        planes[4] = row3 + row2; // near
+        planes[5] = row3 - row2; // far
+
+        for (int i = 0; i < 6; ++i) {
+            glm::vec3 n = glm::vec3(planes[i]);
+            float length = glm::length(n);
+            if (length > 0.0f) planes[i] /= length;
+            data.frustumPlanes[i] = planes[i];
+        }
+
+        // Camera position and direction in world space
+        glm::mat4 invView = glm::inverse(viewMatrix);
+        data.position = glm::vec3(invView[3]); // translation column
+        data.direction = glm::normalize(glm::vec3(invView * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)));
+
+        data.nearPlane = this->nearPlane;
+        data.farPlane = this->farPlane;
+
+        return data;
+
+    }
 }

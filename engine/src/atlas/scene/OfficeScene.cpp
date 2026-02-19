@@ -3,11 +3,11 @@
 #include <imgui.h>
 
 #include "system/CameraSystem.hpp"
-#include "system/RenderSystem.hpp"
+#include "system/RenderSystemV2.hpp"
+#include "system/SkyboxSystem.hpp"
 
 #include "entity/Object.hpp"
 #include "renderer/Renderer.hpp"
-#include "system/SkyboxSystem.hpp"
 
 namespace Atlas {
     OfficeScene::OfficeScene(Renderer &renderer) : Scene(renderer) {
@@ -43,7 +43,7 @@ namespace Atlas {
         }
 
         cameraSystem = std::make_unique<CameraSystem>(renderer.getWindow());
-        renderSystem = std::make_unique<RenderSystem>(renderer.getDevice(), renderer.getSwapChainRenderPass(), *globalSetLayout);
+        renderSystem = std::make_unique<RenderSystemV2>(renderer.getDevice(), renderer.getSwapChainRenderPass(), *globalSetLayout);
         skyboxSystem = std::make_unique<SkyboxSystem>(renderer.getDevice(), renderer.getSwapChainRenderPass(), *globalSetLayout);
     }
 
@@ -63,6 +63,8 @@ namespace Atlas {
         float aspect = renderer.getAspectRatio();
         cameraSystem->update(registry, deltaTime, aspect);
         camera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 200.f);
+
+        renderSystem->prepare(registry);
     }
 
     void OfficeScene::onRender(float deltaTime, float aspectRatio) {
@@ -71,13 +73,11 @@ namespace Atlas {
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::End();
 #endif
-        renderSystem->prepareTextures(registry);
 
         int frameIndex = renderer.getFrameIndex();
 
         const GlobalUbo ubo{
-            camera.getProjection(),
-            camera.getView(),
+            camera.getData(),
             glm::vec4(1.0f, 1.0f, 1.0f, 1.f), // ambient color
             glm::vec3(-1.0f), // light position
             0.0f,
