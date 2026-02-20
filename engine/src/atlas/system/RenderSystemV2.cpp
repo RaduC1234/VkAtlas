@@ -20,15 +20,10 @@ namespace Atlas {
         createMergedBuffers();
         createIndirectBuffers();
 
-        // Register default assets so index 0 is always valid
         const AssetHandle defaultTexture = AssetManager::get().createDefaultWhiteTexture();
         registerTexture(defaultTexture);
         commitSamplersToDescriptors();
         defaultWhiteTextureHandle = defaultTexture;
-
-        /*const AssetHandle defaultMesh = AssetManager::get().createCube();
-        registerMesh(defaultMesh);
-        commitMeshesToDescriptors();*/
     }
 
     RenderSystemV2::~RenderSystemV2() {
@@ -99,12 +94,7 @@ namespace Atlas {
         );
     }
 
-    // -------------------------------------------------------------------------
-    // Buffer creation
-    // -------------------------------------------------------------------------
-
     void RenderSystemV2::createMergedBuffers() {
-        // One big vertex buffer for all meshes
         mergedVertexBuffer = std::make_unique<Buffer>(
             device,
             VERTEX_BUDGET,
@@ -112,7 +102,6 @@ namespace Atlas {
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
         );
 
-        // One big index buffer for all meshes
         mergedIndexBuffer = std::make_unique<Buffer>(
             device,
             INDEX_BUDGET,
@@ -122,7 +111,6 @@ namespace Atlas {
     }
 
     void RenderSystemV2::createIndirectBuffers() {
-        // Indirect draw commands — host visible so CPU writes them each frame
         indirectCommandBuffer = std::make_unique<Buffer>(
             device,
             sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
@@ -131,7 +119,7 @@ namespace Atlas {
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
         );
 
-        // Object SSBO — host visible, GPU reads via descriptor
+        // Object SSBO
         objectDataBuffer = std::make_unique<Buffer>(
             device,
             sizeof(GPUObjectData) * MAX_OBJECTS,
@@ -149,21 +137,23 @@ namespace Atlas {
                 .overwrite(objectDataSet);
     }
 
-    // -------------------------------------------------------------------------
-    // Asset registration
-    // -------------------------------------------------------------------------
 
     uint32_t RenderSystemV2::registerTexture(AssetHandle handle) {
         if (handle == INVALID_ASSET_HANDLE) return 0;
 
         auto it = handleToGPUIndex.find(handle);
-        if (it != handleToGPUIndex.end()) return it->second;
+        if (it != handleToGPUIndex.end()) {
+            return it->second;
+        }
 
-        if (nextTextureIndex >= MAX_TEXTURES)
+        if (nextTextureIndex >= MAX_TEXTURES) {
             throw std::runtime_error("Exceeded maximum bindless texture count");
+        }
 
         auto texture = AssetManager::get().getTexture(handle);
-        if (!texture) return 0;
+        if (!texture) {
+            return 0;
+        }
 
         uint32_t idx = nextTextureIndex++;
         handleToGPUIndex[handle] = idx;
@@ -178,45 +168,39 @@ namespace Atlas {
         auto it = meshAllocations.find(handle);
         if (it != meshAllocations.end()) return it->second.firstIndex;
 
-        auto mesh = AssetManager::get().getMesh(handle);
-        if (!mesh) return 0;
+        const auto mesh = AssetManager::get().getMesh(handle);
+
+        if (!mesh) {
+            return 0;
+        }
 
         const auto &vertices = mesh->getVertices();
         const auto &indices = mesh->getIndices();
 
-        // Check we have room
-        if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(Mesh::Vertex))
+        if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(Mesh::Vertex)) {
             throw std::runtime_error("Merged vertex buffer out of space");
-        if (nextIndex + indices.size() > INDEX_BUDGET / sizeof(uint32_t))
-            throw std::runtime_error("Merged index buffer out of space");
+        }
 
-        MeshAllocation alloc{
-            .firstVertex = nextVertex,
-            .vertexCount = static_cast<uint32_t>(vertices.size()),
-            .firstIndex = nextIndex,
-            .indexCount = static_cast<uint32_t>(indices.size()),
-        };
+        if (nextIndex + indices.size() > INDEX_BUDGET / sizeof(uint32_t)) {
+            throw std::runtime_error("Merged index buffer out of space");
+        }
+
+        const MeshAllocation alloc(
+            nextVertex,
+            static_cast<uint32_t>(vertices.size()),
+            nextIndex,
+            static_cast<uint32_t>(indices.size())
+        );
 
         meshAllocations[handle] = alloc;
 
-        // Queue for upload — actual GPU copy happens in commitMeshesToDescriptors()
-        pendingMeshUploads.push_back({
-            handle,
-            vertices,
-            indices,
-            nextVertex,
-            nextIndex,
-        });
+        pendingMeshUploads.push_back({handle, vertices, indices, nextVertex, nextIndex,});
 
         nextVertex += alloc.vertexCount;
         nextIndex += alloc.indexCount;
 
         return alloc.firstIndex;
     }
-
-    // -------------------------------------------------------------------------
-    // GPU commits
-    // -------------------------------------------------------------------------
 
     void RenderSystemV2::commitSamplersToDescriptors() {
         if (waitingToBeCommitedSamplers.empty()) return;
@@ -249,7 +233,7 @@ namespace Atlas {
         if (pendingMeshUploads.empty()) return;
 
         for (const auto &upload: pendingMeshUploads) {
-            // --- vertices ---
+            // vertices
             VkDeviceSize vOffset = upload.firstVertex * sizeof(Mesh::Vertex);
             VkDeviceSize vSize = upload.vertices.size() * sizeof(Mesh::Vertex);
 
@@ -262,7 +246,7 @@ namespace Atlas {
             vStaging.uploadData(upload.vertices.data(), vSize);
             Buffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, vOffset);
 
-            // --- indices ---
+            // indices
             VkDeviceSize iOffset = upload.firstIndex * sizeof(uint32_t);
             VkDeviceSize iSize = upload.indices.size() * sizeof(uint32_t);
 
@@ -272,6 +256,7 @@ namespace Atlas {
                 VMA_MEMORY_USAGE_AUTO,
                 VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
             );
+
             iStaging.uploadData(upload.indices.data(), iSize);
             Buffer::copy(device, iStaging.get(), mergedIndexBuffer->get(), iSize, 0, iOffset);
         }
@@ -279,13 +264,7 @@ namespace Atlas {
         pendingMeshUploads.clear();
     }
 
-    // -------------------------------------------------------------------------
-    // Per-frame: prepare
-    // -------------------------------------------------------------------------
-
     void RenderSystemV2::prepare(entt::registry &registry) {
-        // This only registers + uploads assets (mesh geometry, textures to descriptors)
-        // Must be called BEFORE the command buffer starts recording for the frame
         bool newTextures = false;
         bool newMeshes = false;
 
@@ -294,17 +273,19 @@ namespace Atlas {
             auto &material = view.get<MaterialComponent>(entity);
             auto &model = view.get<ModelComponent>(entity);
 
-            // Use same fallback as V1 — register default white if handle is invalid
-            auto tryRegisterTex = [&](AssetHandle h) {
-                AssetHandle resolved = h != INVALID_ASSET_HANDLE ? h : defaultWhiteTextureHandle;
-                if (!handleToGPUIndex.contains(resolved)) {
-                    registerTexture(resolved);
-                    newTextures = true;
-                }
-            };
-            tryRegisterTex(material.albedoTexture);
-            tryRegisterTex(material.normalMap);
-            tryRegisterTex(material.metallicRoughnessMap);
+            if (!handleToGPUIndex.contains(material.albedoTexture)) {
+                registerTexture(material.albedoTexture);
+                newTextures = true;
+            }
+
+            if (!handleToGPUIndex.contains(material.normalMap)) {
+                registerTexture(material.normalMap);
+                newTextures = true;
+            }
+            if (!handleToGPUIndex.contains(material.metallicRoughnessMap)) {
+                registerTexture(material.metallicRoughnessMap);
+                newTextures = true;
+            }
 
             if (model.meshHandle != INVALID_ASSET_HANDLE &&
                 !meshAllocations.contains(model.meshHandle)) {
@@ -319,10 +300,9 @@ namespace Atlas {
     }
 
     void RenderSystemV2::rebuildDrawList(entt::registry &registry) {
-        // Rebuilds indirect commands + object SSBO — pure CPU writes, no GPU uploads
         currentDrawCount = 0;
 
-        auto *drawCmds = static_cast<VkDrawIndexedIndirectCommand *>(indirectCommandBuffer->getMapped());
+        auto *drawCommands = static_cast<VkDrawIndexedIndirectCommand *>(indirectCommandBuffer->getMapped());
         auto *objectData = static_cast<GPUObjectData *>(objectDataBuffer->getMapped());
 
         auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
@@ -337,24 +317,26 @@ namespace Atlas {
             const MeshAllocation &alloc = allocIt->second;
             uint32_t slot = currentDrawCount;
 
-            drawCmds[slot].indexCount = alloc.indexCount;
-            drawCmds[slot].instanceCount = 1;
-            drawCmds[slot].firstIndex = alloc.firstIndex;
-            drawCmds[slot].vertexOffset = static_cast<int32_t>(alloc.firstVertex);
-            drawCmds[slot].firstInstance = slot;
+            drawCommands[slot].indexCount = alloc.indexCount;
+            drawCommands[slot].instanceCount = 1;
+            drawCommands[slot].firstIndex = alloc.firstIndex;
+            drawCommands[slot].vertexOffset = static_cast<int32_t>(alloc.firstVertex);
+            drawCommands[slot].firstInstance = slot;
 
             glm::mat4 model4x4 = transform.mat4();
             objectData[slot].modelMatrix = model4x4;
             objectData[slot].normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(model4x4)));
             objectData[slot].baseColor = material.baseColor;
 
-            // Mirror V1 fallback: if handle is invalid use default white texture
+
             AssetHandle albedoHandle = material.albedoTexture != INVALID_ASSET_HANDLE
                                            ? material.albedoTexture
                                            : defaultWhiteTextureHandle;
+
             AssetHandle normalHandle = material.normalMap != INVALID_ASSET_HANDLE
                                            ? material.normalMap
                                            : defaultWhiteTextureHandle;
+
             AssetHandle roughnessHandle = material.metallicRoughnessMap != INVALID_ASSET_HANDLE
                                               ? material.metallicRoughnessMap
                                               : defaultWhiteTextureHandle;
@@ -375,35 +357,23 @@ namespace Atlas {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Per-frame: render
-    // -------------------------------------------------------------------------
-
-    void RenderSystemV2::render(entt::registry &registry, VkCommandBuffer commandBuffer,
-                                VkDescriptorSet globalSet) {
-        // Rebuild draw list — pure CPU writes to mapped buffers, safe inside recording
+    void RenderSystemV2::render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet) {
         rebuildDrawList(registry);
 
         if (currentDrawCount == 0) return;
 
         pipeline->bind(commandBuffer);
 
-        // Bind descriptor sets
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 0, 1, &globalSet, 0, nullptr);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 1, 1, &bindlessTextureSet, 0, nullptr);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 2, 1, &objectDataSet, 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &globalSet, 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &bindlessTextureSet, 0, nullptr);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 2, 1, &objectDataSet, 0, nullptr);
 
-        // Bind the single merged vertex + index buffers
         VkBuffer vertexBuf = mergedVertexBuffer->get();
         VkBuffer indexBuf = mergedIndexBuffer->get();
         VkDeviceSize offset = 0;
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuf, &offset);
         vkCmdBindIndexBuffer(commandBuffer, indexBuf, 0, VK_INDEX_TYPE_UINT32);
 
-        // One indirect draw covers ALL objects
         vkCmdDrawIndexedIndirect(
             commandBuffer,
             indirectCommandBuffer->get(),

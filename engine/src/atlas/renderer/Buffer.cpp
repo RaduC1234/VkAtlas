@@ -164,7 +164,7 @@ namespace Atlas {
     }
 
     void Buffer::copy(Device &device, VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.beginTransferCommands();
 
         VkBufferCopy copyRegion{};
         copyRegion.srcOffset = srcOffset;
@@ -172,6 +172,6 @@ namespace Atlas {
         copyRegion.size = size;
         vkCmdCopyBuffer(commandBuffer, src, dst, 1, &copyRegion);
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.endTransferCommands(commandBuffer);
     }
 } // namespace Atlas

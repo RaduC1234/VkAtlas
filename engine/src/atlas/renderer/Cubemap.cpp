@@ -256,7 +256,7 @@ namespace Atlas {
     }
 
     void Cubemap::transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout) {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.beginTransferCommands();
 
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -292,12 +292,12 @@ namespace Atlas {
 
         vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.endTransferCommands(commandBuffer);
         imageLayout = newLayout;
     }
 
     void Cubemap::copyBufferToImage(VkBuffer buffer, VkFormat format) {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.beginTransferCommands();
 
         // Calculate bytes per pixel based on format
         VkDeviceSize bytesPerPixel = (format == VK_FORMAT_R32G32B32A32_SFLOAT) ? 16 : 4;
@@ -320,7 +320,7 @@ namespace Atlas {
                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                               static_cast<uint32_t>(regions.size()), regions.data());
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.endTransferCommands(commandBuffer);
     }
 
     void Cubemap::createImageView(VkFormat format) {

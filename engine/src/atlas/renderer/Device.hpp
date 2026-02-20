@@ -24,6 +24,8 @@ namespace Atlas {
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
         std::optional<uint32_t> presentFamily;
+        std::optional<uint32_t> computeFamily;
+        std::optional<uint32_t> transferFamily;
         bool isComplete() const { return graphicsFamily.has_value() && presentFamily.has_value(); }
     };
 
@@ -55,8 +57,8 @@ namespace Atlas {
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 
-        VkCommandBuffer beginSingleTimeCommands();
-        void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
+        VkCommandBuffer beginTransferCommands();
+        void endTransferCommands(VkCommandBuffer commandBuffer) const;
 
     private:
         // Initialization
@@ -70,12 +72,12 @@ namespace Atlas {
 
         // Helper functions
         bool checkValidationLayerSupport();
-        std::vector<const char *> getRequiredExtensions();
+        std::vector<const char *> getRequiredExtensions() const;
         VkPhysicalDevice findBestDevice(const std::vector<VkPhysicalDevice> &devices);
         void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &DebugCreateInfo);
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
         bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-        void hasGflwRequiredInstanceExtensions();
+        void outputRequiredInstanceExtensions(const std::vector<const char *> &requiredExtensions);
         SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 
         // Core handles

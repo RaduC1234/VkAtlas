@@ -139,7 +139,7 @@ namespace Atlas {
     }
 
     void Sampler::transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout) {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.beginTransferCommands();
 
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -182,12 +182,12 @@ namespace Atlas {
             1, &barrier
         );
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.endTransferCommands(commandBuffer);
         imageLayout = newLayout;
     }
 
     void Sampler::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.beginTransferCommands();
 
         VkBufferImageCopy region{};
         region.bufferOffset = 0;
@@ -209,7 +209,7 @@ namespace Atlas {
             &region
         );
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.endTransferCommands(commandBuffer);
     }
 
     std::shared_ptr<Sampler> Sampler::create(Device &device, const void *pixels, uint32_t width, uint32_t height, VkFormat format) {

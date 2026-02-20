@@ -107,7 +107,7 @@ namespace Atlas {
             throw std::runtime_error("failed to create instance!");
         }
 
-        hasGflwRequiredInstanceExtensions();
+        outputRequiredInstanceExtensions(extensions);
     }
 
     void Device::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo) {
@@ -289,7 +289,7 @@ namespace Atlas {
         return true;
     }
 
-    std::vector<const char *> Device::getRequiredExtensions() {
+    std::vector<const char *> Device::getRequiredExtensions() const {
         auto extensions = window.getRequiredExtensions();
 
         if constexpr (enableValidationLayers) {
@@ -352,21 +352,34 @@ namespace Atlas {
         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
-        int i = 0;
-        for (const auto &queueFamily: queueFamilies) {
-            if (queueFamily.queueCount > 0 && queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                indices.graphicsFamily = i;
-            }
-            VkBool32 presentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &presentSupport);
-            if (queueFamily.queueCount > 0 && presentSupport) {
-                indices.presentFamily = i;
-            }
-            if (indices.isComplete()) {
-                break;
+        for (uint32_t i = 0; i < queueFamilies.size(); i++) {
+            const auto &family = queueFamilies[i];
+
+            if (family.queueCount == 0) {
+                continue;
             }
 
-            i++;
+            // Graphics
+            if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                indices.graphicsFamily = i;
+            }
+
+            // Present
+            VkBool32 presentSupport = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &presentSupport);
+            if (presentSupport) {
+                indices.presentFamily = i;
+            }
+
+            // Compute
+            if ((family.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+                indices.computeFamily = i;
+            }
+
+            // Transfer
+            if ((family.queueFlags & VK_QUEUE_TRANSFER_BIT) && !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT) && !(family.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
+                indices.transferFamily = i;
+            }
         }
 
         return indices;
@@ -392,7 +405,7 @@ namespace Atlas {
         return requiredExtensions.empty();
     }
 
-    void Device::hasGflwRequiredInstanceExtensions() {
+    void Device::outputRequiredInstanceExtensions(const std::vector<const char*> &requiredExtensions) {
         uint32_t extensionCount = 0;
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
         std::vector<VkExtensionProperties> extensions(extensionCount);
@@ -407,11 +420,10 @@ namespace Atlas {
         }
 
         ss << "required extensions:" << std::endl;
-        auto requiredExtensions = getRequiredExtensions();
         for (const auto &required: requiredExtensions) {
             ss << "\t" << required << std::endl;
-            if (available.find(required) == available.end()) {
-                throw std::runtime_error("Missing required glfw extension");
+            if (!available.contains(required)) {
+                throw std::runtime_error("Missing required extension: " + std::string(required));
             }
         }
 
@@ -474,7 +486,7 @@ namespace Atlas {
         throw std::runtime_error("failed to find supported format!");
     }
 
-    VkCommandBuffer Device::beginSingleTimeCommands() {
+    VkCommandBuffer Device::beginTransferCommands() {
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -492,7 +504,7 @@ namespace Atlas {
         return commandBuffer;
     }
 
-    void Device::endSingleTimeCommands(VkCommandBuffer commandBuffer) const {
+    void Device::endTransferCommands(VkCommandBuffer commandBuffer) const {
         vkEndCommandBuffer(commandBuffer);
 
         VkSubmitInfo submitInfo{};
