@@ -7,21 +7,6 @@
 #include "renderer/Pipeline.hpp"
 
 namespace Atlas {
-    struct GPUObjectData {
-        glm::mat4 modelMatrix;
-        glm::mat4 normalMatrix;
-        glm::uvec4 textureIndices; // albedo, normal, metallicRoughness, unused
-        glm::vec4 baseColor; // material base color (RGBA)
-    };
-
-    // Tracks where a mesh lives inside the merged vertex/index buffers
-    struct MeshAllocation {
-        uint32_t firstVertex = 0;
-        uint32_t vertexCount = 0;
-        uint32_t firstIndex = 0;
-        uint32_t indexCount = 0;
-    };
-
     class RenderSystemV2 {
     public:
         static constexpr uint32_t MAX_TEXTURES = 1024;
@@ -42,6 +27,10 @@ namespace Atlas {
         void render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet);
 
     private:
+        struct GPUObjectData;
+        struct MeshAllocation;
+        struct Light;
+
         void createDescriptors();
         void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
         void createPipeline(VkRenderPass renderPass);

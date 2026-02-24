@@ -1,16 +1,6 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
 
-layout(location = 0) in vec3 fragWorldPos;
-layout(location = 1) in vec3 fragNormal;
-layout(location = 2) in vec2 fragTexCoord;
-layout(location = 3) in vec3 fragTangent;
-layout(location = 4) in vec3 fragBitangent;
-layout(location = 5) flat in uint fragObjectIndex;
-layout(location = 6) in vec3 fragColor;
-
-layout(location = 0) out vec4 outColor;
-
 struct CameraData {
     mat4 projection;
     mat4 view;
@@ -22,6 +12,23 @@ struct CameraData {
     float farPlane;
 };
 
+struct GPUObjectData {
+    mat4 modelMatrix;
+    mat4 normalMatrix;
+    uvec4 textureIndices; // alberto, normal, metallicRoughness, unused
+    vec4 baseColor;
+};
+
+layout(location = 0) in vec3 fragWorldPos;
+layout(location = 1) in vec3 fragNormal;
+layout(location = 2) in vec2 fragTexCoord;
+layout(location = 3) in vec3 fragTangent;
+layout(location = 4) in vec3 fragBitangent;
+layout(location = 5) flat in uint fragObjectIndex;
+layout(location = 6) in vec3 fragColor;
+
+layout(location = 0) out vec4 outColor;
+
 layout(set = 0, binding = 0) uniform GlobalUbo {
     CameraData cameraData;
     vec4 ambientLightColor;
@@ -31,13 +38,6 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
 } ubo;
 
 layout(set = 1, binding = 0) uniform sampler2D textures[];
-
-struct GPUObjectData {
-    mat4 modelMatrix;
-    mat4 normalMatrix;
-    uvec4 textureIndices;
-    vec4 baseColor;
-};
 
 layout(std430, set = 2, binding = 0) readonly buffer ObjectDataBuffer {
     GPUObjectData objects[];

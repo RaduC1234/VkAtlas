@@ -1,6 +1,6 @@
 #include "AndroidAssetManager.hpp"
 
-#if defined(__ANDROID__)
+#ifdef ATLAS_PLATFORM_ANDROID
 #include "core/Log.hpp"
 #include <game-activity/native_app_glue/android_native_app_glue.h>
 

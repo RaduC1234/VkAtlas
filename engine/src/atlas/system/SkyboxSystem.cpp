@@ -66,8 +66,8 @@ namespace Atlas {
 
         pipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/skybox.vert.spv",
-            "shaders/skybox.frag.spv",
+            "shaders/SkyboxSystem.skybox.vert.spv",
+            "shaders/SkyboxSystem.skybox.frag.spv",
             pipelineConfig
         );
     }

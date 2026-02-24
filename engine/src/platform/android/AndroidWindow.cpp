@@ -1,6 +1,6 @@
 #include "AndroidWindow.hpp"
 
-#ifdef __ANDROID__
+#ifdef ATLAS_PLATFORM_ANDROID
 
 #include "core/Log.hpp"
 #include <vulkan/vulkan_android.h>

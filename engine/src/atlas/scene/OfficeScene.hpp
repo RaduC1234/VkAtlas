@@ -26,10 +26,10 @@ namespace Atlas {
         explicit OfficeScene(Renderer &renderer);
         ~OfficeScene() override = default;
 
-        virtual void onLoad(entt::registry&& registry);
-        virtual void onUpdate(float deltaTime);
-        virtual void onRender(float deltaTime, float aspectRatio);
-        virtual void onDelete();
+        void onLoad(entt::registry&& registry) override;
+        void onUpdate(float deltaTime) override;
+        void onRender(float deltaTime, float aspectRatio) override;
+        void onDelete() override;
     protected:
 
         // Global descriptors (UBO)

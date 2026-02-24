@@ -1,15 +1,10 @@
 #pragma once
 
-#include <memory>
-
 #include "renderer/Camera.hpp"
 #include "renderer/Renderer.hpp"
-#include "system/CameraSystem.hpp"
 #include "system/RenderSystem.hpp"
-#include "system/SkyboxSystem.hpp"
 
-#ifdef _WIN32
-#include <imgui.h>
+#ifdef ATLAS_PLATFORM_DESKTOP
 #endif
 
 namespace Atlas {

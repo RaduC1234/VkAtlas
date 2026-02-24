@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef ATLAS_PLATFORM_DESKTOP
+
 #include "asset/AssetManager.hpp"
 #include <filesystem>
 
@@ -26,3 +28,5 @@ namespace Atlas {
     };
 
 }
+
+#endif

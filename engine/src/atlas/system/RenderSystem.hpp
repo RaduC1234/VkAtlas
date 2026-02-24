@@ -24,6 +24,8 @@ namespace Atlas {
         void render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet);
 
     private:
+        constexpr static uint32_t MAX_TEXTURES = 1024;
+
         void createDescriptors();
         void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
         void createPipeline(VkRenderPass renderPass);

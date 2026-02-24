@@ -38,14 +38,14 @@ namespace Atlas {
 
     void RenderSystem::createDescriptors() {
         textureSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1024)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES)
                 .setBindingFlags(0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
                 .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
                 .build();
 
         bindlessTexturePool = DescriptorPool::Builder(device)
                 .setMaxSets(1)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1024)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES)
                 .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                 .build();
 
@@ -91,8 +91,8 @@ namespace Atlas {
 
         pipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/simple_shader.vert.spv",
-            "shaders/simple_shader.frag.spv",
+            "shaders/RenderSystem.simple_shader.vert.spv",
+            "shaders/RenderSystem.simple_shader.frag.spv",
             pipelineConfig
         );
     }
@@ -107,8 +107,8 @@ namespace Atlas {
             return it->second;
         }
 
-        if (nextTextureIndex >= 1024) {
-            throw std::runtime_error("Exceeded maximum bindless texture count (1024)");
+        if (nextTextureIndex >= MAX_TEXTURES) {
+            throw std::runtime_error("Exceeded maximum bindless texture count (" + std::to_string(MAX_TEXTURES) + "\"");
         }
 
         const auto texture = AssetManager::get().getTexture(handle);
@@ -196,9 +196,10 @@ namespace Atlas {
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &bindlessTextureSet, 0, nullptr);
 
         auto &assetManager = AssetManager::get();
-        auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
+        const auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
+        SimplePushConstantData push{};
 
-        for (auto entity: view) {
+        for (const auto entity: view) {
             auto &transform = view.get<TransformComponent>(entity);
             auto &material = view.get<MaterialComponent>(entity);
             auto &model = view.get<ModelComponent>(entity);
@@ -206,7 +207,6 @@ namespace Atlas {
             auto mesh = assetManager.getMesh(model.meshHandle);
             if (!mesh) continue; // skip if mesh not loaded. todo: implement resource streaming
 
-            SimplePushConstantData push{};
             push.modelMatrix = transform.mat4();
             push.normalMatrix = transform.normalMatrix();
             push.baseColor = material.baseColor;

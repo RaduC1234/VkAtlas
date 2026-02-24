@@ -331,7 +331,7 @@ namespace Atlas {
                 score += 500;
             }
 
-            score += deviceProperties.limits.maxImageDimension2D; // Prefer GPUs with higher texture resolution support
+            score += static_cast<int32_t>(deviceProperties.limits.maxImageDimension2D); // Prefer GPUs with higher texture resolution support
 
             if (score > bestScore) {
                 bestScore = score;
@@ -380,6 +380,14 @@ namespace Atlas {
             if ((family.queueFlags & VK_QUEUE_TRANSFER_BIT) && !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT) && !(family.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
                 indices.transferFamily = i;
             }
+        }
+
+        if (!indices.computeFamily.has_value()) {
+            indices.computeFamily = indices.graphicsFamily;
+        }
+
+        if (!indices.transferFamily.has_value()) {
+            indices.transferFamily = indices.graphicsFamily;
         }
 
         return indices;

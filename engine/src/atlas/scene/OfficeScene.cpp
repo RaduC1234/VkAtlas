@@ -1,6 +1,8 @@
 #include "OfficeScene.hpp"
 
+#ifdef ATLAS_PLATFORM_DESKTOP
 #include <imgui.h>
+#endif
 
 #include "system/CameraSystem.hpp"
 #include "system/RenderSystemV2.hpp"
@@ -68,7 +70,7 @@ namespace Atlas {
     }
 
     void OfficeScene::onRender(float deltaTime, float aspectRatio) {
-#ifdef _WIN32
+#ifdef ATLAS_PLATFORM_DESKTOP
         ImGui::Begin("Debug Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::End();

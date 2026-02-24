@@ -2,7 +2,8 @@
 
 #include "core/Keyboard.hpp"
 
-#ifdef _WIN32
+#ifdef ATLAS_PLATFORM_DESKTOP
+
 #include <cassert>
 #include <stdexcept>
 
@@ -136,13 +137,14 @@ namespace Atlas {
             // Try Windows 11 method first (DWMWA_USE_IMMERSIVE_DARK_MODE = 20)
             HRESULT hr = DwmSetWindowAttribute(hwnd, 20, &useDarkMode, sizeof(useDarkMode));
 
-            if (FAILED(hr)) {  // If that fails, try Windows 10 undocumented attribute (19)
+            if (FAILED(hr)) {
+                // If that fails, try Windows 10 undocumented attribute (19)
                 DwmSetWindowAttribute(hwnd, 19, &useDarkMode, sizeof(useDarkMode));
             }
         }
     }
 
-    void * DesktopWindow::getNativeHandle() const {
+    void *DesktopWindow::getNativeHandle() const {
         return glfwWindow;
     }
 

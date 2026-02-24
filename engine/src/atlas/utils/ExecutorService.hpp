@@ -49,9 +49,9 @@ namespace Atlas {
         ExecutorService(const ExecutorService &) = delete;
         ExecutorService &operator=(const ExecutorService &) = delete;
 
-        // Allow move operations
-        ExecutorService(ExecutorService &&) noexcept = default;
-        ExecutorService &operator=(ExecutorService &&) noexcept = default;
+        // Delete move operations (cannot move due to mutex and condition_variable)
+        ExecutorService(ExecutorService &&) = delete;
+        ExecutorService &operator=(ExecutorService &&) = delete;
 
     private:
         std::vector<std::thread> workers;

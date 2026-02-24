@@ -2,7 +2,7 @@
 
 #include "asset/AssetManager.hpp"
 
-#if defined(__ANDROID__)
+#ifdef ATLAS_PLATFORM_ANDROID
 #include <android/asset_manager.h>
 
 namespace Atlas {

@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef _WIN32
+#ifdef ATLAS_PLATFORM_DESKTOP
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>

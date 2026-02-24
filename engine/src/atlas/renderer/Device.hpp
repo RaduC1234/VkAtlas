@@ -3,6 +3,7 @@
 #include <optional>
 #include <vector>
 
+#include "core/Core.hpp"
 #include "core/Window.hpp"
 
 #include "vk_mem_alloc.h"
@@ -43,6 +44,8 @@ namespace Atlas {
         VkSurfaceKHR surface() const { return surface_; }
         VkQueue graphicsQueue() const { return graphicsQueue_; }
         VkQueue presentQueue() const { return presentQueue_; }
+        VkQueue computeQueue() const { return computeQueue_; }
+        VkQueue transferQueue() const { return transferQueue_; }
         VkCommandPool getCommandPool() const { return commandPool; }
         const VkInstance &getInstance() const { return instance; }
         const VkPhysicalDevice &getPhysicalDevice() const { return physicalDevice; }
@@ -88,6 +91,8 @@ namespace Atlas {
         VkSurfaceKHR surface_;
         VkQueue graphicsQueue_;
         VkQueue presentQueue_;
+        VkQueue computeQueue_;
+        VkQueue transferQueue_;
         VkCommandPool commandPool;
         Window &window;
 

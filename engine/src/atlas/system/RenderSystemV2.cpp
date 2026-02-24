@@ -13,6 +13,33 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 namespace Atlas {
+
+    struct RenderSystemV2::GPUObjectData {
+        glm::mat4 modelMatrix;
+        glm::mat4 normalMatrix;
+        glm::uvec4 textureIndices; // albedo, normal, metallicRoughness, unused
+        glm::vec4 baseColor; // material base color (RGBA)
+    };
+
+    // Tracks where a mesh lives inside the merged vertex/index buffers
+    struct RenderSystemV2::MeshAllocation {
+        uint32_t firstVertex = 0;
+        uint32_t vertexCount = 0;
+        uint32_t firstIndex = 0;
+        uint32_t indexCount = 0;
+    };
+
+    struct RenderSystemV2::Light {
+        alignas(4) uint32_t type{static_cast<uint32_t>(LightType::SPOT)}; // 0 = directional, 1 = point, 2 = spot
+        alignas(4) float intensity{1.0f};
+        alignas(4) float range{0.0f};
+        alignas(4) float innerConeAngle{0.0f};
+        alignas(16) glm::vec3 color{1.0f};
+        alignas(4) float outerConeAngle{glm::radians(45.0f)};
+        alignas(16) glm::vec3 position{0.0f};
+        alignas(4) float padding{0.0f};
+    };
+
     RenderSystemV2::RenderSystemV2(Device &device, VkRenderPass renderPass, const DescriptorSetLayout &globalSetLayout) : device(device) {
         createDescriptors();
         createPipelineLayout(globalSetLayout);
@@ -88,8 +115,8 @@ namespace Atlas {
 
         pipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/indirect_shader.vert.spv",
-            "shaders/indirect_shader.frag.spv",
+            "shaders/RenderSystemV2.indirect_shader.vert.spv",
+            "shaders/RenderSystemV2.indirect_shader.frag.spv",
             config
         );
     }
@@ -297,6 +324,8 @@ namespace Atlas {
         // These do GPU uploads — safe here since we're outside command buffer recording
         if (newTextures) commitSamplersToDescriptors();
         if (newMeshes) commitMeshesToDescriptors();
+
+        //view = registry.view<LightComponent>();
     }
 
     void RenderSystemV2::rebuildDrawList(entt::registry &registry) {

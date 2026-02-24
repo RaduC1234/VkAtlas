@@ -1,8 +1,11 @@
 #include "PBRTestScene.hpp"
 
+#ifdef ATLAS_PLATFORM_DESKTOP
+#include <imgui.h>
+#endif
+
 #include "entity/Object.hpp"
 #include "renderer/Color.hpp"
-#include <imgui.h>
 
 namespace Atlas {
     struct alignas(16) GlobalUbo {
@@ -78,7 +81,7 @@ namespace Atlas {
     }
 
     void PBRTestScene::onRender(float deltaTime, float aspectRatio) {
-#ifdef _WIN32
+#ifdef ATLAS_PLATFORM_DESKTOP
         ImGui::Begin("Light Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::Separator();

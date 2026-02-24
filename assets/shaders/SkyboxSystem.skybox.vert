@@ -1,11 +1,11 @@
 #version 450
 
-layout(location = 0) out vec3 fragTexCoord;
-
 layout(set = 0, binding = 0) uniform GlobalUbo {
     mat4 projectionMatrix;
     mat4 viewMatrix;
 } ubo;
+
+layout(location = 0) out vec3 fragTexCoord;
 
 const vec3 positions[36] = vec3[](
 // Back
