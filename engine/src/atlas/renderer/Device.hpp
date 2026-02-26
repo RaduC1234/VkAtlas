@@ -16,6 +16,12 @@ namespace Atlas {
     constexpr bool enableValidationLayers = true;
 #endif
 
+    enum RenderMode {
+        ScreenOnly,
+        XROnly,
+        Combined
+    };
+
     struct SwapChainSupportDetails {
         VkSurfaceCapabilitiesKHR capabilities;
         std::vector<VkSurfaceFormatKHR> formats;
@@ -32,7 +38,7 @@ namespace Atlas {
 
     class Device {
     public:
-        Device(Window &window);
+        Device(Window &window, RenderMode renderMode);
         ~Device();
 
         Device(const Device &) = delete;
@@ -95,6 +101,7 @@ namespace Atlas {
         VkQueue transferQueue_;
         VkCommandPool commandPool;
         Window &window;
+        RenderMode renderMode;
 
         // Allocator & services
         VmaAllocator allocator_;

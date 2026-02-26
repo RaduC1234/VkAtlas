@@ -29,7 +29,7 @@ namespace Atlas {
         ApplicationSpecification specification;
 
         std::unique_ptr<Window> window = Window::create({specification.pNativeApp, 1200, 800});
-        Device device{*window};
+        Device device{*window, RenderMode::ScreenOnly};
         Renderer renderer{*window, device};
 
         std::unique_ptr<Scene> currentScene;
