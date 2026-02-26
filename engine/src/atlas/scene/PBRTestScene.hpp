@@ -1,5 +1,7 @@
 #pragma once
 #include "Scene.hpp"
+#include "system/CameraSystem.hpp"
+#include "system/SkyboxSystem.hpp"
 
 namespace Atlas {
     class PBRTestScene : public Scene {

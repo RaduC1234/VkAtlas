@@ -32,7 +32,7 @@ namespace Atlas {
 
         // Bindless texture descriptors
         std::unique_ptr<DescriptorSetLayout> textureSetLayout;
-        std::unique_ptr<DescriptorPool> bindlessTexturePool;
+        std::unique_ptr<DescriptorPool> texturesPool;
         VkDescriptorSet textureSet = VK_NULL_HANDLE;
     };
 }

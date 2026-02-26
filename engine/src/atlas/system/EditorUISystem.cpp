@@ -27,7 +27,7 @@ namespace Atlas {
     }
 
     void EditorUISystem::createPipelineLayout(VkDescriptorSetLayout globalSetLayout) {
-        std::vector descriptorSetLayouts{globalSetLayout};
+        const std::vector descriptorSetLayouts{globalSetLayout};
 
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -49,7 +49,7 @@ namespace Atlas {
 
         textureSetLayout = builder.build();
 
-        bindlessTexturePool = DescriptorPool::Builder(device)
+        texturesPool = DescriptorPool::Builder(device)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES)
                 .setMaxSets(1)
                 .build();
@@ -74,7 +74,7 @@ namespace Atlas {
     void EditorUISystem::uploadTextures() {
         static const std::array<std::string, 3> iconPaths = {"icons/light_point.png", "icons/light_spot", "light/directional"};
         auto &assetManager = AssetManager::get();
-        DescriptorWriter writer(*textureSetLayout, *bindlessTexturePool);
+        DescriptorWriter writer(*textureSetLayout, *texturesPool);
 
         if (const auto tex = assetManager.getTexture(assetManager.createDefaultWhiteTexture())) {
             VkDescriptorImageInfo imageInfo{};
