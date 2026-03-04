@@ -46,7 +46,8 @@ namespace Atlas {
         VkQueue presentQueue() const { return presentQueue_; }
         VkQueue computeQueue() const { return computeQueue_; }
         VkQueue transferQueue() const { return transferQueue_; }
-        VkCommandPool getCommandPool() const { return commandPool; }
+        VkCommandPool getGraphicsCommandPool() const { return graphicsCommandPool; }
+        VkCommandPool getComputeCommandPool() const { return computeCommandPool; }
         const VkInstance &getInstance() const { return instance; }
         const VkPhysicalDevice &getPhysicalDevice() const { return physicalDevice; }
         const VmaAllocator &allocator() const { return this->allocator_; }
@@ -63,6 +64,9 @@ namespace Atlas {
         VkCommandBuffer beginTransferCommands();
         void endTransferCommands(VkCommandBuffer commandBuffer) const;
 
+        VkCommandBuffer beginGraphicsCommands();
+        void endGraphicsCommands(VkCommandBuffer commandBuffer) const;
+
     private:
         // Initialization
         void createInstance();
@@ -71,7 +75,7 @@ namespace Atlas {
         void pickPhysicalDevice();
         void createLogicalDevice();
         void createVmaAllocator();
-        void createCommandPool();
+        void createCommandPools();
 
         // Helper functions
         bool checkValidationLayerSupport();
@@ -93,7 +97,8 @@ namespace Atlas {
         VkQueue presentQueue_;
         VkQueue computeQueue_;
         VkQueue transferQueue_;
-        VkCommandPool commandPool;
+        VkCommandPool graphicsCommandPool;
+        VkCommandPool computeCommandPool;
         Window &window;
 
         // Allocator & services

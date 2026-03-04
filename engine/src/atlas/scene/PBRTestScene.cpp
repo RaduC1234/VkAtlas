@@ -111,7 +111,7 @@ namespace Atlas {
         };
         uboBuffers[frameIndex]->uploadData(&ubo, sizeof(GlobalUbo));
 
-        if (auto commandBuffer = renderer.getCurrentCommandBuffer()) {
+        if (auto commandBuffer = renderer.getCurrentGraphicsCommandBuffer()) {
             if (renderSkybox) {
                 skyboxSystem->render(registry, commandBuffer, globalDescriptorSets[frameIndex]);
             }

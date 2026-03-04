@@ -43,6 +43,21 @@ layout(std430, set = 2, binding = 0) readonly buffer ObjectDataBuffer {
     GPUObjectData objects[];
 } objectData;
 
+layout(std430, set = 3, binding = 0) readonly buffer LightBuffer {
+    Light lights[];
+} lightData;
+
+struct Light {
+    uint type;              // 0 = UNKNOWN, 1 = POINT, 2 = SPOT, 3 = DIRECTIONAL
+    float intensity;
+    float range;            // 0.0 = infinite
+    float innerConeAngle;
+    vec3 color;
+    float outerConeAngle;
+    vec3 position;
+    float padding;          // Alignment padding
+};
+
 vec3 linearToSRGB(vec3 color) {
     vec3 a = 1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055;
     vec3 b = color * 12.92;

@@ -46,11 +46,13 @@ namespace Atlas {
 
             float aspect = renderer.getAspectRatio();
 
-            if (auto commandBuffer = renderer.beginFrame()) {
-                if (currentScene) {
-                    currentScene->onUpdate(deltaTime);
-                }
+            renderer.beginCompute();
+            if (currentScene) {
+                currentScene->onUpdate(deltaTime);
+            }
+            renderer.endCompute();
 
+            if (auto commandBuffer = renderer.beginFrame()) {
                 imGui.beginFrame();
                 renderer.beginSwapChainRenderPass(commandBuffer);
 
