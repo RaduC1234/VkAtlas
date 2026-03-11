@@ -13,44 +13,15 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 namespace Atlas {
-
-    struct RenderSystemV2::GPUObjectData {
-        glm::mat4 modelMatrix;
-        glm::mat4 normalMatrix;
-        glm::uvec4 textureIndices; // albedo, normal, metallicRoughness, unused
-        glm::vec4 baseColor; // material base color (RGBA)
-    };
-
-    // Tracks where a mesh lives inside the merged vertex/index buffers
-    struct RenderSystemV2::MeshAllocation {
-        uint32_t firstVertex = 0;
-        uint32_t vertexCount = 0;
-        uint32_t firstIndex = 0;
-        uint32_t indexCount = 0;
-    };
-
-    struct RenderSystemV2::Light {
-        alignas(4) uint32_t type{static_cast<uint32_t>(LightType::SPOT)}; // 0 = directional, 1 = point, 2 = spot
-        alignas(4) float intensity{1.0f};
-        alignas(4) float range{0.0f};
-        alignas(4) float innerConeAngle{0.0f};
-        alignas(16) glm::vec3 color{1.0f};
-        alignas(4) float outerConeAngle{glm::radians(45.0f)};
-        alignas(16) glm::vec3 position{0.0f};
-        alignas(4) float padding{0.0f};
-    };
-
-    RenderSystemV2::RenderSystemV2(Device &device, VkRenderPass renderPass, const DescriptorSetLayout &globalSetLayout) : device(device) {
+    RenderSystemV2::RenderSystemV2(Device &device, VkRenderPass renderPass, const DescriptorSetLayout &globalSetLayout)
+        : device(device) {
         createDescriptors();
         createPipelineLayout(globalSetLayout);
-        createPipeline(renderPass);
-        createMergedBuffers();
-        createIndirectBuffers();
+        createPipelines(renderPass);
+        createGPUBuffers();
 
-        const AssetHandle defaultTexture = AssetManager::get().createDefaultWhiteTexture();
-        registerTexture(defaultTexture);
-        commitSamplersToDescriptors();
-        defaultWhiteTextureHandle = defaultTexture;
+        defaultWhiteTextureHandle = AssetManager::get().createDefaultWhiteTexture();
+        registerTexture(defaultWhiteTextureHandle);
     }
 
     RenderSystemV2::~RenderSystemV2() {
@@ -65,16 +36,20 @@ namespace Atlas {
                 .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
                 .build();
 
-        // Set 2 — object SSBO
+        // Set 2 — per-object SSBO
         objectDataSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+                .build();
+
+        // Set 3 — lights SSBO
+        lightSetLayout = DescriptorSetLayout::Builder(device)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
                 .build();
 
         rendererPool = DescriptorPool::Builder(device)
-                .setMaxSets(2)
+                .setMaxSets(4)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3)
                 .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                 .build();
 
@@ -83,61 +58,91 @@ namespace Atlas {
 
         if (!rendererPool->allocateDescriptor(objectDataSetLayout->getDescriptorSetLayout(), objectDataSet))
             throw std::runtime_error("Failed to allocate object data descriptor set");
+
+        if (!rendererPool->allocateDescriptor(objectDataSetLayout->getDescriptorSetLayout(), transparentObjectDataSet))
+            throw std::runtime_error("Failed to allocate transparent object data descriptor set");
+
+        if (!rendererPool->allocateDescriptor(lightSetLayout->getDescriptorSetLayout(), lightSet))
+            throw std::runtime_error("Failed to allocate light descriptor set");
     }
 
     void RenderSystemV2::createPipelineLayout(const DescriptorSetLayout &globalSetLayout) {
-        std::vector<VkDescriptorSetLayout> layouts{
+        const std::vector layouts{
             globalSetLayout.getDescriptorSetLayout(), // set 0 — camera / global UBO
             textureSetLayout->getDescriptorSetLayout(), // set 1 — bindless textures
-            objectDataSetLayout->getDescriptorSetLayout(), // set 2 — object SSBO
+            objectDataSetLayout->getDescriptorSetLayout(), // set 2 — per-object SSBO
+            lightSetLayout->getDescriptorSetLayout(), // set 3 — lights SSBO
         };
 
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         info.setLayoutCount = static_cast<uint32_t>(layouts.size());
         info.pSetLayouts = layouts.data();
-        info.pushConstantRangeCount = 0;
-        info.pPushConstantRanges = nullptr;
 
         if (vkCreatePipelineLayout(device.device(), &info, nullptr, &pipelineLayout) != VK_SUCCESS)
             throw std::runtime_error("Failed to create pipeline layout");
     }
 
-    void RenderSystemV2::createPipeline(VkRenderPass renderPass) {
+    void RenderSystemV2::createPipelines(VkRenderPass renderPass) {
         assert(pipelineLayout != VK_NULL_HANDLE);
 
-        GraphicsPipelineConfigInfo config{};
-        Pipeline::defaultGraphicsPipelineConfigInfo(config);
-        config.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
-        config.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
-        config.renderPass = renderPass;
-        config.pipelineLayout = pipelineLayout;
+        /*ComputePipelineConfigInfo computeConfig{};
+        Pipeline::defaultComputePipelineConfigInfo(computeConfig);
+        cullingPipeline = std::make_unique<Pipeline>(
+            device,
+            "shaders/RenderSystemV2.culling.comp.spv",
+            computeConfig
+        );*/
 
-        pipeline = std::make_unique<Pipeline>(
+        GraphicsPipelineConfigInfo graphicsConfig{};
+        Pipeline::defaultGraphicsPipelineConfigInfo(graphicsConfig);
+        graphicsConfig.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
+        graphicsConfig.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
+        graphicsConfig.renderPass = renderPass;
+        graphicsConfig.pipelineLayout = pipelineLayout;
+
+        renderPipeline = std::make_unique<Pipeline>(
             device,
             "shaders/RenderSystemV2.indirect_shader.vert.spv",
             "shaders/RenderSystemV2.indirect_shader.frag.spv",
-            config
+            graphicsConfig
+        );
+
+        graphicsConfig.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
+        graphicsConfig.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
+        graphicsConfig.renderPass = renderPass;
+        graphicsConfig.pipelineLayout = pipelineLayout;
+
+        graphicsConfig.depthStencilInfo.depthWriteEnable = VK_FALSE;
+
+        graphicsConfig.colorBlendAttachment.blendEnable = VK_TRUE;
+        graphicsConfig.colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        graphicsConfig.colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        graphicsConfig.colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        graphicsConfig.colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        graphicsConfig.colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        graphicsConfig.colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        transparentRenderPipeline = std::make_unique<Pipeline>(
+            device,
+            "shaders/RenderSystemV2.indirect_shader.vert.spv",
+            "shaders/RenderSystemV2.indirect_shader.frag.spv",
+            graphicsConfig
         );
     }
 
-    void RenderSystemV2::createMergedBuffers() {
+    void RenderSystemV2::createGPUBuffers() {
         mergedVertexBuffer = std::make_unique<Buffer>(
-            device,
-            VERTEX_BUDGET,
+            device, VERTEX_BUDGET,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
         );
-
         mergedIndexBuffer = std::make_unique<Buffer>(
-            device,
-            INDEX_BUDGET,
+            device, INDEX_BUDGET,
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
         );
-    }
 
-    void RenderSystemV2::createIndirectBuffers() {
         indirectCommandBuffer = std::make_unique<Buffer>(
             device,
             sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
@@ -145,270 +150,275 @@ namespace Atlas {
             VMA_MEMORY_USAGE_AUTO,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
         );
+        indirectCommandBuffer->map();
 
-        // Object SSBO
-        objectDataBuffer = std::make_unique<Buffer>(
+        transparentIndirectCommandBuffer = std::make_unique<Buffer>(
             device,
-            sizeof(GPUObjectData) * MAX_OBJECTS,
+            sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
+            VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+        );
+        transparentIndirectCommandBuffer->map();
+
+        objectDataBuffer = std::make_unique<Buffer>(
+            device, sizeof(GPUObjectData) * MAX_OBJECTS,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+        );
+        auto objectBufferInfo = objectDataBuffer->descriptorInfo();
+        DescriptorWriter(*objectDataSetLayout, *rendererPool)
+                .writeBuffer(0, &objectBufferInfo)
+                .overwrite(objectDataSet);
+
+        transparentObjectDataBuffer = std::make_unique<Buffer>(
+            device, sizeof(GPUObjectData) * MAX_OBJECTS,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+        );
+        auto transparentObjectBufferInfo = transparentObjectDataBuffer->descriptorInfo();
+        DescriptorWriter(*objectDataSetLayout, *rendererPool)
+                .writeBuffer(0, &transparentObjectBufferInfo)
+                .overwrite(transparentObjectDataSet);
+
+        lightsBuffer = std::make_unique<Buffer>(
+            device, sizeof(Light) * MAX_LIGHTS,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_AUTO,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
         );
-
-        // Pre-map both buffers permanently — they're written every frame
-        indirectCommandBuffer->map();
-        objectDataBuffer->map();
-        auto bufferInfo = objectDataBuffer->descriptorInfo();
-        DescriptorWriter(*objectDataSetLayout, *rendererPool)
-                .writeBuffer(0, &bufferInfo)
-                .overwrite(objectDataSet);
+        lightsBuffer->map();
+        auto lightBufferInfo = lightsBuffer->descriptorInfo();
+        DescriptorWriter(*lightSetLayout, *rendererPool)
+                .writeBuffer(0, &lightBufferInfo)
+                .overwrite(lightSet);
     }
-
 
     uint32_t RenderSystemV2::registerTexture(AssetHandle handle) {
         if (handle == INVALID_ASSET_HANDLE) return 0;
 
-        auto it = handleToGPUIndex.find(handle);
-        if (it != handleToGPUIndex.end()) {
-            return it->second;
-        }
+        auto [it, inserted] = handleToTextureSlot.emplace(handle, nextTextureSlot);
+        if (!inserted) return it->second; // already registered
 
-        if (nextTextureIndex >= MAX_TEXTURES) {
+        if (nextTextureSlot >= MAX_TEXTURES)
             throw std::runtime_error("Exceeded maximum bindless texture count");
-        }
 
-        auto texture = AssetManager::get().getTexture(handle);
-        if (!texture) {
-            return 0;
-        }
+        const auto texture = AssetManager::get().getTexture(handle);
+        if (!texture) return 0;
 
-        uint32_t idx = nextTextureIndex++;
-        handleToGPUIndex[handle] = idx;
-        waitingToBeCommitedSamplers.push_back(texture);
-        return idx;
-    }
+        const uint32_t slot = nextTextureSlot++;
+        it->second = slot;
 
-    uint32_t RenderSystemV2::registerMesh(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) return 0;
-
-        // Already registered — return existing first index
-        auto it = meshAllocations.find(handle);
-        if (it != meshAllocations.end()) return it->second.firstIndex;
-
-        const auto mesh = AssetManager::get().getMesh(handle);
-
-        if (!mesh) {
-            return 0;
-        }
-
-        const auto &vertices = mesh->getVertices();
-        const auto &indices = mesh->getIndices();
-
-        if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(Mesh::Vertex)) {
-            throw std::runtime_error("Merged vertex buffer out of space");
-        }
-
-        if (nextIndex + indices.size() > INDEX_BUDGET / sizeof(uint32_t)) {
-            throw std::runtime_error("Merged index buffer out of space");
-        }
-
-        const MeshAllocation alloc(
-            nextVertex,
-            static_cast<uint32_t>(vertices.size()),
-            nextIndex,
-            static_cast<uint32_t>(indices.size())
-        );
-
-        meshAllocations[handle] = alloc;
-
-        pendingMeshUploads.push_back({handle, vertices, indices, nextVertex, nextIndex,});
-
-        nextVertex += alloc.vertexCount;
-        nextIndex += alloc.indexCount;
-
-        return alloc.firstIndex;
-    }
-
-    void RenderSystemV2::commitSamplersToDescriptors() {
-        if (waitingToBeCommitedSamplers.empty()) return;
-
-        std::vector<VkDescriptorImageInfo> imageInfos;
-        imageInfos.reserve(waitingToBeCommitedSamplers.size());
-
-        for (const auto &tex: waitingToBeCommitedSamplers) {
-            imageInfos.push_back({
-                .sampler = tex->getSampler(),
-                .imageView = tex->getImageView(),
-                .imageLayout = tex->getImageLayout(),
-            });
-        }
+        const VkDescriptorImageInfo imageInfo{
+            .sampler = texture->getSampler(),
+            .imageView = texture->getImageView(),
+            .imageLayout = texture->getImageLayout(),
+        };
 
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = bindlessTextureSet;
         write.dstBinding = 0;
-        write.dstArrayElement = nextTextureIndex - static_cast<uint32_t>(waitingToBeCommitedSamplers.size());
+        write.dstArrayElement = slot;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = static_cast<uint32_t>(imageInfos.size());
-        write.pImageInfo = imageInfos.data();
-
+        write.descriptorCount = 1;
+        write.pImageInfo = &imageInfo;
         vkUpdateDescriptorSets(device.device(), 1, &write, 0, nullptr);
-        waitingToBeCommitedSamplers.clear();
+
+        return slot;
     }
 
-    void RenderSystemV2::commitMeshesToDescriptors() {
-        if (pendingMeshUploads.empty()) return;
+    void RenderSystemV2::registerMesh(AssetHandle handle) {
+        if (handle == INVALID_ASSET_HANDLE || meshAllocations.contains(handle)) return;
 
-        for (const auto &upload: pendingMeshUploads) {
-            // vertices
-            VkDeviceSize vOffset = upload.firstVertex * sizeof(Mesh::Vertex);
-            VkDeviceSize vSize = upload.vertices.size() * sizeof(Mesh::Vertex);
+        const auto mesh = AssetManager::get().getMesh(handle);
+        if (!mesh) return;
 
-            Buffer vStaging(
-                device, vSize,
-                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                VMA_MEMORY_USAGE_AUTO,
-                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-            );
-            vStaging.uploadData(upload.vertices.data(), vSize);
-            Buffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, vOffset);
+        const auto &vertices = mesh->getVertices();
+        const auto &indices = mesh->getIndices();
 
-            // indices
-            VkDeviceSize iOffset = upload.firstIndex * sizeof(uint32_t);
-            VkDeviceSize iSize = upload.indices.size() * sizeof(uint32_t);
+        if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(Mesh::Vertex))
+            throw std::runtime_error("Merged vertex buffer out of space");
+        if (nextIndex + indices.size() > INDEX_BUDGET / sizeof(uint32_t))
+            throw std::runtime_error("Merged index buffer out of space");
 
-            Buffer iStaging(
-                device, iSize,
-                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                VMA_MEMORY_USAGE_AUTO,
-                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-            );
+        const MeshAllocation alloc{
+            nextVertex, static_cast<uint32_t>(vertices.size()),
+            nextIndex, static_cast<uint32_t>(indices.size()),
+        };
+        meshAllocations[handle] = alloc;
 
-            iStaging.uploadData(upload.indices.data(), iSize);
-            Buffer::copy(device, iStaging.get(), mergedIndexBuffer->get(), iSize, 0, iOffset);
-        }
+        const VkDeviceSize vSize = vertices.size() * sizeof(Mesh::Vertex);
+        Buffer vStaging(
+            device,
+            vSize,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+        );
 
-        pendingMeshUploads.clear();
+        vStaging.uploadData(vertices.data(), vSize);
+        Buffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, nextVertex * sizeof(Mesh::Vertex));
+
+        const VkDeviceSize iSize = indices.size() * sizeof(uint32_t);
+        Buffer iStaging(
+            device,
+            iSize,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+        );
+
+        iStaging.uploadData(indices.data(), iSize);
+        Buffer::copy(device, iStaging.get(), mergedIndexBuffer->get(), iSize, 0, nextIndex * sizeof(uint32_t));
+
+        nextVertex += alloc.vertexCount;
+        nextIndex += alloc.indexCount;
     }
 
-    void RenderSystemV2::prepare(entt::registry &registry) {
-        bool newTextures = false;
-        bool newMeshes = false;
-
-        auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
-        for (auto entity: view) {
-            auto &material = view.get<MaterialComponent>(entity);
-            auto &model = view.get<ModelComponent>(entity);
-
-            if (!handleToGPUIndex.contains(material.albedoTexture)) {
-                registerTexture(material.albedoTexture);
-                newTextures = true;
-            }
-
-            if (!handleToGPUIndex.contains(material.normalMap)) {
-                registerTexture(material.normalMap);
-                newTextures = true;
-            }
-            if (!handleToGPUIndex.contains(material.metallicRoughnessMap)) {
-                registerTexture(material.metallicRoughnessMap);
-                newTextures = true;
-            }
-
-            if (model.meshHandle != INVALID_ASSET_HANDLE &&
-                !meshAllocations.contains(model.meshHandle)) {
-                registerMesh(model.meshHandle);
-                newMeshes = true;
-            }
-        }
-
-        // These do GPU uploads — safe here since we're outside command buffer recording
-        if (newTextures) commitSamplersToDescriptors();
-        if (newMeshes) commitMeshesToDescriptors();
-
-        //view = registry.view<LightComponent>();
+    uint32_t RenderSystemV2::resolveTextureIndex(AssetHandle handle) const {
+        if (handle == INVALID_ASSET_HANDLE) return 0;
+        const auto it = handleToTextureSlot.find(handle);
+        return it != handleToTextureSlot.end() ? it->second : 0;
     }
 
-    void RenderSystemV2::rebuildDrawList(entt::registry &registry) {
-        currentDrawCount = 0;
+    void RenderSystemV2::build(entt::registry &registry) {
+        auto *opaqueDrawCommands = static_cast<VkDrawIndexedIndirectCommand *>(indirectCommandBuffer->getMapped());
+        auto *transparentDrawCommands = static_cast<VkDrawIndexedIndirectCommand *>(transparentIndirectCommandBuffer->getMapped());
 
-        auto *drawCommands = static_cast<VkDrawIndexedIndirectCommand *>(indirectCommandBuffer->getMapped());
-        auto *objectData = static_cast<GPUObjectData *>(objectDataBuffer->getMapped());
+        for (auto entity: registry.view<TransformComponent, MaterialComponent, ModelComponent>()) {
+            auto &transform = registry.get<TransformComponent>(entity);
+            auto &material = registry.get<MaterialComponent>(entity);
+            auto &model = registry.get<ModelComponent>(entity);
 
-        auto view = registry.view<TransformComponent, MaterialComponent, ModelComponent>();
-        for (auto entity: view) {
-            auto &transform = view.get<TransformComponent>(entity);
-            auto &material = view.get<MaterialComponent>(entity);
-            auto &model = view.get<ModelComponent>(entity);
+            registerTexture(material.albedoTexture);
+            registerTexture(material.normalMap);
+            registerTexture(material.metallicRoughnessMap);
+            registerMesh(model.meshHandle);
 
-            auto allocIt = meshAllocations.find(model.meshHandle);
+            const auto allocIt = meshAllocations.find(model.meshHandle);
             if (allocIt == meshAllocations.end()) continue;
 
             const MeshAllocation &alloc = allocIt->second;
-            uint32_t slot = currentDrawCount;
+            const glm::mat4 model4x4 = transform.mat4();
 
-            drawCommands[slot].indexCount = alloc.indexCount;
-            drawCommands[slot].instanceCount = 1;
-            drawCommands[slot].firstIndex = alloc.firstIndex;
-            drawCommands[slot].vertexOffset = static_cast<int32_t>(alloc.firstVertex);
-            drawCommands[slot].firstInstance = slot;
-
-            glm::mat4 model4x4 = transform.mat4();
-            objectData[slot].modelMatrix = model4x4;
-            objectData[slot].normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(model4x4)));
-            objectData[slot].baseColor = material.baseColor;
-
-
-            AssetHandle albedoHandle = material.albedoTexture != INVALID_ASSET_HANDLE
-                                           ? material.albedoTexture
-                                           : defaultWhiteTextureHandle;
-
-            AssetHandle normalHandle = material.normalMap != INVALID_ASSET_HANDLE
-                                           ? material.normalMap
-                                           : defaultWhiteTextureHandle;
-
-            AssetHandle roughnessHandle = material.metallicRoughnessMap != INVALID_ASSET_HANDLE
-                                              ? material.metallicRoughnessMap
-                                              : defaultWhiteTextureHandle;
-
-            auto resolveTexIdx = [&](AssetHandle h) -> uint32_t {
-                auto it = handleToGPUIndex.find(h);
-                return it != handleToGPUIndex.end() ? it->second : 0;
+            const GPUObjectData data{
+                .modelMatrix = model4x4,
+                .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(model4x4))),
+                .textureIndices = glm::uvec4(
+                    resolveTextureIndex(material.albedoTexture != INVALID_ASSET_HANDLE ? material.albedoTexture : defaultWhiteTextureHandle),
+                    resolveTextureIndex(material.normalMap != INVALID_ASSET_HANDLE ? material.normalMap : defaultWhiteTextureHandle),
+                    resolveTextureIndex(material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? material.metallicRoughnessMap : defaultWhiteTextureHandle),
+                    0u
+                ),
+                .baseColor = material.baseColor, // baseColor.a drives transparency in shader
             };
 
-            objectData[slot].textureIndices = glm::uvec4(
-                resolveTexIdx(albedoHandle),
-                resolveTexIdx(normalHandle),
-                resolveTexIdx(roughnessHandle),
-                0
-            );
+            if (material.baseColor.w < 1.0f) {
+                const auto denseIdx = static_cast<uint32_t>(transparentObjectData.size());
+                transparentObjectData.emplace(entity, data);
+                transparentDrawCommands[denseIdx] = {
+                    .indexCount = alloc.indexCount,
+                    .instanceCount = 1,
+                    .firstIndex = alloc.firstIndex,
+                    .vertexOffset = static_cast<int32_t>(alloc.firstVertex),
+                    .firstInstance = denseIdx,
+                };
+            } else {
+                const auto denseIdx = static_cast<uint32_t>(opaqueObjectData.size());
+                opaqueObjectData.emplace(entity, data);
+                opaqueDrawCommands[denseIdx] = {
+                    .indexCount = alloc.indexCount,
+                    .instanceCount = 1,
+                    .firstIndex = alloc.firstIndex,
+                    .vertexOffset = static_cast<int32_t>(alloc.firstVertex),
+                    .firstInstance = denseIdx,
+                };
+            }
+        }
 
-            ++currentDrawCount;
+        // Lights
+        for (auto entity: registry.view<TransformComponent, LightComponent>()) {
+            auto [transform, light] = registry.get<TransformComponent, LightComponent>(entity);
+            lights.emplace(entity, Light{
+                               .type = static_cast<uint32_t>(light.type),
+                               .intensity = light.intensity,
+                               .range = light.range,
+                               .innerConeAngle = light.innerConeAngle,
+                               .color = light.color,
+                               .outerConeAngle = light.outerConeAngle,
+                               .position = transform.translation,
+                           });
+        }
+
+        // Upload all SSBOs
+        objectDataBuffer->uploadData(opaqueObjectData.data(), sizeof(GPUObjectData) * opaqueObjectData.size());
+
+        if (!transparentObjectData.empty()) {
+            transparentObjectDataBuffer->uploadData(transparentObjectData.data(), sizeof(GPUObjectData) * transparentObjectData.size());
+        }
+
+        if (!lights.empty()) {
+            lightsBuffer->uploadData(lights.data(), sizeof(Light) * lights.size());
         }
     }
 
-    void RenderSystemV2::render(entt::registry &registry, VkCommandBuffer commandBuffer, VkDescriptorSet globalSet) {
-        rebuildDrawList(registry);
 
-        if (currentDrawCount == 0) return;
+    void RenderSystemV2::render(VkCommandBuffer graphicsCommandBuffer, VkDescriptorSet globalSet) {
+        // Opaque (non-transparent) pass
+        if (!opaqueObjectData.empty()) {
+            const auto opaqueDrawCount = static_cast<uint32_t>(opaqueObjectData.size());
+            renderPipeline->bind(graphicsCommandBuffer);
 
-        pipeline->bind(commandBuffer);
+            const VkDescriptorSet opaqueSets[] = {
+                globalSet,
+                bindlessTextureSet,
+                objectDataSet,
+                lightSet
+            };
 
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &globalSet, 0, nullptr);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &bindlessTextureSet, 0, nullptr);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 2, 1, &objectDataSet, 0, nullptr);
+            vkCmdBindDescriptorSets(graphicsCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, opaqueSets, 0, nullptr);
 
-        VkBuffer vertexBuf = mergedVertexBuffer->get();
-        VkBuffer indexBuf = mergedIndexBuffer->get();
-        VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuf, &offset);
-        vkCmdBindIndexBuffer(commandBuffer, indexBuf, 0, VK_INDEX_TYPE_UINT32);
+            VkBuffer opaqueVertexBuf = mergedVertexBuffer->get();
+            VkDeviceSize opaqueOffset = 0;
+            vkCmdBindVertexBuffers(graphicsCommandBuffer, 0, 1, &opaqueVertexBuf, &opaqueOffset);
+            vkCmdBindIndexBuffer(graphicsCommandBuffer, mergedIndexBuffer->get(), 0, VK_INDEX_TYPE_UINT32);
 
-        vkCmdDrawIndexedIndirect(
-            commandBuffer,
-            indirectCommandBuffer->get(),
-            0,
-            currentDrawCount,
-            sizeof(VkDrawIndexedIndirectCommand)
-        );
+            vkCmdDrawIndexedIndirect(
+                graphicsCommandBuffer,
+                indirectCommandBuffer->get(),
+                0, opaqueDrawCount,
+                sizeof(VkDrawIndexedIndirectCommand)
+            );
+        }
+
+        // Transparent pass
+        if (!transparentObjectData.empty() && false) {
+            const auto transparentDrawCount = static_cast<uint32_t>(transparentObjectData.size());
+            transparentRenderPipeline->bind(graphicsCommandBuffer);
+
+            const VkDescriptorSet transparentSets[] = {
+                globalSet,
+                bindlessTextureSet,
+                transparentObjectDataSet,
+                lightSet
+            };
+
+            vkCmdBindDescriptorSets(graphicsCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, transparentSets, 0, nullptr);
+
+            VkBuffer transparentVertexBuf = mergedVertexBuffer->get();
+            VkDeviceSize transparentOffset = 0;
+            vkCmdBindVertexBuffers(graphicsCommandBuffer, 0, 1, &transparentVertexBuf, &transparentOffset);
+            vkCmdBindIndexBuffer(graphicsCommandBuffer, mergedIndexBuffer->get(), 0, VK_INDEX_TYPE_UINT32);
+
+            vkCmdDrawIndexedIndirect(
+                graphicsCommandBuffer,
+                transparentIndirectCommandBuffer->get(),
+                0, transparentDrawCount,
+                sizeof(VkDrawIndexedIndirectCommand)
+            );
+        }
     }
-}
+} // namespace Atlas

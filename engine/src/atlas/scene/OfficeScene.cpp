@@ -50,7 +50,7 @@ namespace Atlas {
     }
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
-        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet.glb");
+        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet_with_light.glb");
 
         auto cameraEntity = registry.create();
         registry.emplace<TransformComponent>(cameraEntity);
@@ -59,14 +59,14 @@ namespace Atlas {
         AssetHandle skybox = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k.hdr");
         auto skyboxEntity = registry.create();
         registry.emplace<SkyboxComponent>(skyboxEntity, skybox);
+
+        renderSystem->build(registry);
     }
 
     void OfficeScene::onUpdate(float deltaTime) {
         float aspect = renderer.getAspectRatio();
         cameraSystem->update(registry, deltaTime, aspect);
         camera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 200.f);
-
-        renderSystem->prepare(registry);
     }
 
     void OfficeScene::onRender(float deltaTime, float aspectRatio) {
@@ -80,16 +80,16 @@ namespace Atlas {
 
         const GlobalUbo ubo{
             camera.getData(),
-            glm::vec4(1.0f, 1.0f, 1.0f, 1.f), // ambient color
+            glm::vec4(1.0f, 1.0f, 1.0f, 0.025f), // ambient color
             glm::vec3(-1.0f), // light position
             0.0f,
             glm::vec4(1.0f) // light color
         };
         uboBuffers[frameIndex]->uploadData(&ubo, sizeof(GlobalUbo));
 
-        if (auto commandBuffer = renderer.getCurrentCommandBuffer()) {
+        if (auto commandBuffer = renderer.getCurrentGraphicsCommandBuffer()) {
             skyboxSystem->render(registry, commandBuffer, globalDescriptorSets[frameIndex]);
-            renderSystem->render(registry, commandBuffer, globalDescriptorSets[frameIndex]);
+            renderSystem->render(commandBuffer, globalDescriptorSets[frameIndex]);
         }
     }
 

@@ -16,7 +16,7 @@ namespace Atlas {
             glm::vec3 color{};
             glm::vec3 normal{};
             glm::vec2 uv{};
-            glm::vec3 tangent{};
+            glm::vec4 tangent{};
 
             static std::vector<VkVertexInputBindingDescription> getBindingDescriptions();
             static std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions();

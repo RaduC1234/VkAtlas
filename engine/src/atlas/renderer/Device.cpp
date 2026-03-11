@@ -52,13 +52,14 @@ namespace Atlas {
         pickPhysicalDevice();
         createLogicalDevice();
         createVmaAllocator();
-        createCommandPool();
+        createCommandPools();
 
         this->executor = std::make_unique<ExecutorService>();
     }
 
     Device::~Device() {
-        vkDestroyCommandPool(device_, commandPool, nullptr);
+        vkDestroyCommandPool(device_, graphicsCommandPool, nullptr);
+        vkDestroyCommandPool(device_, computeCommandPool, nullptr);
         vmaDestroyAllocator(allocator_);
         vkDestroyDevice(device_, nullptr);
 
@@ -163,7 +164,12 @@ namespace Atlas {
         QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-        std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+        std::set<uint32_t> uniqueQueueFamilies = {
+            indices.graphicsFamily.value(),
+            indices.presentFamily.value(),
+            indices.computeFamily.value(),
+            indices.transferFamily.value()
+        };
 
         float queuePriority = 1.0f;
         for (uint32_t queueFamily: uniqueQueueFamilies) {
@@ -236,6 +242,8 @@ namespace Atlas {
 
         vkGetDeviceQueue(device_, indices.graphicsFamily.value(), 0, &graphicsQueue_);
         vkGetDeviceQueue(device_, indices.presentFamily.value(), 0, &presentQueue_);
+        vkGetDeviceQueue(device_, indices.computeFamily.value(), 0, &computeQueue_);
+        vkGetDeviceQueue(device_, indices.transferFamily.value(), 0, &transferQueue_);
 
         AT_INFO("MaxPushConstantSize: {}", properties.limits.maxPushConstantsSize);
     }
@@ -251,16 +259,22 @@ namespace Atlas {
         }
     }
 
-    void Device::createCommandPool() {
+    void Device::createCommandPools() {
         QueueFamilyIndices queueFamilyIndices = findPhysicalQueueFamilies();
-
         VkCommandPoolCreateInfo poolInfo = {};
         poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+
         poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
         poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-        if (vkCreateCommandPool(device_, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create command pool!");
+        if (vkCreateCommandPool(device_, &poolInfo, nullptr, &graphicsCommandPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create graphics command pool!");
+        }
+
+        poolInfo.queueFamilyIndex = queueFamilyIndices.computeFamily.value();
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        if (vkCreateCommandPool(device_, &poolInfo, nullptr, &computeCommandPool) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create compute command pool!");
         }
     }
 
@@ -486,8 +500,8 @@ namespace Atlas {
 
             if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
                 return format;
-            } else if (
-                tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
+            }
+            else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
                 return format;
             }
         }
@@ -498,7 +512,7 @@ namespace Atlas {
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = commandPool;
+        allocInfo.commandPool = graphicsCommandPool; // use graphics for now until asset streaming is implemented
         allocInfo.commandBufferCount = 1;
 
         VkCommandBuffer commandBuffer;
@@ -523,6 +537,6 @@ namespace Atlas {
         vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
         vkQueueWaitIdle(graphicsQueue_);
 
-        vkFreeCommandBuffers(device_, commandPool, 1, &commandBuffer);
+        vkFreeCommandBuffers(device_, graphicsCommandPool, 1, &commandBuffer);
     }
 }

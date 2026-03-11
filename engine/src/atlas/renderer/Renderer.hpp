@@ -33,9 +33,14 @@ namespace Atlas {
             return currentFrameIndex;
         }
 
-        VkCommandBuffer getCurrentCommandBuffer() const {
+        VkCommandBuffer getCurrentGraphicsCommandBuffer() const {
             assert(isFrameStarted && "Cannot get command buffer when frame not in progress");
-            return commandBuffers[currentFrameIndex];
+            return graphicsCommandBuffers_[currentFrameIndex];
+        }
+
+        VkCommandBuffer getCurrentComputeCommandBuffer() const {
+            assert(isComputeStarted && "Cannot get command buffer when compute not in progress");
+            return computeCommandBuffers[currentFrameIndex];
         }
 
         // Frame lifecycle
@@ -45,18 +50,27 @@ namespace Atlas {
         void beginSwapChainRenderPass(VkCommandBuffer);
         void endSwapChainRenderPass(VkCommandBuffer) const;
 
+        // Compute lifecycle
+        VkCommandBuffer beginCompute();
+        void endCompute();
+
     private:
         void createCommandBuffers();
         void freeCommandBuffers();
         void recreateSwapChain();
+        void createComputeSyncObjects();
 
         Window &window;
         Device &device;
         std::unique_ptr<SwapChain> swapChain;
-        std::vector<VkCommandBuffer> commandBuffers;
+        std::vector<VkCommandBuffer> graphicsCommandBuffers_;
 
         uint32_t currentImageIndex;
         int currentFrameIndex{0};
         bool isFrameStarted{false};
+
+        bool isComputeStarted{false};
+        std::vector<VkCommandBuffer> computeCommandBuffers;
+        std::vector<VkFence> computeInFlightFences;
     };
 }
