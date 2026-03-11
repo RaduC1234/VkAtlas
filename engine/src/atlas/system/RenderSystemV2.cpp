@@ -17,7 +17,7 @@ namespace Atlas {
         : device(device) {
         createDescriptors();
         createPipelineLayout(globalSetLayout);
-        createPipeline(renderPass);
+        createPipelines(renderPass);
         createGPUBuffers();
 
         defaultWhiteTextureHandle = AssetManager::get().createDefaultWhiteTexture();
@@ -47,9 +47,9 @@ namespace Atlas {
                 .build();
 
         rendererPool = DescriptorPool::Builder(device)
-                .setMaxSets(3)
+                .setMaxSets(4)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3)
                 .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                 .build();
 
@@ -58,6 +58,9 @@ namespace Atlas {
 
         if (!rendererPool->allocateDescriptor(objectDataSetLayout->getDescriptorSetLayout(), objectDataSet))
             throw std::runtime_error("Failed to allocate object data descriptor set");
+
+        if (!rendererPool->allocateDescriptor(objectDataSetLayout->getDescriptorSetLayout(), transparentObjectDataSet))
+            throw std::runtime_error("Failed to allocate transparent object data descriptor set");
 
         if (!rendererPool->allocateDescriptor(lightSetLayout->getDescriptorSetLayout(), lightSet))
             throw std::runtime_error("Failed to allocate light descriptor set");
@@ -80,21 +83,51 @@ namespace Atlas {
             throw std::runtime_error("Failed to create pipeline layout");
     }
 
-    void RenderSystemV2::createPipeline(VkRenderPass renderPass) {
+    void RenderSystemV2::createPipelines(VkRenderPass renderPass) {
         assert(pipelineLayout != VK_NULL_HANDLE);
 
-        GraphicsPipelineConfigInfo config{};
-        Pipeline::defaultGraphicsPipelineConfigInfo(config);
-        config.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
-        config.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
-        config.renderPass = renderPass;
-        config.pipelineLayout = pipelineLayout;
+        /*ComputePipelineConfigInfo computeConfig{};
+        Pipeline::defaultComputePipelineConfigInfo(computeConfig);
+        cullingPipeline = std::make_unique<Pipeline>(
+            device,
+            "shaders/RenderSystemV2.culling.comp.spv",
+            computeConfig
+        );*/
+
+        GraphicsPipelineConfigInfo graphicsConfig{};
+        Pipeline::defaultGraphicsPipelineConfigInfo(graphicsConfig);
+        graphicsConfig.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
+        graphicsConfig.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
+        graphicsConfig.renderPass = renderPass;
+        graphicsConfig.pipelineLayout = pipelineLayout;
 
         renderPipeline = std::make_unique<Pipeline>(
             device,
             "shaders/RenderSystemV2.indirect_shader.vert.spv",
             "shaders/RenderSystemV2.indirect_shader.frag.spv",
-            config
+            graphicsConfig
+        );
+
+        graphicsConfig.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
+        graphicsConfig.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
+        graphicsConfig.renderPass = renderPass;
+        graphicsConfig.pipelineLayout = pipelineLayout;
+
+        graphicsConfig.depthStencilInfo.depthWriteEnable = VK_FALSE;
+
+        graphicsConfig.colorBlendAttachment.blendEnable = VK_TRUE;
+        graphicsConfig.colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        graphicsConfig.colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        graphicsConfig.colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        graphicsConfig.colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        graphicsConfig.colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        graphicsConfig.colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        transparentRenderPipeline = std::make_unique<Pipeline>(
+            device,
+            "shaders/RenderSystemV2.indirect_shader.vert.spv",
+            "shaders/RenderSystemV2.indirect_shader.frag.spv",
+            graphicsConfig
         );
     }
 
@@ -111,12 +144,22 @@ namespace Atlas {
         );
 
         indirectCommandBuffer = std::make_unique<Buffer>(
-            device, sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
+            device,
+            sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
             VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
             VMA_MEMORY_USAGE_AUTO,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
         );
         indirectCommandBuffer->map();
+
+        transparentIndirectCommandBuffer = std::make_unique<Buffer>(
+            device,
+            sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
+            VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+        );
+        transparentIndirectCommandBuffer->map();
 
         objectDataBuffer = std::make_unique<Buffer>(
             device, sizeof(GPUObjectData) * MAX_OBJECTS,
@@ -128,6 +171,17 @@ namespace Atlas {
         DescriptorWriter(*objectDataSetLayout, *rendererPool)
                 .writeBuffer(0, &objectBufferInfo)
                 .overwrite(objectDataSet);
+
+        transparentObjectDataBuffer = std::make_unique<Buffer>(
+            device, sizeof(GPUObjectData) * MAX_OBJECTS,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+        );
+        auto transparentObjectBufferInfo = transparentObjectDataBuffer->descriptorInfo();
+        DescriptorWriter(*objectDataSetLayout, *rendererPool)
+                .writeBuffer(0, &transparentObjectBufferInfo)
+                .overwrite(transparentObjectDataSet);
 
         lightsBuffer = std::make_unique<Buffer>(
             device, sizeof(Light) * MAX_LIGHTS,
@@ -231,7 +285,8 @@ namespace Atlas {
     }
 
     void RenderSystemV2::build(entt::registry &registry) {
-        auto *drawCommands = static_cast<VkDrawIndexedIndirectCommand *>(indirectCommandBuffer->getMapped());
+        auto *opaqueDrawCommands = static_cast<VkDrawIndexedIndirectCommand *>(indirectCommandBuffer->getMapped());
+        auto *transparentDrawCommands = static_cast<VkDrawIndexedIndirectCommand *>(transparentIndirectCommandBuffer->getMapped());
 
         for (auto entity: registry.view<TransformComponent, MaterialComponent, ModelComponent>()) {
             auto &transform = registry.get<TransformComponent>(entity);
@@ -247,31 +302,41 @@ namespace Atlas {
             if (allocIt == meshAllocations.end()) continue;
 
             const MeshAllocation &alloc = allocIt->second;
-
-            // Dense index assigned by Storage — used as firstInstance so the shader
-            // can index objectData[gl_InstanceIndex] without any indirection.
             const glm::mat4 model4x4 = transform.mat4();
-            const auto denseIdx = static_cast<uint32_t>(objectData.size());
-            objectData.emplace(
-                entity, GPUObjectData{
-                    .modelMatrix = model4x4,
-                    .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(model4x4))),
-                    .textureIndices = glm::uvec4(
-                        resolveTextureIndex(material.albedoTexture != INVALID_ASSET_HANDLE ? material.albedoTexture : defaultWhiteTextureHandle),
-                        resolveTextureIndex(material.normalMap != INVALID_ASSET_HANDLE ? material.normalMap : defaultWhiteTextureHandle),
-                        resolveTextureIndex(material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? material.metallicRoughnessMap : defaultWhiteTextureHandle),
-                        0u
-                    ),
-                    .baseColor = material.baseColor,
-                });
 
-            drawCommands[denseIdx] = {
-                .indexCount = alloc.indexCount,
-                .instanceCount = 1,
-                .firstIndex = alloc.firstIndex,
-                .vertexOffset = static_cast<int32_t>(alloc.firstVertex),
-                .firstInstance = denseIdx,
+            const GPUObjectData data{
+                .modelMatrix = model4x4,
+                .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(model4x4))),
+                .textureIndices = glm::uvec4(
+                    resolveTextureIndex(material.albedoTexture != INVALID_ASSET_HANDLE ? material.albedoTexture : defaultWhiteTextureHandle),
+                    resolveTextureIndex(material.normalMap != INVALID_ASSET_HANDLE ? material.normalMap : defaultWhiteTextureHandle),
+                    resolveTextureIndex(material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? material.metallicRoughnessMap : defaultWhiteTextureHandle),
+                    0u
+                ),
+                .baseColor = material.baseColor, // baseColor.a drives transparency in shader
             };
+
+            if (material.baseColor.w < 1.0f) {
+                const auto denseIdx = static_cast<uint32_t>(transparentObjectData.size());
+                transparentObjectData.emplace(entity, data);
+                transparentDrawCommands[denseIdx] = {
+                    .indexCount = alloc.indexCount,
+                    .instanceCount = 1,
+                    .firstIndex = alloc.firstIndex,
+                    .vertexOffset = static_cast<int32_t>(alloc.firstVertex),
+                    .firstInstance = denseIdx,
+                };
+            } else {
+                const auto denseIdx = static_cast<uint32_t>(opaqueObjectData.size());
+                opaqueObjectData.emplace(entity, data);
+                opaqueDrawCommands[denseIdx] = {
+                    .indexCount = alloc.indexCount,
+                    .instanceCount = 1,
+                    .firstIndex = alloc.firstIndex,
+                    .vertexOffset = static_cast<int32_t>(alloc.firstVertex),
+                    .firstInstance = denseIdx,
+                };
+            }
         }
 
         // Lights
@@ -288,37 +353,72 @@ namespace Atlas {
                            });
         }
 
-        // Single contiguous upload for both SSBOs
-        objectDataBuffer->uploadData(objectData.data(), sizeof(GPUObjectData) * objectData.size());
-        lightsBuffer->uploadData(lights.data(), sizeof(Light) * lights.size());
+        // Upload all SSBOs
+        objectDataBuffer->uploadData(opaqueObjectData.data(), sizeof(GPUObjectData) * opaqueObjectData.size());
+
+        if (!transparentObjectData.empty()) {
+            transparentObjectDataBuffer->uploadData(transparentObjectData.data(), sizeof(GPUObjectData) * transparentObjectData.size());
+        }
+
+        if (!lights.empty()) {
+            lightsBuffer->uploadData(lights.data(), sizeof(Light) * lights.size());
+        }
     }
 
 
     void RenderSystemV2::render(VkCommandBuffer graphicsCommandBuffer, VkDescriptorSet globalSet) {
-        if (objectData.empty()) return;
+        // Opaque (non-transparent) pass
+        if (!opaqueObjectData.empty()) {
+            const auto opaqueDrawCount = static_cast<uint32_t>(opaqueObjectData.size());
+            renderPipeline->bind(graphicsCommandBuffer);
 
-        const auto drawCount = static_cast<uint32_t>(objectData.size());
-        renderPipeline->bind(graphicsCommandBuffer);
+            const VkDescriptorSet opaqueSets[] = {
+                globalSet,
+                bindlessTextureSet,
+                objectDataSet,
+                lightSet
+            };
 
-        const VkDescriptorSet sets[] = {
-            globalSet,
-            bindlessTextureSet,
-            objectDataSet,
-            lightSet
-        };
+            vkCmdBindDescriptorSets(graphicsCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, opaqueSets, 0, nullptr);
 
-        vkCmdBindDescriptorSets(graphicsCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, sets, 0, nullptr);
+            VkBuffer opaqueVertexBuf = mergedVertexBuffer->get();
+            VkDeviceSize opaqueOffset = 0;
+            vkCmdBindVertexBuffers(graphicsCommandBuffer, 0, 1, &opaqueVertexBuf, &opaqueOffset);
+            vkCmdBindIndexBuffer(graphicsCommandBuffer, mergedIndexBuffer->get(), 0, VK_INDEX_TYPE_UINT32);
 
-        VkBuffer vertexBuf = mergedVertexBuffer->get();
-        VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(graphicsCommandBuffer, 0, 1, &vertexBuf, &offset);
-        vkCmdBindIndexBuffer(graphicsCommandBuffer, mergedIndexBuffer->get(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexedIndirect(
+                graphicsCommandBuffer,
+                indirectCommandBuffer->get(),
+                0, opaqueDrawCount,
+                sizeof(VkDrawIndexedIndirectCommand)
+            );
+        }
 
-        vkCmdDrawIndexedIndirect(
-            graphicsCommandBuffer,
-            indirectCommandBuffer->get(),
-            0, drawCount,
-            sizeof(VkDrawIndexedIndirectCommand)
-        );
+        // Transparent pass
+        if (!transparentObjectData.empty() && false) {
+            const auto transparentDrawCount = static_cast<uint32_t>(transparentObjectData.size());
+            transparentRenderPipeline->bind(graphicsCommandBuffer);
+
+            const VkDescriptorSet transparentSets[] = {
+                globalSet,
+                bindlessTextureSet,
+                transparentObjectDataSet,
+                lightSet
+            };
+
+            vkCmdBindDescriptorSets(graphicsCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, transparentSets, 0, nullptr);
+
+            VkBuffer transparentVertexBuf = mergedVertexBuffer->get();
+            VkDeviceSize transparentOffset = 0;
+            vkCmdBindVertexBuffers(graphicsCommandBuffer, 0, 1, &transparentVertexBuf, &transparentOffset);
+            vkCmdBindIndexBuffer(graphicsCommandBuffer, mergedIndexBuffer->get(), 0, VK_INDEX_TYPE_UINT32);
+
+            vkCmdDrawIndexedIndirect(
+                graphicsCommandBuffer,
+                transparentIndirectCommandBuffer->get(),
+                0, transparentDrawCount,
+                sizeof(VkDrawIndexedIndirectCommand)
+            );
+        }
     }
 } // namespace Atlas

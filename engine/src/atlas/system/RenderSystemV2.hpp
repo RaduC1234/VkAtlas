@@ -50,33 +50,34 @@ namespace Atlas {
         };
 
         struct Light {
-            alignas(4) uint32_t type{static_cast<uint32_t>(LightType::SPOT)};
-            alignas(4) float intensity{1.0f};
-            alignas(4) float range{0.0f};
-            alignas(4) float innerConeAngle{0.0f};
-            alignas(16) glm::vec3 color{1.0f};
-            alignas(4) float outerConeAngle{glm::radians(45.0f)};
-            alignas(16) glm::vec3 position{0.0f};
-            alignas(4) float _pad{0.0f};
+            uint32_t type{static_cast<uint32_t>(LightType::SPOT)};  // offset 0
+            float intensity{1.0f};                                   // offset 4
+            float range{0.0f};                                       // offset 8
+            float innerConeAngle{0.0f};                              // offset 12
+            glm::vec3 color{1.0f};                                   // offset 16
+            float outerConeAngle{glm::radians(45.0f)};               // offset 28
+            glm::vec3 position{0.0f};                                // offset 32
+            float _pad{0.0f};                                        // offset 44
         };
 
         void createDescriptors();
         void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
-        void createPipeline(VkRenderPass renderPass);
+        void createPipelines(VkRenderPass renderPass);
         void createGPUBuffers();
 
-        // Both called during build() only. Descriptors are written immediately —
-        // no pending/commit pattern needed since build() runs once outside any command buffer.
+
         uint32_t registerTexture(AssetHandle handle);
         void registerMesh(AssetHandle handle);
-
         uint32_t resolveTextureIndex(AssetHandle handle) const;
 
         Device &device;
 
+        std::unique_ptr<Pipeline> cullingPipeline;
         std::unique_ptr<Pipeline> renderPipeline;
+        std::unique_ptr<Pipeline> transparentRenderPipeline;
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         std::unique_ptr<DescriptorPool> rendererPool;
+
 
         // Set 1 — bindless textures
         std::unique_ptr<DescriptorSetLayout> textureSetLayout;
@@ -85,19 +86,29 @@ namespace Atlas {
         std::unordered_map<AssetHandle, uint32_t> handleToTextureSlot;
         AssetHandle defaultWhiteTextureHandle = INVALID_ASSET_HANDLE;
 
+
         // Set 2 — per-object SSBO
         // Keyed by entt::entity — dense index == firstInstance in the draw command,
-        // so the shader can index objectData[gl_InstanceIndex] directly.
+        // so the shader can index opaqueObjectData[gl_InstanceIndex] directly.
         std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
-        VkDescriptorSet objectDataSet = VK_NULL_HANDLE;
+
+        Storage<GPUObjectData> opaqueObjectData;
         std::unique_ptr<Buffer> objectDataBuffer;
-        Storage<GPUObjectData> objectData;
+        VkDescriptorSet objectDataSet = VK_NULL_HANDLE;
+        std::unique_ptr<Buffer> indirectCommandBuffer;
+
+        Storage<GPUObjectData> transparentObjectData;
+        std::unique_ptr<Buffer> transparentObjectDataBuffer;
+        VkDescriptorSet transparentObjectDataSet = VK_NULL_HANDLE;
+        std::unique_ptr<Buffer> transparentIndirectCommandBuffer;
+
 
         // Set 3 — lights SSBO
-        std::unique_ptr<DescriptorSetLayout> lightSetLayout;
-        VkDescriptorSet lightSet = VK_NULL_HANDLE;
-        std::unique_ptr<Buffer> lightsBuffer;
         Storage<Light> lights;
+        std::unique_ptr<Buffer> lightsBuffer;
+        VkDescriptorSet lightSet = VK_NULL_HANDLE;
+        std::unique_ptr<DescriptorSetLayout> lightSetLayout;
+
 
         // Merged geometry buffers
         std::unique_ptr<Buffer> mergedVertexBuffer;
@@ -105,8 +116,5 @@ namespace Atlas {
         uint32_t nextVertex = 0;
         uint32_t nextIndex = 0;
         std::unordered_map<AssetHandle, MeshAllocation> meshAllocations;
-
-        // Indirect draw commands — firstInstance per draw == dense index in objectData
-        std::unique_ptr<Buffer> indirectCommandBuffer;
     };
 }

@@ -122,7 +122,7 @@ namespace Atlas {
         attributeDescriptions.push_back({1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, color)});
         attributeDescriptions.push_back({2, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)});
         attributeDescriptions.push_back({3, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)});
-        attributeDescriptions.push_back({4, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, tangent)});
+        attributeDescriptions.push_back({4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(Vertex, tangent)});
 
         return attributeDescriptions;
     }
@@ -154,7 +154,7 @@ namespace Atlas {
                 );
 
                 vertex.color = glm::vec3(1.0f);
-                vertex.tangent = glm::normalize(glm::vec3(-sinPhi, 0.0f, cosPhi));
+                vertex.tangent = glm::normalize(glm::vec4(-sinPhi, 0.0f, cosPhi, 1.0f));
 
                 builder.vertices.push_back(vertex);
             }
@@ -183,40 +183,40 @@ namespace Atlas {
         float h = size / 2.0f;
 
         // Front face (+Z) - tangent = +X
-        builder.vertices.push_back({{-h, -h, h}, {1, 1, 1}, {0, 0, 1}, {0.0f, 0.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{h, -h, h}, {1, 1, 1}, {0, 0, 1}, {1.0f, 0.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{h, h, h}, {1, 1, 1}, {0, 0, 1}, {1.0f, 1.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{-h, h, h}, {1, 1, 1}, {0, 0, 1}, {0.0f, 1.0f}, {1, 0, 0}});
+        builder.vertices.push_back({{-h, -h, h}, {1, 1, 1}, {0, 0, 1}, {0.0f, 0.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{h, -h, h}, {1, 1, 1}, {0, 0, 1}, {1.0f, 0.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{h, h, h}, {1, 1, 1}, {0, 0, 1}, {1.0f, 1.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{-h, h, h}, {1, 1, 1}, {0, 0, 1}, {0.0f, 1.0f}, {1, 0, 0, 1}});
 
         // Back face (-Z) - tangent = -X
-        builder.vertices.push_back({{h, -h, -h}, {1, 1, 1}, {0, 0, -1}, {0.0f, 0.0f}, {-1, 0, 0}});
-        builder.vertices.push_back({{-h, -h, -h}, {1, 1, 1}, {0, 0, -1}, {1.0f, 0.0f}, {-1, 0, 0}});
-        builder.vertices.push_back({{-h, h, -h}, {1, 1, 1}, {0, 0, -1}, {1.0f, 1.0f}, {-1, 0, 0}});
-        builder.vertices.push_back({{h, h, -h}, {1, 1, 1}, {0, 0, -1}, {0.0f, 1.0f}, {-1, 0, 0}});
+        builder.vertices.push_back({{h, -h, -h}, {1, 1, 1}, {0, 0, -1}, {0.0f, 0.0f}, {-1, 0, 0, 1}});
+        builder.vertices.push_back({{-h, -h, -h}, {1, 1, 1}, {0, 0, -1}, {1.0f, 0.0f}, {-1, 0, 0, 1}});
+        builder.vertices.push_back({{-h, h, -h}, {1, 1, 1}, {0, 0, -1}, {1.0f, 1.0f}, {-1, 0, 0, 1}});
+        builder.vertices.push_back({{h, h, -h}, {1, 1, 1}, {0, 0, -1}, {0.0f, 1.0f}, {-1, 0, 0, 1}});
 
         // Left face (-X) - tangent = +Z
-        builder.vertices.push_back({{-h, -h, -h}, {1, 1, 1}, {-1, 0, 0}, {0.0f, 0.0f}, {0, 0, 1}});
-        builder.vertices.push_back({{-h, -h, h}, {1, 1, 1}, {-1, 0, 0}, {1.0f, 0.0f}, {0, 0, 1}});
-        builder.vertices.push_back({{-h, h, h}, {1, 1, 1}, {-1, 0, 0}, {1.0f, 1.0f}, {0, 0, 1}});
-        builder.vertices.push_back({{-h, h, -h}, {1, 1, 1}, {-1, 0, 0}, {0.0f, 1.0f}, {0, 0, 1}});
+        builder.vertices.push_back({{-h, -h, -h}, {1, 1, 1}, {-1, 0, 0}, {0.0f, 0.0f}, {0, 0, 1, 1}});
+        builder.vertices.push_back({{-h, -h, h}, {1, 1, 1}, {-1, 0, 0}, {1.0f, 0.0f}, {0, 0, 1, 1}});
+        builder.vertices.push_back({{-h, h, h}, {1, 1, 1}, {-1, 0, 0}, {1.0f, 1.0f}, {0, 0, 1, 1}});
+        builder.vertices.push_back({{-h, h, -h}, {1, 1, 1}, {-1, 0, 0}, {0.0f, 1.0f}, {0, 0, 1, 1}});
 
         // Right face (+X) - tangent = -Z
-        builder.vertices.push_back({{h, -h, h}, {1, 1, 1}, {1, 0, 0}, {0.0f, 0.0f}, {0, 0, -1}});
-        builder.vertices.push_back({{h, -h, -h}, {1, 1, 1}, {1, 0, 0}, {1.0f, 0.0f}, {0, 0, -1}});
-        builder.vertices.push_back({{h, h, -h}, {1, 1, 1}, {1, 0, 0}, {1.0f, 1.0f}, {0, 0, -1}});
-        builder.vertices.push_back({{h, h, h}, {1, 1, 1}, {1, 0, 0}, {0.0f, 1.0f}, {0, 0, -1}});
+        builder.vertices.push_back({{h, -h, h}, {1, 1, 1}, {1, 0, 0}, {0.0f, 0.0f}, {0, 0, -1, 1}});
+        builder.vertices.push_back({{h, -h, -h}, {1, 1, 1}, {1, 0, 0}, {1.0f, 0.0f}, {0, 0, -1, 1}});
+        builder.vertices.push_back({{h, h, -h}, {1, 1, 1}, {1, 0, 0}, {1.0f, 1.0f}, {0, 0, -1, 1}});
+        builder.vertices.push_back({{h, h, h}, {1, 1, 1}, {1, 0, 0}, {0.0f, 1.0f}, {0, 0, -1, 1}});
 
         // Top face (+Y) - tangent = +X
-        builder.vertices.push_back({{-h, h, h}, {1, 1, 1}, {0, 1, 0}, {0.0f, 0.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{h, h, h}, {1, 1, 1}, {0, 1, 0}, {1.0f, 0.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{h, h, -h}, {1, 1, 1}, {0, 1, 0}, {1.0f, 1.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{-h, h, -h}, {1, 1, 1}, {0, 1, 0}, {0.0f, 1.0f}, {1, 0, 0}});
+        builder.vertices.push_back({{-h, h, h}, {1, 1, 1}, {0, 1, 0}, {0.0f, 0.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{h, h, h}, {1, 1, 1}, {0, 1, 0}, {1.0f, 0.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{h, h, -h}, {1, 1, 1}, {0, 1, 0}, {1.0f, 1.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{-h, h, -h}, {1, 1, 1}, {0, 1, 0}, {0.0f, 1.0f}, {1, 0, 0, 1}});
 
         // Bottom face (-Y) - tangent = +X
-        builder.vertices.push_back({{-h, -h, -h}, {1, 1, 1}, {0, -1, 0}, {0.0f, 0.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{h, -h, -h}, {1, 1, 1}, {0, -1, 0}, {1.0f, 0.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{h, -h, h}, {1, 1, 1}, {0, -1, 0}, {1.0f, 1.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{-h, -h, h}, {1, 1, 1}, {0, -1, 0}, {0.0f, 1.0f}, {1, 0, 0}});
+        builder.vertices.push_back({{-h, -h, -h}, {1, 1, 1}, {0, -1, 0}, {0.0f, 0.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{h, -h, -h}, {1, 1, 1}, {0, -1, 0}, {1.0f, 0.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{h, -h, h}, {1, 1, 1}, {0, -1, 0}, {1.0f, 1.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{-h, -h, h}, {1, 1, 1}, {0, -1, 0}, {0.0f, 1.0f}, {1, 0, 0, 1}});
 
         // Indices for all 6 faces (2 triangles per face)
         for (uint32_t i = 0; i < 6; ++i) {
@@ -239,10 +239,10 @@ namespace Atlas {
         float halfWidth = width / 2.0f;
         float halfHeight = height / 2.0f;
 
-        builder.vertices.push_back({{-halfWidth, 0.0f, -halfHeight}, {1, 1, 1}, {0, -1, 0}, {0.0f, 0.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{halfWidth, 0.0f, -halfHeight}, {1, 1, 1}, {0, -1, 0}, {1.0f, 0.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{halfWidth, 0.0f, halfHeight}, {1, 1, 1}, {0, -1, 0}, {1.0f, 1.0f}, {1, 0, 0}});
-        builder.vertices.push_back({{-halfWidth, 0.0f, halfHeight}, {1, 1, 1}, {0, -1, 0}, {0.0f, 1.0f}, {1, 0, 0}});
+        builder.vertices.push_back({{-halfWidth, 0.0f, -halfHeight}, {1, 1, 1}, {0, -1, 0}, {0.0f, 0.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{halfWidth, 0.0f, -halfHeight}, {1, 1, 1}, {0, -1, 0}, {1.0f, 0.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{halfWidth, 0.0f, halfHeight}, {1, 1, 1}, {0, -1, 0}, {1.0f, 1.0f}, {1, 0, 0, 1}});
+        builder.vertices.push_back({{-halfWidth, 0.0f, halfHeight}, {1, 1, 1}, {0, -1, 0}, {0.0f, 1.0f}, {1, 0, 0, 1}});
 
 
         builder.indices.push_back(0);

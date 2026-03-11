@@ -926,9 +926,9 @@ namespace Atlas {
                         // Tangent
                         if (hasTangent) {
                             auto tv = reinterpret_cast<const float *>(tangentBase + v * tangentStride);
-                            vert.tangent = glm::vec3(tv[0], tv[1], tv[2]);
+                            vert.tangent = glm::vec4(tv[0], tv[1], tv[2], tv[3]);
                         } else {
-                            vert.tangent = glm::vec3(1.0f, 0.0f, 0.0f);
+                            vert.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
                         }
 
                         vertices.push_back(vert);
@@ -976,8 +976,7 @@ namespace Atlas {
                     }
 
                     // Create mesh path
-                    std::string meshPath = virtualPath + "#mesh" + std::to_string(meshIndex) +
-                                           "_prim" + std::to_string(primIndex);
+                    std::string meshPath = virtualPath + "#mesh" + std::to_string(meshIndex) + "_prim" + std::to_string(primIndex);
 
                     // Thread-safe mesh creation with hash-based deduplication
                     AssetHandle meshHandle; {
