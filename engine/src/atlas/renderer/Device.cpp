@@ -12,7 +12,7 @@
 
 namespace Atlas {
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
-        const char* message = pCallbackData && pCallbackData->pMessage ? pCallbackData->pMessage : "(no message)";
+        const char *message = pCallbackData && pCallbackData->pMessage ? pCallbackData->pMessage : "(no message)";
 
         if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
             AT_TRACE(message);
@@ -45,8 +45,8 @@ namespace Atlas {
         }
     }
 
-    Device::Device(Window &window) : window{window} {
-        createInstance();
+    Device::Device(Window &window, RenderMode renderMode) : window{window}, renderMode{renderMode} {
+        createVkInstance();
         setupDebugMessenger();
         createSurface();
         pickPhysicalDevice();
@@ -64,24 +64,24 @@ namespace Atlas {
         vkDestroyDevice(device_, nullptr);
 
         if constexpr (enableValidationLayers) {
-            destroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
+            destroyDebugUtilsMessengerEXT(vkInstance, debugMessenger, nullptr);
         }
 
-        vkDestroySurfaceKHR(instance, surface_, nullptr);
-        vkDestroyInstance(instance, nullptr);
+        vkDestroySurfaceKHR(vkInstance, surface_, nullptr);
+        vkDestroyInstance(vkInstance, nullptr);
     }
 
-    void Device::createInstance() {
+    void Device::createVkInstance() {
         if (enableValidationLayers && !checkValidationLayerSupport()) {
             throw std::runtime_error("validation layers requested, but not available!");
         }
 
         VkApplicationInfo appInfo = {};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pApplicationName = "Atlas App";
-        appInfo.applicationVersion = VK_MAKE_VERSION(1, 1, 0);
-        appInfo.pEngineName = "No Engine";
-        appInfo.engineVersion = VK_MAKE_VERSION(1, 1, 0);
+        appInfo.pApplicationName = APPLICATION_NAME;
+        appInfo.applicationVersion = APPLICATION_VERSION;
+        appInfo.pEngineName = APPLICATION_NAME;
+        appInfo.engineVersion = APPLICATION_VERSION;
         appInfo.apiVersion = VK_API_VERSION_1_3;
 
         VkInstanceCreateInfo createInfo = {};
@@ -104,11 +104,30 @@ namespace Atlas {
             createInfo.pNext = nullptr;
         }
 
-        if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
+        if (vkCreateInstance(&createInfo, nullptr, &vkInstance) != VK_SUCCESS) {
             throw std::runtime_error("failed to create instance!");
         }
 
         outputRequiredInstanceExtensions(extensions);
+    }
+
+    void Device::createXrInstance() {
+        std::vector<const char *> xrExtensions = {
+            XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME
+        };
+
+        XrInstanceCreateInfo createInfo{};
+        createInfo.type = XR_TYPE_INSTANCE_CREATE_INFO;
+        createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
+        createInfo.applicationInfo.applicationVersion = APPLICATION_VERSION;
+        createInfo.applicationInfo.engineVersion = APPLICATION_VERSION;
+        std::strcpy(createInfo.applicationInfo.applicationName, APPLICATION_NAME);
+        createInfo.enabledExtensionNames = xrExtensions.data();
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(xrExtensions.size());
+
+        if (xrCreateInstance(&createInfo, &xrInstance) != XR_SUCCESS) {
+            throw std::runtime_error("Failed to create OpenXR instance");
+        }
     }
 
     void Device::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo) {
@@ -131,25 +150,25 @@ namespace Atlas {
         VkDebugUtilsMessengerCreateInfoEXT createInfo;
         populateDebugMessengerCreateInfo(createInfo);
 
-        if (createDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
+        if (createDebugUtilsMessengerEXT(vkInstance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
             throw std::runtime_error("Failed to set up debug messenger!");
         }
     }
 
     void Device::createSurface() {
-        window.createWindowSurface(instance, &surface_);
+        window.createWindowSurface(vkInstance, &surface_);
     }
 
     void Device::pickPhysicalDevice() {
         uint32_t deviceCount = 0;
-        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+        vkEnumeratePhysicalDevices(vkInstance, &deviceCount, nullptr);
 
         if (deviceCount == 0) {
             throw std::runtime_error("Failed to find GPUs with Vulkan support!");
         }
 
         std::vector<VkPhysicalDevice> devices(deviceCount);
-        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+        vkEnumeratePhysicalDevices(vkInstance, &deviceCount, devices.data());
 
         this->physicalDevice = findBestDevice(devices);
         if (physicalDevice == VK_NULL_HANDLE) {
@@ -252,7 +271,7 @@ namespace Atlas {
         VmaAllocatorCreateInfo allocatorInfo{};
         allocatorInfo.physicalDevice = this->physicalDevice;
         allocatorInfo.device = this->device_;
-        allocatorInfo.instance = this->instance;
+        allocatorInfo.instance = this->vkInstance;
 
         if (vmaCreateAllocator(&allocatorInfo, &allocator_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create VMA allocator.");
@@ -308,6 +327,24 @@ namespace Atlas {
 
         if constexpr (enableValidationLayers) {
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
+
+        if (renderMode == XROnly || renderMode == Combined) {
+            uint32_t count = 0;
+            xrGetVulkanInstanceExtensionsKHR(xrInstance, xrSystemId, 0, &count, nullptr);
+
+            std::string xrExts(count, '\0');
+            xrGetVulkanInstanceExtensionsKHR(xrInstance, xrSystemId, count, &count, xrExts.data());
+
+            // Parse space-separated list and append
+            std::istringstream ss(xrExts);
+            std::string ext;
+            while (ss >> ext) {
+                xrInstanceExtensionBuffer.push_back(ext); // stable storage (see note below)
+            }
+            for (const auto& e : xrInstanceExtensionBuffer) {
+                extensions.push_back(e.c_str());
+            }
         }
 
         return extensions;
@@ -427,7 +464,7 @@ namespace Atlas {
         return requiredExtensions.empty();
     }
 
-    void Device::outputRequiredInstanceExtensions(const std::vector<const char*> &requiredExtensions) {
+    void Device::outputRequiredInstanceExtensions(const std::vector<const char *> &requiredExtensions) {
         uint32_t extensionCount = 0;
         vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
         std::vector<VkExtensionProperties> extensions(extensionCount);
@@ -500,8 +537,7 @@ namespace Atlas {
 
             if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
                 return format;
-            }
-            else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
+            } else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
                 return format;
             }
         }

@@ -3,11 +3,14 @@
 #include <optional>
 #include <vector>
 
-#include "core/Core.hpp"
 #include "core/Window.hpp"
 
 #include "vk_mem_alloc.h"
 #include "utils/ExecutorService.hpp"
+
+#define XR_USE_GRAPHICS_API_VULKAN
+#include <openxr/openxr.h>
+#include <openxr/openxr_platform.h>
 
 namespace Atlas {
 #if defined(NDEBUG) || defined(__ANDROID__)
@@ -17,7 +20,7 @@ namespace Atlas {
 #endif
 
     enum RenderMode {
-        ScreenOnly,
+        WindowOnly,
         XROnly,
         Combined
     };
@@ -54,7 +57,7 @@ namespace Atlas {
         VkQueue transferQueue() const { return transferQueue_; }
         VkCommandPool getGraphicsCommandPool() const { return graphicsCommandPool; }
         VkCommandPool getComputeCommandPool() const { return computeCommandPool; }
-        const VkInstance &getInstance() const { return instance; }
+        const VkInstance &getInstance() const { return vkInstance; }
         const VkPhysicalDevice &getPhysicalDevice() const { return physicalDevice; }
         const VmaAllocator &allocator() const { return this->allocator_; }
         ExecutorService &getExecutor() const { return *executor; }
@@ -74,8 +77,12 @@ namespace Atlas {
         void endGraphicsCommands(VkCommandBuffer commandBuffer) const;
 
     private:
+        static constexpr uint32_t APPLICATION_VERSION = VK_MAKE_VERSION(1, 0, 0);
+        static constexpr const char* APPLICATION_NAME = "Atlas Engine";
+
         // Initialization
-        void createInstance();
+        void createVkInstance();
+        void createXrInstance();
         void setupDebugMessenger();
         void createSurface();
         void pickPhysicalDevice();
@@ -94,9 +101,9 @@ namespace Atlas {
         SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 
         // Core handles
-        VkInstance instance;
+        VkInstance vkInstance;
         VkDebugUtilsMessengerEXT debugMessenger;
-        VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+        VkPhysicalDevice physicalDevice;
         VkDevice device_;
         VkSurfaceKHR surface_;
         VkQueue graphicsQueue_;
@@ -107,6 +114,9 @@ namespace Atlas {
         VkCommandPool computeCommandPool;
         Window &window;
         RenderMode renderMode;
+
+        XrInstance xrInstance = XR_NULL_HANDLE;
+        XrSystemId xrSystemId= XR_NULL_SYSTEM_ID;
 
         // Allocator & services
         VmaAllocator allocator_;
