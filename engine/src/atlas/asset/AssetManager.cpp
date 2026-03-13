@@ -1310,7 +1310,7 @@ namespace Atlas {
                                      node.scale[0],
                                      node.scale[1],
                                      node.scale[2]
-                                 ));
+                                     ));
             }
         }
 

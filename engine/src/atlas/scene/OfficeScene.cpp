@@ -50,7 +50,7 @@ namespace Atlas {
     }
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
-        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet_with_light.glb");
+        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet.glb");
 
         auto cameraEntity = registry.create();
         registry.emplace<TransformComponent>(cameraEntity);

@@ -1,3 +1,5 @@
+#ifdef ATLAS_PLATFORM_DESKTOP
+
 #include "DesktopAssetManager.hpp"
 #include "core/Log.hpp"
 
@@ -12,3 +14,5 @@ namespace Atlas {
     }
 
 }
+
+#endif
