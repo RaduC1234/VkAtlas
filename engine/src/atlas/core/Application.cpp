@@ -18,7 +18,7 @@ namespace Atlas {
         this->window->setWindowIcon("assets/icons/android_robot.png");
         this->window->setTheme(Theme::DARK);
 
-        currentScene = std::make_unique<OfficeScene>(renderer);
+        currentScene = std::make_unique<PBRTestScene>(renderer);
 
         if (currentScene) {
             currentScene->onLoad(NULL);

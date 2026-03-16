@@ -5,6 +5,7 @@
 #include <cassert>
 #include <stdexcept>
 
+#include "XrSwapChain.hpp"
 #include "entity/Object.hpp"
 
 namespace Atlas {
@@ -15,36 +16,50 @@ namespace Atlas {
     }
 
     Renderer::~Renderer() {
-        for (auto fence : computeInFlightFences) {
+        for (auto fence: computeInFlightFences) {
             vkDestroyFence(device.device(), fence, nullptr);
         }
         freeCommandBuffers();
     }
 
     void Renderer::recreateSwapChain() {
-        auto extent = window.getExtent();
-        while (extent.width == 0 || extent.height == 0) {
-            extent = window.getExtent();
-            //window->waitEvents();
-        }
-        vkDeviceWaitIdle(device.device());
-
-        if (swapChain == nullptr) {
-            swapChain = std::make_unique<SwapChain>(device, extent);
-        } else {
-            std::shared_ptr oldOldSwapChain = std::move(swapChain);
-            swapChain = std::make_unique<SwapChain>(device, extent, oldOldSwapChain);
-
-            if (!oldOldSwapChain->compareSwapFormats(*swapChain)) {
-                throw std::runtime_error("Swap chain image(or depth) format has changed!");
+        std::shared_ptr<WindowSwapChain> oldWindowSwapChain;
+        for (auto &swapChain: swapChains) {
+            if (auto *w = dynamic_cast<WindowSwapChain *>(swapChain.get())) {
+                swapChain.release();
+                oldWindowSwapChain = std::shared_ptr<WindowSwapChain>(w);
+                break;
             }
+        }
+
+        swapChains.clear();
+        const auto renderMode = device.getRenderMode();
+
+        if (renderMode == RenderMode::WindowOnly || renderMode == RenderMode::Combined) {
+            auto extent = window.getExtent();
+            while (extent.width == 0 || extent.height == 0) {
+                extent = window.getExtent();
+                //window->waitEvents();
+            }
+            vkDeviceWaitIdle(device.device());
+
+            std::unique_ptr<WindowSwapChain> w = oldWindowSwapChain ? std::make_unique<WindowSwapChain>(device, extent, oldWindowSwapChain) : std::make_unique<WindowSwapChain>(device, extent);
+            if (oldWindowSwapChain && !w->compareSwapFormats(*oldWindowSwapChain)) {
+                throw std::runtime_error("Swap chain image format has changed after recreation");
+            }
+
+            swapChains.push_back(std::move(w));
+        }
+
+        if (renderMode == RenderMode::XROnly || renderMode == RenderMode::Combined) {
+            swapChains.push_back(std::make_unique<XrSwapChain>(device, device.getXrSession(), device.getXrViewConfigurationViews()));
         }
     }
 
     VkCommandBuffer Renderer::beginFrame() {
         assert(!isFrameStarted && "Can't call beginFrame while already in progress");
 
-        auto result = swapChain->acquireNextImage(&currentImageIndex);
+        auto result = swapChains[0]->acquireNextImage(&currentImageIndex);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             recreateSwapChain();
@@ -77,7 +92,7 @@ namespace Atlas {
             throw std::runtime_error("failed to record command buffer!");
         }
 
-        auto result = swapChain->submitCommandBuffers(&commandBuffer, &currentImageIndex);
+        auto result = swapChains[0]->submitCommandBuffers(&commandBuffer, &currentImageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window.wasWindowResized()) {
             window.resetWindowResizedFlag();
             recreateSwapChain();
@@ -86,7 +101,7 @@ namespace Atlas {
         }
 
         isFrameStarted = false;
-        currentFrameIndex = (currentFrameIndex + 1) % SwapChain::MAX_FRAMES_IN_FLIGHT;
+        currentFrameIndex = (currentFrameIndex + 1) % WindowSwapChain::MAX_FRAMES_IN_FLIGHT;
     }
 
     void Renderer::beginSwapChainRenderPass(VkCommandBuffer commandBuffer) {
@@ -95,11 +110,11 @@ namespace Atlas {
 
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassInfo.renderPass = swapChain->getRenderPass();
-        renderPassInfo.framebuffer = swapChain->getFrameBuffer(static_cast<int32_t>(currentImageIndex));
+        renderPassInfo.renderPass = swapChains[0]->getRenderPass();
+        renderPassInfo.framebuffer = swapChains[0]->getFrameBuffer(static_cast<int32_t>(currentImageIndex));
 
         renderPassInfo.renderArea.offset = {0, 0};
-        renderPassInfo.renderArea.extent = swapChain->getSwapChainExtent();
+        renderPassInfo.renderArea.extent = swapChains[0]->getExtent();
 
         std::array<VkClearValue, 2> clearValues{};
         clearValues[0].color = {0.0151f, 0.0151f, 0.0151f, 1.0f};
@@ -112,11 +127,11 @@ namespace Atlas {
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = static_cast<float>(swapChain->getSwapChainExtent().width);
-        viewport.height = static_cast<float>(swapChain->getSwapChainExtent().height);
+        viewport.width = static_cast<float>(swapChains[0]->getExtent().width);
+        viewport.height = static_cast<float>(swapChains[0]->getExtent().height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
-        VkRect2D scissor{{0, 0}, swapChain->getSwapChainExtent()};
+        VkRect2D scissor{{0, 0}, swapChains[0]->getExtent()};
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
     }
@@ -176,13 +191,13 @@ namespace Atlas {
     }
 
     void Renderer::createComputeSyncObjects() {
-        computeInFlightFences.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        computeInFlightFences.resize(WindowSwapChain::MAX_FRAMES_IN_FLIGHT);
 
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start signaled so first frame doesn't block
 
-        for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
+        for (size_t i = 0; i < WindowSwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
             if (vkCreateFence(device.device(), &fenceInfo, nullptr, &computeInFlightFences[i]) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create compute fence!");
             }
@@ -193,7 +208,7 @@ namespace Atlas {
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 
-        graphicsCommandBuffers_.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        graphicsCommandBuffers_.resize(WindowSwapChain::MAX_FRAMES_IN_FLIGHT);
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         allocInfo.commandPool = device.getGraphicsCommandPool();
         allocInfo.commandBufferCount = static_cast<uint32_t>(graphicsCommandBuffers_.size());
@@ -202,7 +217,7 @@ namespace Atlas {
             throw std::runtime_error("failed to allocate command buffers!");
         }
 
-        computeCommandBuffers.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        computeCommandBuffers.resize(WindowSwapChain::MAX_FRAMES_IN_FLIGHT);
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         allocInfo.commandPool = device.getComputeCommandPool();
         allocInfo.commandBufferCount = static_cast<uint32_t>(computeCommandBuffers.size());

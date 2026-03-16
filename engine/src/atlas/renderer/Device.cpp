@@ -1,8 +1,8 @@
 #include "Device.hpp"
 
-#include <ostream>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <unordered_set>
 
 #include "core/Log.hpp"
@@ -45,7 +45,21 @@ namespace Atlas {
         }
     }
 
-    Device::Device(Window &window, RenderMode renderMode) : window{window}, renderMode{renderMode} {
+    template<typename PFN>
+    static void loadXrProc(const XrInstance instance, const char *name, PFN &outFn) {
+        if (xrGetInstanceProcAddr(instance, name, reinterpret_cast<PFN_xrVoidFunction *>(&outFn)) != XR_SUCCESS || outFn == nullptr) {
+            throw std::runtime_error(std::string("Failed to load OpenXR function: ") + name);
+        }
+    }
+
+    Device::Device(Window &window, RenderMode renderMode) : window_{window}, renderMode_{renderMode} {
+        printRenderMode();
+
+        if (renderMode == RenderMode::XROnly || renderMode == RenderMode::Combined) {
+            createXrInstance();
+            loadXrVulkanExtensions();
+        }
+
         createVkInstance();
         setupDebugMessenger();
         createSurface();
@@ -54,29 +68,166 @@ namespace Atlas {
         createVmaAllocator();
         createCommandPools();
 
-        this->executor = std::make_unique<ExecutorService>();
+        if (renderMode_ == RenderMode::XROnly || renderMode_ == RenderMode::Combined) {
+            createXrSession();
+        }
+
+        executor_ = std::make_unique<ExecutorService>();
     }
 
     Device::~Device() {
-        vkDestroyCommandPool(device_, graphicsCommandPool, nullptr);
-        vkDestroyCommandPool(device_, computeCommandPool, nullptr);
+        if (xrSession_ != XR_NULL_HANDLE) {
+            xrDestroySession(xrSession_);
+        }
+        if (xrInstance_ != XR_NULL_HANDLE) {
+            xrDestroyInstance(xrInstance_);
+        }
+
+        vkDestroyCommandPool(device_, graphicsCommandPool_, nullptr);
+        vkDestroyCommandPool(device_, computeCommandPool_, nullptr);
         vmaDestroyAllocator(allocator_);
         vkDestroyDevice(device_, nullptr);
 
         if constexpr (enableValidationLayers) {
-            destroyDebugUtilsMessengerEXT(vkInstance, debugMessenger, nullptr);
+            destroyDebugUtilsMessengerEXT(vkInstance_, debugMessenger_, nullptr);
         }
 
-        vkDestroySurfaceKHR(vkInstance, surface_, nullptr);
-        vkDestroyInstance(vkInstance, nullptr);
+        vkDestroySurfaceKHR(vkInstance_, surface_, nullptr);
+        vkDestroyInstance(vkInstance_, nullptr);
+    }
+
+    void Device::printRenderMode() {
+        switch (renderMode_) {
+            case RenderMode::WindowOnly: AT_INFO("Render mode: Window only");
+                break;
+            case RenderMode::XROnly: AT_INFO("Render mode: XR only");
+                break;
+            case RenderMode::Combined: AT_INFO("Render mode: Combined (XR + Window)");
+                break;
+        }
+    }
+
+    void Device::createXrInstance() {
+        const std::vector<const char *> extensions = {
+            XR_KHR_VULKAN_ENABLE_EXTENSION_NAME,
+            XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME
+        };
+
+        XrInstanceCreateInfo createInfo{XR_TYPE_INSTANCE_CREATE_INFO};
+        createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
+        createInfo.applicationInfo.applicationVersion = APPLICATION_VERSION;
+        createInfo.applicationInfo.engineVersion = APPLICATION_VERSION;
+        std::strncpy(createInfo.applicationInfo.applicationName, APPLICATION_NAME, XR_MAX_APPLICATION_NAME_SIZE - 1);
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+        createInfo.enabledExtensionNames = extensions.data();
+
+        if (xrCreateInstance(&createInfo, &xrInstance_) != XR_SUCCESS) {
+            throw std::runtime_error("Failed to create OpenXR instance");
+        }
+
+        XrSystemGetInfo systemInfo{XR_TYPE_SYSTEM_GET_INFO};
+        systemInfo.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
+
+        const XrResult result = xrGetSystem(xrInstance_, &systemInfo, &xrSystemId_);
+        if (result == XR_ERROR_FORM_FACTOR_UNAVAILABLE) {
+            AT_WARN("No HMD detected — connect a headset or enable a simulator runtime.");
+            return;
+        }
+        if (result != XR_SUCCESS) {
+            throw std::runtime_error("xrGetSystem failed");
+        }
+
+        AT_TRACE("OpenXR instance and system created.");
+    }
+
+    void Device::loadXrVulkanExtensions() {
+        auto parseSpaceSeparated = [](const std::string &list, std::vector<std::string> &out) {
+            out.clear();
+            std::istringstream ss(list);
+            for (std::string tok; ss >> tok;) out.push_back(std::move(tok));
+        };
+
+        PFN_xrGetVulkanInstanceExtensionsKHR pfnInstanceExts = nullptr;
+        loadXrProc(xrInstance_, "xrGetVulkanInstanceExtensionsKHR", pfnInstanceExts);
+
+        uint32_t instanceSize = 0;
+        pfnInstanceExts(xrInstance_, xrSystemId_, 0, &instanceSize, nullptr);
+        std::string instanceList(instanceSize, '\0');
+        pfnInstanceExts(xrInstance_, xrSystemId_, instanceSize, &instanceSize, instanceList.data());
+        parseSpaceSeparated(instanceList, xrInstanceExtensionBuffer_);
+
+        PFN_xrGetVulkanDeviceExtensionsKHR pfnDeviceExts = nullptr;
+        loadXrProc(xrInstance_, "xrGetVulkanDeviceExtensionsKHR", pfnDeviceExts);
+
+        uint32_t deviceSize = 0;
+        pfnDeviceExts(xrInstance_, xrSystemId_, 0, &deviceSize, nullptr);
+        std::string deviceList(deviceSize, '\0');
+        pfnDeviceExts(xrInstance_, xrSystemId_, deviceSize, &deviceSize, deviceList.data());
+        parseSpaceSeparated(deviceList, xrDeviceExtensionBuffer_);
+
+        std::stringstream log;
+        log << "XR instance extensions (" << xrInstanceExtensionBuffer_.size() << "):\n";
+        for (const auto &e: xrInstanceExtensionBuffer_) log << "  " << e << "\n";
+        log << "XR device extensions (" << xrDeviceExtensionBuffer_.size() << "):\n";
+        for (const auto &e: xrDeviceExtensionBuffer_) log << "  " << e << "\n";
+        AT_INFO(log.str());
+    }
+
+    void Device::createXrSession() {
+        if (xrSystemId_ == XR_NULL_SYSTEM_ID) {
+            AT_WARN("Skipping XR session — no system available.");
+            return;
+        }
+
+        uint32_t viewCount = 0;
+        xrEnumerateViewConfigurationViews(xrInstance_, xrSystemId_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &viewCount, nullptr);
+
+        xrViewConfigViews_.assign(viewCount, XrViewConfigurationView{XR_TYPE_VIEW_CONFIGURATION_VIEW});
+        xrEnumerateViewConfigurationViews(xrInstance_, xrSystemId_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, viewCount, &viewCount, xrViewConfigViews_.data());
+
+        AT_INFO("XR stereo view count: {}", viewCount);
+
+        XrGraphicsBindingVulkanKHR binding{XR_TYPE_GRAPHICS_BINDING_VULKAN_KHR};
+        binding.instance = vkInstance_;
+        binding.physicalDevice = physicalDevice_;
+        binding.device = device_;
+        binding.queueFamilyIndex = findQueueFamilies(physicalDevice_).graphicsFamily.value();
+        binding.queueIndex = 0;
+
+        PFN_xrGetVulkanGraphicsRequirementsKHR pfnGetRequirements = nullptr;
+        loadXrProc(xrInstance_, "xrGetVulkanGraphicsRequirementsKHR", pfnGetRequirements);
+
+        XrGraphicsRequirementsVulkanKHR requirements{XR_TYPE_GRAPHICS_REQUIREMENTS_VULKAN_KHR};
+        if (pfnGetRequirements(xrInstance_, xrSystemId_, &requirements) != XR_SUCCESS) {
+            throw std::runtime_error("xrGetVulkanGraphicsRequirementsKHR failed");
+        }
+
+        XrSessionCreateInfo sci{XR_TYPE_SESSION_CREATE_INFO};
+        sci.next = &binding;
+        sci.systemId = xrSystemId_;
+
+        if (XrResult result = xrCreateSession(xrInstance_, &sci, &xrSession_); result != XR_SUCCESS) {
+            throw std::runtime_error(std::string("Failed to create XR session, result: ") + std::to_string(result));
+        }
+
+        AT_TRACE("XR session created.");
+    }
+
+    void Device::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo) {
+        createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        createInfo.pfnUserCallback = debugCallback;
+        createInfo.pUserData = nullptr; // Optional
     }
 
     void Device::createVkInstance() {
         if (enableValidationLayers && !checkValidationLayerSupport()) {
-            throw std::runtime_error("validation layers requested, but not available!");
+            throw std::runtime_error("Validation layers requested but not available");
         }
 
-        VkApplicationInfo appInfo = {};
+        VkApplicationInfo appInfo{};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
         appInfo.pApplicationName = APPLICATION_NAME;
         appInfo.applicationVersion = APPLICATION_VERSION;
@@ -94,8 +245,8 @@ namespace Atlas {
 
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
         if constexpr (enableValidationLayers) {
-            createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-            createInfo.ppEnabledLayerNames = validationLayers.data();
+            createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers_.size());
+            createInfo.ppEnabledLayerNames = validationLayers_.data();
 
             populateDebugMessengerCreateInfo(debugCreateInfo);
             createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *) &debugCreateInfo;
@@ -104,42 +255,11 @@ namespace Atlas {
             createInfo.pNext = nullptr;
         }
 
-        if (vkCreateInstance(&createInfo, nullptr, &vkInstance) != VK_SUCCESS) {
+        if (vkCreateInstance(&createInfo, nullptr, &vkInstance_) != VK_SUCCESS) {
             throw std::runtime_error("failed to create instance!");
         }
 
         outputRequiredInstanceExtensions(extensions);
-    }
-
-    void Device::createXrInstance() {
-        std::vector<const char *> xrExtensions = {
-            XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME
-        };
-
-        XrInstanceCreateInfo createInfo{};
-        createInfo.type = XR_TYPE_INSTANCE_CREATE_INFO;
-        createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
-        createInfo.applicationInfo.applicationVersion = APPLICATION_VERSION;
-        createInfo.applicationInfo.engineVersion = APPLICATION_VERSION;
-        std::strcpy(createInfo.applicationInfo.applicationName, APPLICATION_NAME);
-        createInfo.enabledExtensionNames = xrExtensions.data();
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(xrExtensions.size());
-
-        if (xrCreateInstance(&createInfo, &xrInstance) != XR_SUCCESS) {
-            throw std::runtime_error("Failed to create OpenXR instance");
-        }
-    }
-
-    void Device::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo) {
-        createInfo = {};
-        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                     VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                                 VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                                 VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        createInfo.pfnUserCallback = debugCallback;
-        createInfo.pUserData = nullptr; // Optional
     }
 
     void Device::setupDebugMessenger() {
@@ -150,113 +270,150 @@ namespace Atlas {
         VkDebugUtilsMessengerCreateInfoEXT createInfo;
         populateDebugMessengerCreateInfo(createInfo);
 
-        if (createDebugUtilsMessengerEXT(vkInstance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
+        if (createDebugUtilsMessengerEXT(vkInstance_, &createInfo, nullptr, &debugMessenger_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to set up debug messenger!");
         }
     }
 
     void Device::createSurface() {
-        window.createWindowSurface(vkInstance, &surface_);
+        window_.createWindowSurface(vkInstance_, &surface_);
     }
 
     void Device::pickPhysicalDevice() {
-        uint32_t deviceCount = 0;
-        vkEnumeratePhysicalDevices(vkInstance, &deviceCount, nullptr);
+        if (renderMode_ == RenderMode::XROnly || renderMode_ == RenderMode::Combined) {
+            // The XR runtime nominates the physical device — using any other will fail at session creation.
+            PFN_xrGetVulkanGraphicsDeviceKHR pfnGetDevice = nullptr;
+            loadXrProc(xrInstance_, "xrGetVulkanGraphicsDeviceKHR", pfnGetDevice);
 
-        if (deviceCount == 0) {
-            throw std::runtime_error("Failed to find GPUs with Vulkan support!");
+            VkPhysicalDevice xrDevice = VK_NULL_HANDLE;
+            pfnGetDevice(xrInstance_, xrSystemId_, vkInstance_, &xrDevice);
+
+            if (xrDevice == VK_NULL_HANDLE) {
+                throw std::runtime_error("OpenXR returned a null physical device");
+            }
+            this->physicalDevice_ = xrDevice;
+        } else {
+            uint32_t deviceCount = 0;
+            vkEnumeratePhysicalDevices(vkInstance_, &deviceCount, nullptr);
+
+            std::vector<VkPhysicalDevice> devices(deviceCount);
+            vkEnumeratePhysicalDevices(vkInstance_, &deviceCount, devices.data());
+
+            this->physicalDevice_ = findBestDevice(devices);
+            if (physicalDevice_ == VK_NULL_HANDLE) {
+                throw std::runtime_error("No suitable GPU found");
+            }
         }
 
-        std::vector<VkPhysicalDevice> devices(deviceCount);
-        vkEnumeratePhysicalDevices(vkInstance, &deviceCount, devices.data());
+        vkGetPhysicalDeviceProperties(physicalDevice_, &properties);
+        AT_INFO("Physical device: {}", properties.deviceName);
+    }
 
-        this->physicalDevice = findBestDevice(devices);
-        if (physicalDevice == VK_NULL_HANDLE) {
-            throw std::runtime_error("Cannot find a suitable gpu");
+    VkPhysicalDevice Device::findBestDevice(const std::vector<VkPhysicalDevice> &devices) {
+        VkPhysicalDevice best = VK_NULL_HANDLE;
+        int bestScore = 0;
+
+        for (const auto &dev: devices) {
+            VkPhysicalDeviceProperties props;
+            vkGetPhysicalDeviceProperties(dev, &props);
+
+            VkPhysicalDeviceFeatures feats;
+            vkGetPhysicalDeviceFeatures(dev, &feats);
+
+            const QueueFamilyIndices idx = findQueueFamilies(dev);
+            if (!idx.isComplete() || !checkDeviceExtensionSupport(dev) || !feats.samplerAnisotropy)
+                continue;
+
+            const SwapChainSupportDetails sc = querySwapChainSupport(dev);
+            if (sc.formats.empty() || sc.presentModes.empty()) continue;
+
+            int score = 0;
+            if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) score += 1000;
+            else if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) score += 500;
+            score += static_cast<int>(props.limits.maxImageDimension2D);
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = dev;
+            }
         }
-
-        vkGetPhysicalDeviceProperties(physicalDevice, &properties);
-        AT_INFO("Physical device: {0}", properties.deviceName);
+        return best;
     }
 
     void Device::createLogicalDevice() {
-        QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+        const QueueFamilyIndices indices = findQueueFamilies(physicalDevice_);
 
-        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-        std::set<uint32_t> uniqueQueueFamilies = {
+        const std::set<uint32_t> uniqueFamilies = {
             indices.graphicsFamily.value(),
             indices.presentFamily.value(),
             indices.computeFamily.value(),
             indices.transferFamily.value()
         };
 
-        float queuePriority = 1.0f;
-        for (uint32_t queueFamily: uniqueQueueFamilies) {
-            VkDeviceQueueCreateInfo queueCreateInfo = {};
+        constexpr float queuePriority = 1.0f;
+        std::vector<VkDeviceQueueCreateInfo> queueCIs;
+        queueCIs.reserve(uniqueFamilies.size());
+        for (uint32_t family: uniqueFamilies) {
+            VkDeviceQueueCreateInfo queueCreateInfo{};
             queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-            queueCreateInfo.queueFamilyIndex = queueFamily;
+            queueCreateInfo.queueFamilyIndex = family;
             queueCreateInfo.queueCount = 1;
             queueCreateInfo.pQueuePriorities = &queuePriority;
-            queueCreateInfos.push_back(queueCreateInfo);
+            queueCIs.push_back(queueCreateInfo);
         }
 
-        // Query descriptor indexing features
-        VkPhysicalDeviceDescriptorIndexingFeatures indexingFeatures{};
-        indexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+        VkPhysicalDeviceVulkan12Features vk12{};
+        vk12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+        vk12.timelineSemaphore = VK_TRUE;
+        vk12.runtimeDescriptorArray = VK_TRUE;
+        vk12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        vk12.descriptorBindingPartiallyBound = VK_TRUE;
+        vk12.descriptorBindingVariableDescriptorCount = VK_TRUE;
+        vk12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
 
-        // Enable shaderDrawParameters for gl_BaseInstance in indirect rendering
-        VkPhysicalDeviceVulkan11Features vulkan11Features{};
-        vulkan11Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
-        vulkan11Features.pNext = &indexingFeatures;
+        VkPhysicalDeviceVulkan11Features vk11{};
+        vk11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+        vk11.pNext = &vk12;
+        vk11.shaderDrawParameters = VK_TRUE;
+        vk11.multiview = VK_TRUE;
 
-        VkPhysicalDeviceFeatures2 features2{};
-        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        features2.pNext = &vulkan11Features;
+        VkPhysicalDeviceFeatures2 feats2{};
+        feats2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        feats2.pNext = &vk11;
+        vkGetPhysicalDeviceFeatures2(physicalDevice_, &feats2);
 
-        vkGetPhysicalDeviceFeatures2(physicalDevice, &features2);
-
-        if (!indexingFeatures.runtimeDescriptorArray ||
-            !indexingFeatures.shaderSampledImageArrayNonUniformIndexing) {
-            throw std::runtime_error("GPU lacks descriptor indexing features needed for bindless textures.");
+        if (!vk12.runtimeDescriptorArray || !vk12.shaderSampledImageArrayNonUniformIndexing) {
+            throw std::runtime_error("GPU lacks descriptor indexing features required for bindless textures");
         }
 
-        // Enable descriptor indexing features for bindless textures
-        indexingFeatures.runtimeDescriptorArray = VK_TRUE;
-        indexingFeatures.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-        indexingFeatures.descriptorBindingPartiallyBound = VK_TRUE;
-        indexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
-        indexingFeatures.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+        VkPhysicalDeviceFeatures coreFeatures{};
+        coreFeatures.samplerAnisotropy = VK_TRUE;
+        coreFeatures.multiDrawIndirect = VK_TRUE;
 
-        // Enable shaderDrawParameters for indirect rendering (gl_BaseInstance)
-        vulkan11Features.shaderDrawParameters = VK_TRUE;
+        std::vector<const char *> allExts = deviceExtensions_;
+        for (const auto &xrExt: xrDeviceExtensionBuffer_) {
+            const bool exists = std::ranges::any_of(allExts, [&](const char *e) { return strcmp(e, xrExt.c_str()) == 0; });
+            if (!exists) {
+                allExts.push_back(xrExt.c_str());
+            }
+        }
 
-        // Enable core features
-        VkPhysicalDeviceFeatures deviceFeatures = {};
-        deviceFeatures.samplerAnisotropy = VK_TRUE;
-        deviceFeatures.multiDrawIndirect = VK_TRUE;
-
-        VkDeviceCreateInfo createInfo = {};
+        VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        createInfo.pNext = &vulkan11Features; // Chain: vulkan11Features -> indexingFeatures
+        createInfo.pNext = &vk11;
+        createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCIs.size());
+        createInfo.pQueueCreateInfos = queueCIs.data();
+        createInfo.pEnabledFeatures = &coreFeatures;
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(allExts.size());
+        createInfo.ppEnabledExtensionNames = allExts.data();
 
-        createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
-        createInfo.pQueueCreateInfos = queueCreateInfos.data();
-
-        createInfo.pEnabledFeatures = &deviceFeatures;
-        createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-        createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-
-        // might not really be necessary anymore because device specific validation layers
-        // have been deprecated
         if constexpr (enableValidationLayers) {
-            createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-            createInfo.ppEnabledLayerNames = validationLayers.data();
-        } else {
-            createInfo.enabledLayerCount = 0;
+            createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers_.size());
+            createInfo.ppEnabledLayerNames = validationLayers_.data();
         }
 
-        if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device_) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create logical device!");
+        if (vkCreateDevice(physicalDevice_, &createInfo, nullptr, &device_) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create logical device");
         }
 
         vkGetDeviceQueue(device_, indices.graphicsFamily.value(), 0, &graphicsQueue_);
@@ -264,17 +421,17 @@ namespace Atlas {
         vkGetDeviceQueue(device_, indices.computeFamily.value(), 0, &computeQueue_);
         vkGetDeviceQueue(device_, indices.transferFamily.value(), 0, &transferQueue_);
 
-        AT_INFO("MaxPushConstantSize: {}", properties.limits.maxPushConstantsSize);
+        AT_INFO("Logical device created. Max push constant size: {} bytes", properties.limits.maxPushConstantsSize);
     }
 
     void Device::createVmaAllocator() {
         VmaAllocatorCreateInfo allocatorInfo{};
-        allocatorInfo.physicalDevice = this->physicalDevice;
+        allocatorInfo.physicalDevice = this->physicalDevice_;
         allocatorInfo.device = this->device_;
-        allocatorInfo.instance = this->vkInstance;
+        allocatorInfo.instance = this->vkInstance_;
 
         if (vmaCreateAllocator(&allocatorInfo, &allocator_) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create VMA allocator.");
+            throw std::runtime_error("Failed to create VMA allocator");
         }
     }
 
@@ -286,13 +443,13 @@ namespace Atlas {
         poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
         poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-        if (vkCreateCommandPool(device_, &poolInfo, nullptr, &graphicsCommandPool) != VK_SUCCESS) {
+        if (vkCreateCommandPool(device_, &poolInfo, nullptr, &graphicsCommandPool_) != VK_SUCCESS) {
             throw std::runtime_error("failed to create graphics command pool!");
         }
 
         poolInfo.queueFamilyIndex = queueFamilyIndices.computeFamily.value();
         poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        if (vkCreateCommandPool(device_, &poolInfo, nullptr, &computeCommandPool) != VK_SUCCESS) {
+        if (vkCreateCommandPool(device_, &poolInfo, nullptr, &computeCommandPool_) != VK_SUCCESS) {
             throw std::runtime_error("failed to create compute command pool!");
         }
     }
@@ -304,7 +461,7 @@ namespace Atlas {
         std::vector<VkLayerProperties> availableLayers(layerCount);
         vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
-        for (const char *layerName: validationLayers) {
+        for (const char *layerName: validationLayers_) {
             bool layerFound = false;
 
             for (const auto &layerProperties: availableLayers) {
@@ -323,76 +480,39 @@ namespace Atlas {
     }
 
     std::vector<const char *> Device::getRequiredExtensions() const {
-        auto extensions = window.getRequiredExtensions();
+        auto extensions = window_.getRequiredExtensions();
 
         if constexpr (enableValidationLayers) {
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
         }
 
-        if (renderMode == XROnly || renderMode == Combined) {
-            uint32_t count = 0;
-            xrGetVulkanInstanceExtensionsKHR(xrInstance, xrSystemId, 0, &count, nullptr);
-
-            std::string xrExts(count, '\0');
-            xrGetVulkanInstanceExtensionsKHR(xrInstance, xrSystemId, count, &count, xrExts.data());
-
-            // Parse space-separated list and append
-            std::istringstream ss(xrExts);
-            std::string ext;
-            while (ss >> ext) {
-                xrInstanceExtensionBuffer.push_back(ext); // stable storage (see note below)
-            }
-            for (const auto& e : xrInstanceExtensionBuffer) {
-                extensions.push_back(e.c_str());
-            }
+        for (const auto &e: xrInstanceExtensionBuffer_) {
+            const bool exists = std::ranges::any_of(extensions, [&](const char *ex) { return strcmp(ex, e.c_str()) == 0; });
+            if (!exists) extensions.push_back(e.c_str());
         }
 
         return extensions;
     }
 
-    VkPhysicalDevice Device::findBestDevice(const std::vector<VkPhysicalDevice> &devices) {
-        VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
-        int bestScore = 0;
+    void Device::outputRequiredInstanceExtensions(const std::vector<const char *> &required) {
+        uint32_t count = 0;
+        vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+        std::vector<VkExtensionProperties> available(count);
+        vkEnumerateInstanceExtensionProperties(nullptr, &count, available.data());
 
-        for (const auto &device: devices) {
-            int score = 0;
+        std::unordered_set<std::string> availableSet;
+        availableSet.reserve(count);
+        for (const auto &e: available) availableSet.insert(e.extensionName);
 
-            VkPhysicalDeviceProperties deviceProperties;
-            vkGetPhysicalDeviceProperties(device, &deviceProperties);
-
-            VkPhysicalDeviceFeatures supportedFeatures;
-            vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
-
-            QueueFamilyIndices indices = findQueueFamilies(device);
-            bool extensionsSupported = checkDeviceExtensionSupport(device);
-            bool swapChainAdequate = false;
-
-            if (extensionsSupported) {
-                SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
-                swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
-            }
-
-            if (!indices.isComplete() || !extensionsSupported || !swapChainAdequate || !supportedFeatures.samplerAnisotropy) {
-                continue;
-            }
-
-            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
-                score += 1000; // Prioritize discrete GPUs
-            } else if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
-                score += 500;
-            }
-
-            score += static_cast<int32_t>(deviceProperties.limits.maxImageDimension2D); // Prefer GPUs with higher texture resolution support
-
-            if (score > bestScore) {
-                bestScore = score;
-                bestDevice = device;
-            }
+        std::stringstream ss;
+        ss << "Required Vulkan instance extensions:\n";
+        for (const char *r: required) {
+            const bool present = availableSet.contains(r);
+            ss << "  [" << (present ? "OK" : "MISSING") << "] " << r << "\n";
+            if (!present) throw std::runtime_error(std::string("Missing required extension: ") + r);
         }
-
-        return bestDevice; // Returns the best GPU or VK_NULL_HANDLE if none are suitable
+        AT_INFO(ss.str());
     }
-
 
     QueueFamilyIndices Device::findQueueFamilies(VkPhysicalDevice device) {
         QueueFamilyIndices indices;
@@ -406,28 +526,22 @@ namespace Atlas {
         for (uint32_t i = 0; i < queueFamilies.size(); i++) {
             const auto &family = queueFamilies[i];
 
-            if (family.queueCount == 0) {
-                continue;
-            }
+            if (family.queueCount == 0) continue;
 
-            // Graphics
             if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 indices.graphicsFamily = i;
             }
 
-            // Present
             VkBool32 presentSupport = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &presentSupport);
             if (presentSupport) {
                 indices.presentFamily = i;
             }
 
-            // Compute
             if ((family.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
                 indices.computeFamily = i;
             }
 
-            // Transfer
             if ((family.queueFlags & VK_QUEUE_TRANSFER_BIT) && !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT) && !(family.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
                 indices.transferFamily = i;
             }
@@ -455,7 +569,7 @@ namespace Atlas {
             &extensionCount,
             availableExtensions.data());
 
-        std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
+        std::set<std::string> requiredExtensions(deviceExtensions_.begin(), deviceExtensions_.end());
 
         for (const auto &extension: availableExtensions) {
             requiredExtensions.erase(extension.extensionName);
@@ -464,76 +578,43 @@ namespace Atlas {
         return requiredExtensions.empty();
     }
 
-    void Device::outputRequiredInstanceExtensions(const std::vector<const char *> &requiredExtensions) {
-        uint32_t extensionCount = 0;
-        vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
-        std::vector<VkExtensionProperties> extensions(extensionCount);
-        vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
-
-        std::stringstream ss;
-        ss << "Available Vulkan extensions:" << std::endl;
-        std::unordered_set<std::string> available;
-        for (const auto &extension: extensions) {
-            ss << "\t" << extension.extensionName << std::endl;
-            available.insert(extension.extensionName);
-        }
-
-        ss << "required extensions:" << std::endl;
-        for (const auto &required: requiredExtensions) {
-            ss << "\t" << required << std::endl;
-            if (!available.contains(required)) {
-                throw std::runtime_error("Missing required extension: " + std::string(required));
-            }
-        }
-
-        AT_INFO(ss.str());
-    }
-
-
     SwapChainSupportDetails Device::querySwapChainSupport(VkPhysicalDevice device) {
         SwapChainSupportDetails details;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface_, &details.capabilities);
 
-        uint32_t formatCount;
+        uint32_t formatCount = 0;
         vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &formatCount, nullptr);
-
-        if (formatCount != 0) {
+        if (formatCount > 0) {
             details.formats.resize(formatCount);
             vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &formatCount, details.formats.data());
         }
 
-        uint32_t presentModeCount;
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &presentModeCount, nullptr);
-
-        if (presentModeCount != 0) {
-            details.presentModes.resize(presentModeCount);
-            vkGetPhysicalDeviceSurfacePresentModesKHR(
-                device,
-                surface_,
-                &presentModeCount,
-                details.presentModes.data());
+        uint32_t modeCount = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &modeCount, nullptr);
+        if (modeCount > 0) {
+            details.presentModes.resize(modeCount);
+            vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &modeCount, details.presentModes.data());
         }
+
         return details;
     }
 
-    // buffer
-    uint32_t Device::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
-        VkPhysicalDeviceMemoryProperties memProperties;
-        vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
-        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-            if ((typeFilter & (1 << i)) &&
-                (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-                return i;
-            }
-        }
+    uint32_t Device::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags requiredFlags) {
+        VkPhysicalDeviceMemoryProperties memProps;
+        vkGetPhysicalDeviceMemoryProperties(physicalDevice_, &memProps);
 
-        throw std::runtime_error("failed to find suitable memory type!");
+        for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+            if ((typeFilter & (1u << i)) &&
+                (memProps.memoryTypes[i].propertyFlags & requiredFlags) == requiredFlags)
+                return i;
+        }
+        throw std::runtime_error("Failed to find suitable memory type");
     }
 
     VkFormat Device::findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features) {
-        for (VkFormat format: candidates) {
+        for (const VkFormat format: candidates) {
             VkFormatProperties props;
-            vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
+            vkGetPhysicalDeviceFormatProperties(physicalDevice_, format, &props);
 
             if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
                 return format;
@@ -548,7 +629,7 @@ namespace Atlas {
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = graphicsCommandPool; // use graphics for now until asset streaming is implemented
+        allocInfo.commandPool = graphicsCommandPool_; // use graphics for now until asset streaming is implemented
         allocInfo.commandBufferCount = 1;
 
         VkCommandBuffer commandBuffer;
@@ -573,6 +654,6 @@ namespace Atlas {
         vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
         vkQueueWaitIdle(graphicsQueue_);
 
-        vkFreeCommandBuffers(device_, graphicsCommandPool, 1, &commandBuffer);
+        vkFreeCommandBuffers(device_, graphicsCommandPool_, 1, &commandBuffer);
     }
-}
+} // namespace Atlas

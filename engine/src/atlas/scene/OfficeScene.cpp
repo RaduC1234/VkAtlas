@@ -13,7 +13,7 @@
 
 namespace Atlas {
     OfficeScene::OfficeScene(Renderer &renderer) : Scene(renderer) {
-        uboBuffers.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        uboBuffers.resize(WindowSwapChain::MAX_FRAMES_IN_FLIGHT);
         for (auto &uboBuffer: uboBuffers) {
             uboBuffer = std::make_unique<Buffer>(
                 renderer.getDevice(),
@@ -32,11 +32,11 @@ namespace Atlas {
                 .build();
 
         globalPool = DescriptorPool::Builder(renderer.getDevice())
-                .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
+                .setMaxSets(WindowSwapChain::MAX_FRAMES_IN_FLIGHT)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, WindowSwapChain::MAX_FRAMES_IN_FLIGHT)
                 .build();
 
-        globalDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        globalDescriptorSets.resize(WindowSwapChain::MAX_FRAMES_IN_FLIGHT);
         for (int i = 0; i < globalDescriptorSets.size(); i++) {
             auto bufferInfo = uboBuffers[i]->descriptorInfo();
             DescriptorWriter(*globalSetLayout, *globalPool)
@@ -50,7 +50,7 @@ namespace Atlas {
     }
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
-        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet_with_light.glb");
+        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet.glb");
 
         auto cameraEntity = registry.create();
         registry.emplace<TransformComponent>(cameraEntity);
