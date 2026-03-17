@@ -87,8 +87,7 @@ namespace Atlas {
         AssetHandle albedoTexture = INVALID_ASSET_HANDLE;
         AssetHandle normalMap = INVALID_ASSET_HANDLE;
         AssetHandle metallicRoughnessMap = INVALID_ASSET_HANDLE;
-
-        //AssetHandle specularMap = INVALID_ASSET_HANDLE;
+        AssetHandle ambientOcclusion = INVALID_ASSET_HANDLE;
     };
 
     struct SkyboxComponent {
@@ -109,6 +108,7 @@ namespace Atlas {
         float range{0.0f}; // 0.0 = infinite
 
         // For spot lights
+        glm::vec3 direction{0.0f, -1.0f, 0.0f};
         float innerConeAngle{0.0f};
         float outerConeAngle{glm::radians(45.0f)};
     };

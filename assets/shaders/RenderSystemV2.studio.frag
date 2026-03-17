@@ -19,17 +19,6 @@ struct GPUObjectData {
     vec4 baseColor;
 };
 
-struct Light {
-    uint type;
-    float intensity;
-    float range;
-    float innerConeAngle;
-    vec3 color;
-    float outerConeAngle;
-    vec3 position;
-    float padding;
-};
-
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec2 fragTexCoord;
@@ -52,10 +41,6 @@ layout(set = 1, binding = 0) uniform sampler2D textures[];
 layout(std430, set = 2, binding = 0) readonly buffer ObjectDataBuffer {
     GPUObjectData objects[];
 } objectData;
-
-layout(std430, set = 3, binding = 0) readonly buffer LightBuffer {
-    Light lights[];
-} lightData;
 
 const float PI = 3.14159265359;
 

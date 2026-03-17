@@ -50,7 +50,7 @@ namespace Atlas {
     }
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
-        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet.glb");
+        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet_with_light2.glb");
 
         auto cameraEntity = registry.create();
         registry.emplace<TransformComponent>(cameraEntity);
@@ -80,7 +80,7 @@ namespace Atlas {
 
         const GlobalUbo ubo{
             camera.getData(),
-            glm::vec4(1.0f, 1.0f, 1.0f, 0.025f), // ambient color
+            glm::vec4(0.02, 0.02, 0.03, 1.0), // ambient color
             glm::vec3(-1.0f), // light position
             0.0f,
             glm::vec4(1.0f) // light color

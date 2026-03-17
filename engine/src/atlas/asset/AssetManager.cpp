@@ -13,9 +13,9 @@
 
 #include "entity/Object.hpp"
 
-#if defined(__ANDROID__)
+#if defined(ATLAS_PLATFORM_ANDROID)
 #include "android/AndroidAssetManager.hpp"
-#elif defined(_WIN32)
+#elif defined(ATLAS_PLATFORM_DESKTOP)
 #include "desktop/DesktopAssetManager.hpp"
 #endif
 
@@ -47,10 +47,10 @@ namespace Atlas {
             return *instance;
         }
 
-#if defined(__ANDROID__)
+#if defined(ATLAS_PLATFORM_ANDROID)
         instance = std::shared_ptr<AndroidAssetManager>(new AndroidAssetManager(device, nativeApp));
         AT_INFO("Created Android AssetManager instance");
-#elif defined(_WIN32)
+#elif defined(ATLAS_PLATFORM_DESKTOP)
         instance = std::make_shared<DesktopAssetManager>(device, nativeApp);
         AT_INFO("Created Desktop AssetManager instance");
 #else
@@ -1020,6 +1020,19 @@ namespace Atlas {
                                 }
                             }
                         }
+
+                        if (mat.occlusionTexture.index >= 0) {
+                            int texIdx = mat.occlusionTexture.index;
+                            if (texIdx >= 0 && texIdx < static_cast<int>(model.textures.size())) {
+                                int imgIdx = model.textures[texIdx].source;
+                                if (imgIdx >= 0 && imgIdx < static_cast<int>(model.images.size())) {
+                                    std::string ambientOcclusionPath = meshPath + "_ambientOcclusion";
+                                    std::string matAmbientOcclusionPath = virtualPath + "#" + matName + "_ambientOcclusion";
+                                    pathToHandle[ambientOcclusionPath] = imageHandles[imgIdx];
+                                    pathToHandle[matAmbientOcclusionPath] = imageHandles[imgIdx];
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1219,6 +1232,7 @@ namespace Atlas {
 
                                     auto normIt = pathToHandle.find(imagePath);
                                     if (normIt != pathToHandle.end()) {
+                                        material.normalMap = normIt->second;
                                     }
                                 }
                             }
@@ -1242,7 +1256,7 @@ namespace Atlas {
             glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
 
             auto &transform = registry.emplace<TransformComponent>(entity);
-            transform.translation = translation;
+            transform.translation = translation * glm::vec3(1.0f, -1.0f, 1.0f);
             transform.rotation = glm::eulerAngles(rotation);
             transform.scale = scale;
 
@@ -1270,6 +1284,9 @@ namespace Atlas {
 
             light.intensity = static_cast<float>(gltfLight.intensity);
             light.range = static_cast<float>(gltfLight.range);
+
+            constexpr glm::vec3 defaultDir = glm::vec3{0.0f, 0.0f, -1.0f};
+            light.direction = glm::normalize(rotation * defaultDir);
 
             outEntities.push_back(entity);
 
@@ -1310,7 +1327,7 @@ namespace Atlas {
                                      node.scale[0],
                                      node.scale[1],
                                      node.scale[2]
-                                     ));
+                                 ));
             }
         }
 

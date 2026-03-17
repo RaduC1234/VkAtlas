@@ -103,8 +103,8 @@ namespace Atlas {
 
         renderPipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/RenderSystemV2.indirect_shader.vert.spv",
-            "shaders/RenderSystemV2.indirect_shader.frag.spv",
+            "shaders/RenderSystemV2.studio.vert.spv",
+            "shaders/RenderSystemV2.real_time.frag.spv",
             graphicsConfig
         );
 
@@ -125,8 +125,8 @@ namespace Atlas {
 
         transparentRenderPipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/RenderSystemV2.indirect_shader.vert.spv",
-            "shaders/RenderSystemV2.indirect_shader.frag.spv",
+            "shaders/RenderSystemV2.studio.vert.spv",
+            "shaders/RenderSystemV2.real_time.frag.spv",
             graphicsConfig
         );
     }
@@ -190,6 +190,8 @@ namespace Atlas {
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
         );
         lightsBuffer->map();
+        std::memset(lightsBuffer->getMapped(), 0, sizeof(Light) * MAX_LIGHTS);
+
         auto lightBufferInfo = lightsBuffer->descriptorInfo();
         DescriptorWriter(*lightSetLayout, *rendererPool)
                 .writeBuffer(0, &lightBufferInfo)
@@ -296,6 +298,7 @@ namespace Atlas {
             registerTexture(material.albedoTexture);
             registerTexture(material.normalMap);
             registerTexture(material.metallicRoughnessMap);
+            registerTexture(material.ambientOcclusion);
             registerMesh(model.meshHandle);
 
             const auto allocIt = meshAllocations.find(model.meshHandle);
@@ -311,7 +314,7 @@ namespace Atlas {
                     resolveTextureIndex(material.albedoTexture != INVALID_ASSET_HANDLE ? material.albedoTexture : defaultWhiteTextureHandle),
                     resolveTextureIndex(material.normalMap != INVALID_ASSET_HANDLE ? material.normalMap : defaultWhiteTextureHandle),
                     resolveTextureIndex(material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? material.metallicRoughnessMap : defaultWhiteTextureHandle),
-                    0u
+                    resolveTextureIndex(material.ambientOcclusion != INVALID_ASSET_HANDLE ? material.ambientOcclusion : defaultWhiteTextureHandle)
                 ),
                 .baseColor = material.baseColor, // baseColor.a drives transparency in shader
             };
@@ -342,15 +345,18 @@ namespace Atlas {
         // Lights
         for (auto entity: registry.view<TransformComponent, LightComponent>()) {
             auto [transform, light] = registry.get<TransformComponent, LightComponent>(entity);
-            lights.emplace(entity, Light{
-                               .type = static_cast<uint32_t>(light.type),
-                               .intensity = light.intensity,
-                               .range = light.range,
-                               .innerConeAngle = light.innerConeAngle,
-                               .color = light.color,
-                               .outerConeAngle = light.outerConeAngle,
-                               .position = transform.translation,
-                           });
+            lights.emplace(entity, Light(
+                               static_cast<uint32_t>(light.type),
+                               light.intensity,
+                               light.range == 0.0f ? 20.0f : light.range,
+                               light.innerConeAngle,
+                               light.color,
+                               light.outerConeAngle,
+                               transform.translation,
+                               0,
+                               light.direction,
+                               0
+                           ));
         }
 
         // Upload all SSBOs
@@ -394,8 +400,8 @@ namespace Atlas {
             );
         }
 
-        // Transparent pass
-        if (!transparentObjectData.empty() && false) {
+        /*// Transparent pass
+        if (!transparentObjectData.empty()) {
             const auto transparentDrawCount = static_cast<uint32_t>(transparentObjectData.size());
             transparentRenderPipeline->bind(graphicsCommandBuffer);
 
@@ -419,6 +425,6 @@ namespace Atlas {
                 0, transparentDrawCount,
                 sizeof(VkDrawIndexedIndirectCommand)
             );
-        }
+        }*/
     }
 } // namespace Atlas
