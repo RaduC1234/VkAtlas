@@ -14,11 +14,18 @@
 
 namespace Atlas {
     Application::Application(const ApplicationSpecification &specification) : specification(specification) {
-        AssetManager::create(this->device, specification.pNativeApp);
-        this->window->setWindowIcon("assets/icons/android_robot.png");
-        this->window->setTheme(Theme::DARK);
 
-        currentScene = std::make_unique<PBRTestScene>(renderer);
+        if (specification.renderMode != RenderMode::XROnly) {
+            this->window = Window::create({specification.pNativeApp, 1200, 800});
+            this->window->setWindowIcon("assets/icons/android_robot.png");
+            this->window->setTheme(Theme::DARK);
+        }
+
+        this->device = std::make_unique<Device>(*this->window, specification.renderMode);
+        this->renderer = std::make_unique<Renderer>(*this->window, *this->device);
+        AssetManager::create(*this->device, specification.pNativeApp);
+
+        currentScene = std::make_unique<OfficeScene>(*renderer);
 
         if (currentScene) {
             currentScene->onLoad(NULL);
@@ -33,7 +40,7 @@ namespace Atlas {
     }
 
     void Application::run() {
-        ImGuiLayer imGui{device, *window, renderer.getSwapChainRenderPass(), static_cast<uint32_t>(renderer.getImageCount())};
+        ImGuiLayer imGui{*device, *window, renderer->getSwapChainRenderPass(), static_cast<uint32_t>(renderer->getImageCount())};
 
         auto currentTime = std::chrono::high_resolution_clock::now();
 
@@ -44,17 +51,17 @@ namespace Atlas {
             float deltaTime = std::chrono::duration_cast<std::chrono::duration<float> >(newTime - currentTime).count();
             currentTime = newTime;
 
-            float aspect = renderer.getAspectRatio();
+            float aspect = renderer->getAspectRatio();
 
-            renderer.beginCompute();
+            renderer->beginCompute();
             if (currentScene) {
                 currentScene->onUpdate(deltaTime);
             }
-            renderer.endCompute();
+            renderer->endCompute();
 
-            if (auto commandBuffer = renderer.beginFrame()) {
+            if (auto commandBuffer = renderer->beginFrame()) {
                 imGui.beginFrame();
-                renderer.beginSwapChainRenderPass(commandBuffer);
+                renderer->beginSwapChainRenderPass(commandBuffer);
 
                 if (currentScene) {
                     currentScene->onRender(deltaTime, aspect);
@@ -62,11 +69,11 @@ namespace Atlas {
 
                 imGui.endFrame(commandBuffer);
 
-                renderer.endSwapChainRenderPass(commandBuffer);
-                renderer.endFrame();
+                renderer->endSwapChainRenderPass(commandBuffer);
+                renderer->endFrame();
             }
         }
 
-        vkDeviceWaitIdle(device.device());
+        vkDeviceWaitIdle(device->device());
     }
 } // namespace

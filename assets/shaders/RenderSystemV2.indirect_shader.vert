@@ -1,9 +1,10 @@
 #version 460
+#extension GL_EXT_multiview : require
 
 struct CameraData {
-    mat4 projection;
-    mat4 view;
-    mat4 viewProjection;
+    mat4 projection[2];
+    mat4 view[2];
+    mat4 viewProjection[2];
     vec4 frustumPlanes[6];
     vec3 position;
     float nearPlane;
@@ -52,7 +53,7 @@ void main() {
     vec4 worldPosition = obj.modelMatrix * vec4(inPosition, 1.0);
     fragWorldPos = worldPosition.xyz;
 
-    gl_Position = ubo.cameraData.viewProjection * worldPosition;
+    gl_Position = ubo.cameraData.viewProjection[gl_ViewIndex] * worldPosition;
 
     fragNormal  = normalize(mat3(obj.normalMatrix) * inNormal);
     fragTangent = vec4(normalize(mat3(obj.modelMatrix) * inTangent.xyz), inTangent.w);

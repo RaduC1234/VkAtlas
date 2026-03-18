@@ -62,17 +62,21 @@ namespace Atlas {
 
         createVkInstance();
         setupDebugMessenger();
-        createSurface();
+
+        if (renderMode == RenderMode::WindowOnly || renderMode == RenderMode::Combined) {
+            createSurface();
+        }
+
         pickPhysicalDevice();
         createLogicalDevice();
         createVmaAllocator();
         createCommandPools();
 
-        if (renderMode_ == RenderMode::XROnly || renderMode_ == RenderMode::Combined) {
+        if (renderMode == RenderMode::XROnly || renderMode == RenderMode::Combined) {
             createXrSession();
         }
 
-        executor_ = std::make_unique<ExecutorService>();
+        this->executor_ = std::make_unique<ExecutorService>();
     }
 
     Device::~Device() {
@@ -480,7 +484,9 @@ namespace Atlas {
     }
 
     std::vector<const char *> Device::getRequiredExtensions() const {
-        auto extensions = window_.getRequiredExtensions();
+        auto extensions = (renderMode_ == RenderMode::WindowOnly || renderMode_ == RenderMode::Combined)
+                              ? window_.getRequiredExtensions()
+                              : std::vector<const char *>{};
 
         if constexpr (enableValidationLayers) {
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -532,10 +538,14 @@ namespace Atlas {
                 indices.graphicsFamily = i;
             }
 
-            VkBool32 presentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &presentSupport);
-            if (presentSupport) {
-                indices.presentFamily = i;
+            if (surface_ != VK_NULL_HANDLE) {
+                VkBool32 presentSupport = false;
+                vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &presentSupport);
+                if (presentSupport) {
+                    indices.presentFamily = i;
+                }
+            } else {
+                indices.presentFamily = indices.graphicsFamily;
             }
 
             if ((family.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
@@ -580,6 +590,11 @@ namespace Atlas {
 
     SwapChainSupportDetails Device::querySwapChainSupport(VkPhysicalDevice device) {
         SwapChainSupportDetails details;
+
+        if (surface_ == VK_NULL_HANDLE) {
+            return details;
+        }
+
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface_, &details.capabilities);
 
         uint32_t formatCount = 0;

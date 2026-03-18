@@ -79,7 +79,7 @@ namespace Atlas {
         int frameIndex = renderer.getFrameIndex();
 
         const GlobalUbo ubo{
-            camera.getData(),
+            camera.getData(true),
             glm::vec4(1.0f, 1.0f, 1.0f, 0.025f), // ambient color
             glm::vec3(-1.0f), // light position
             0.0f,

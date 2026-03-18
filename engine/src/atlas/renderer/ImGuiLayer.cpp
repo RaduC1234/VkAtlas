@@ -10,15 +10,14 @@
 #endif
 
 namespace Atlas {
-
-
 #ifdef __ANDROID__
     ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(VK_NULL_HANDLE) {}
     ImGuiLayer::~ImGuiLayer() {}
     void ImGuiLayer::beginFrame() {}
     void ImGuiLayer::endFrame(VkCommandBuffer commandBuffer) {}
 #else
-    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()){
+    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device) {
+        if (device.getRenderMode() == RenderMode::XROnly) return;
         createDescriptorPool(device);
 
         IMGUI_CHECKVERSION();
@@ -46,34 +45,40 @@ namespace Atlas {
     }
 
     ImGuiLayer::~ImGuiLayer() {
-        vkDeviceWaitIdle(device);
+        if (device.getRenderMode() == RenderMode::XROnly) return;
+
+        vkDeviceWaitIdle(device.device());
 
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplGlfw_Shutdown();
         ImGui::DestroyContext();
 
         if (descriptorPool != VK_NULL_HANDLE) {
-            vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+            vkDestroyDescriptorPool(device.device(), descriptorPool, nullptr);
             descriptorPool = VK_NULL_HANDLE;
         }
     }
 
     void ImGuiLayer::beginFrame() {
+        if (device.getRenderMode() == RenderMode::XROnly) return;
+
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
     }
 
     void ImGuiLayer::endFrame(VkCommandBuffer commandBuffer) {
+        if (device.getRenderMode() == RenderMode::XROnly) return;
+
         ImGui::Render();
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
     }
 
     void ImGuiLayer::createDescriptorPool(Device &device) {
         VkDescriptorPoolSize poolSizes[] = {
-            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         1000 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         1000 },
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
         };
 
         VkDescriptorPoolCreateInfo poolInfo{};

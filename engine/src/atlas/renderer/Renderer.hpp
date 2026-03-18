@@ -43,6 +43,8 @@ namespace Atlas {
             return computeCommandBuffers[currentFrameIndex];
         }
 
+        const std::array<XrView,2> getEyeViews();
+
         // Frame lifecycle
         VkCommandBuffer beginFrame();
         void endFrame();

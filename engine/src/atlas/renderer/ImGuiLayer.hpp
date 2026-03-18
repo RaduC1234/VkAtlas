@@ -14,6 +14,6 @@ namespace Atlas {
         void createDescriptorPool(Device& device);
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-        VkDevice device = VK_NULL_HANDLE;
+        Device& device;;
     };
 }

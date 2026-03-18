@@ -13,6 +13,7 @@ namespace Atlas {
     struct ApplicationSpecification {
         std::string name = "Atlas Engine";
         void *pNativeApp = nullptr;
+        RenderMode renderMode = RenderMode::XROnly;
     };
 
     class Application {
@@ -28,9 +29,9 @@ namespace Atlas {
     private:
         ApplicationSpecification specification;
 
-        std::unique_ptr<Window> window = Window::create({specification.pNativeApp, 1200, 800});
-        Device device{*window, RenderMode::WindowOnly};
-        Renderer renderer{*window, device};
+        std::unique_ptr<Window> window;
+        std::unique_ptr<Device> device;
+        std::unique_ptr<Renderer> renderer;
 
         std::unique_ptr<Scene> currentScene;
     };

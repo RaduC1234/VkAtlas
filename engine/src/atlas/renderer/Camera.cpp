@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <limits>
+#include <glm/gtc/quaternion.hpp>
 
 
 namespace Atlas {
@@ -75,16 +76,31 @@ namespace Atlas {
         viewMatrix[3][2] = -glm::dot(w, position);
     }
 
-    Camera::Data Camera::getData() const {
+    Camera::Data Camera::getData(bool xr, XrView eyes[]) const {
         Data data{};
-        data.projection = this->projectionMatrix;
-        data.view = this->viewMatrix;
-        data.viewProjection = this->projectionMatrix * this->viewMatrix;
 
-        glm::vec4 row0 = glm::vec4(data.viewProjection[0][0], data.viewProjection[1][0], data.viewProjection[2][0], data.viewProjection[3][0]);
-        glm::vec4 row1 = glm::vec4(data.viewProjection[0][1], data.viewProjection[1][1], data.viewProjection[2][1], data.viewProjection[3][1]);
-        glm::vec4 row2 = glm::vec4(data.viewProjection[0][2], data.viewProjection[1][2], data.viewProjection[2][2], data.viewProjection[3][2]);
-        glm::vec4 row3 = glm::vec4(data.viewProjection[0][3], data.viewProjection[1][3], data.viewProjection[2][3], data.viewProjection[3][3]);
+        if (xr) {
+            data.projection[0] = data.projection[1] = this->projectionMatrix;
+            data.view[0] = data.view[1] = this->viewMatrix;
+            data.viewProjection[0] = data.viewProjection[1] = this->projectionMatrix * this->viewMatrix;
+        } else {
+            const XrView *e = eyes ? eyes : defaultViews;
+
+            for (int i = 0; i < 2; ++i) {
+                data.projection[i] = projectionFromFov(e[i].fov, nearPlane);
+                data.view[i] = viewFromPose(e[i].pose, viewMatrix);
+                data.viewProjection[i] = data.projection[i] * data.view[i];
+            }
+        }
+
+        // Extract frustum planes from the first eye (or the mono camera). For XR, callers can
+        // choose to compute per-eye planes later if needed.
+        const glm::mat4 vp = data.viewProjection[0];
+
+        glm::vec4 row0 = glm::vec4(vp[0][0], vp[1][0], vp[2][0], vp[3][0]);
+        glm::vec4 row1 = glm::vec4(vp[0][1], vp[1][1], vp[2][1], vp[3][1]);
+        glm::vec4 row2 = glm::vec4(vp[0][2], vp[1][2], vp[2][2], vp[3][2]);
+        glm::vec4 row3 = glm::vec4(vp[0][3], vp[1][3], vp[2][3], vp[3][3]);
 
         glm::vec4 planes[6];
         planes[0] = row3 + row0; // left
@@ -110,6 +126,51 @@ namespace Atlas {
         data.farPlane = this->farPlane;
 
         return data;
+    }
 
+    glm::mat4 Camera::projectionFromFov(const XrFovf fov, float nearZ) {
+        const float l = std::tan(fov.angleLeft);
+        const float r = std::tan(fov.angleRight);
+        const float u = std::tan(fov.angleLeft);
+        const float d = std::tan(fov.angleLeft);
+
+        const float w = r - l;
+        const float h = u - d;
+
+        glm::mat4 proj{0.0f};
+        proj[0][0] = 2.0f / w;
+        proj[1][1] = 2.0f / h;
+        proj[2][0] = (r + l) / w; // horizontal asymmetry
+        proj[2][1] = (u + d) / h; // vertical   asymmetry
+        proj[2][2] = 0.0f; // reversed-Z infinite far
+        proj[2][3] = -1.0f; // perspective divide
+        proj[3][2] = nearZ; // maps near -> 1.0
+
+        return proj;
+    }
+
+    glm::mat4 Camera::viewFromPose(const XrPosef &pose, const glm::mat4 &headView) {
+        const glm::quat orientation{
+            pose.orientation.w,
+            pose.orientation.x,
+            pose.orientation.y,
+            pose.orientation.z
+        };
+        const glm::vec3 position{
+            pose.position.x,
+            pose.position.y,
+            pose.position.z
+        };
+
+        const glm::mat3 rotInv = glm::transpose(glm::mat3_cast(orientation));
+        const glm::vec3 posInv = -(rotInv * position);
+
+        glm::mat4 invEye{1.0f};
+        invEye[0] = glm::vec4(rotInv[0], 0.0f);
+        invEye[1] = glm::vec4(rotInv[1], 0.0f);
+        invEye[2] = glm::vec4(rotInv[2], 0.0f);
+        invEye[3] = glm::vec4(posInv, 1.0f);
+
+        return invEye * headView;
     }
 }

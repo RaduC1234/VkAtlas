@@ -6,7 +6,7 @@
 namespace Atlas {
     class XrSwapChain : public ISwapChain {
     public:
-        XrSwapChain(Device &device, XrSession session, const std::vector<XrViewConfigurationView>& viewType);
+        XrSwapChain(Device &device, XrSession session, const std::vector<XrViewConfigurationView> &viewConfigs);
         ~XrSwapChain() override;
 
         VkResult acquireNextImage(uint32_t *imageIndex) override;
@@ -19,6 +19,8 @@ namespace Atlas {
         VkRenderPass getRenderPass() const override { return renderPass; }
         VkFramebuffer getFrameBuffer(int32_t index) const override { return framebuffers[index]; }
 
+        uint32_t getEyeCount() const { return eyeCount; }
+
     private:
         void createSwapChain(XrSession session, const std::vector<XrViewConfigurationView> &viewConfigs);
         void createImageViews();
@@ -27,7 +29,7 @@ namespace Atlas {
         void createFramebuffers();
 
         Device &device;
-        uint32_t eyeIndex;
+        uint32_t eyeCount = 2;
 
         XrSwapchain xrSwapchain = XR_NULL_HANDLE;
 
