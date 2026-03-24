@@ -18,6 +18,13 @@ if (NOT WIN32)
     endif ()
 endif ()
 
+set(KTX_FEATURE_TESTS      OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_TOOLS      OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_GL_UPLOAD  OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_VK_UPLOAD  OFF CACHE BOOL "" FORCE)
+set(KTX_FEATURE_LOADTEST_APPS OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(dependencies/KTX-Software)
 add_subdirectory(dependencies/fmt)
 add_subdirectory(dependencies/glm)
 add_subdirectory(dependencies/entt)
@@ -37,6 +44,7 @@ target_link_libraries(atlas_engine PUBLIC
         GPUOpen::VulkanMemoryAllocator
         tinyobjloader
         tinygltf
+        ktx
 )
 
 # Platform-specific configurations

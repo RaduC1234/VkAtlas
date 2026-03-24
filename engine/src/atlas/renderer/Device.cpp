@@ -508,7 +508,7 @@ namespace Atlas {
         throw std::runtime_error("failed to find supported format!");
     }
 
-    VkCommandBuffer Device::beginTransferCommands() {
+    VkCommandBuffer Device::beginSingleTimeCommands() {
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -526,7 +526,7 @@ namespace Atlas {
         return commandBuffer;
     }
 
-    void Device::endTransferCommands(VkCommandBuffer commandBuffer) const {
+    void Device::endSingleTimeCommands(VkCommandBuffer commandBuffer) const {
         vkEndCommandBuffer(commandBuffer);
 
         VkSubmitInfo submitInfo{};

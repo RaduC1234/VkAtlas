@@ -70,36 +70,49 @@ namespace Atlas {
         AT_INFO("AssetManager instance destroyed");
     }
 
-    AssetHandle AssetManager::loadTexture(const std::string &virtualPath) {
+    AssetHandle AssetManager::loadTexture(const std::string &virtualPath, VkFormat format, VkSamplerAddressMode addressMode) {
         auto it = pathToHandle.find(virtualPath);
         if (it != pathToHandle.end()) {
             AT_TRACE("Texture already loaded: {} (handle: {})", virtualPath, it->second);
             return it->second;
         }
 
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
-
         std::filesystem::path fullPath = getAssetsPath() / virtualPath;
+        std::string ext = fullPath.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
         int width, height, channels;
+        void *pixels = nullptr;
+        bool isHDR = false;
+
         stbi_set_flip_vertically_on_load(true);
-        unsigned char *pixels = stbi_load(fullPath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
+
+        if (ext == ".hdr") {
+            pixels = stbi_loadf(fullPath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
+            isHDR = true;
+            // Override format for HDR if caller left it as default LDR format
+            if (format == VK_FORMAT_R8G8B8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB) {
+                format = VK_FORMAT_R32G32B32A32_SFLOAT;
+            }
+        } else {
+            pixels = stbi_load(fullPath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
+        }
 
         if (!pixels) {
             AT_ERROR("Failed to load texture: {}", fullPath.string());
             return INVALID_ASSET_HANDLE;
         }
 
-        VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+        AssetHandle handle = nextHandle++;
+        pathToHandle[virtualPath] = handle;
+        handleToPath[handle] = virtualPath;
 
-        auto sampler = Sampler::create(device, pixels, width, height, format);
+        auto sampler = Sampler::create(device, pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height), format, addressMode);
         texturePool[handle] = sampler;
 
         stbi_image_free(pixels);
 
-        AT_TRACE("Loaded texture: {} (handle: {}, {}x{})", virtualPath, handle, width, height);
+        AT_TRACE("Loaded texture: {} (handle: {}, {}x{}, hdr: {})", virtualPath, handle, width, height, isHDR);
         return handle;
     }
 
@@ -209,12 +222,12 @@ namespace Atlas {
 
         // Determine if this is an HDR file or a regular cubemap texture
         std::string extension = fullPath.extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+        std::ranges::transform(extension, extension.begin(), ::tolower);
 
         try {
             std::shared_ptr<Cubemap> cubemap;
 
-            if (extension == ".hdr") {
+            if (extension == ".hdr" || extension == ".ktx2") {
                 // Load HDR equirectangular and convert to cubemap
                 cubemap = Cubemap::create(device, fullPath.string());
             } else {

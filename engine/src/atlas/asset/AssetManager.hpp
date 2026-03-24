@@ -52,9 +52,11 @@ namespace Atlas {
         /**
          * @brief Load a texture and return its handle
          * @param virtualPath Virtual path to the texture (e.g., "textures/wood.png")
+         * @param format
+         * @param addressMode
          * @return AssetHandle for the loaded texture
          */
-        AssetHandle loadTexture(const std::string &virtualPath);
+        AssetHandle loadTexture(const std::string &virtualPath, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
         /**
          * @brief Load a mesh and return its handle

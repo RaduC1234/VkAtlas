@@ -6,12 +6,13 @@
 #include <cmath>
 #include <algorithm>
 #include <functional>
+#include <ktx.h>
 #include <glm/ext/scalar_constants.hpp>
 
 #include "Buffer.hpp"
+#include "core/Log.hpp"
 
 namespace Atlas {
-
     Cubemap::~Cubemap() {
         if (sampler != VK_NULL_HANDLE) {
             vkDestroySampler(device.device(), sampler, nullptr);
@@ -26,7 +27,7 @@ namespace Atlas {
 
     size_t Cubemap::computeHash(const std::array<std::string, 6> &facePaths) {
         size_t hash = 0;
-        for (const auto &path : facePaths) {
+        for (const auto &path: facePaths) {
             hash ^= std::hash<std::string>{}(path) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
         }
         return hash;
@@ -37,7 +38,7 @@ namespace Atlas {
 
         // Load first face to get dimensions
         int texWidth, texHeight, texChannels;
-        stbi_uc* firstFace = stbi_load(facePaths[0].c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        stbi_uc *firstFace = stbi_load(facePaths[0].c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
         if (!firstFace) {
             throw std::runtime_error("Failed to load cubemap face: " + facePaths[0]);
@@ -67,14 +68,13 @@ namespace Atlas {
 
         // Load and copy remaining 5 faces
         for (int i = 1; i < 6; i++) {
-            stbi_uc* faceData = stbi_load(facePaths[i].c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+            stbi_uc *faceData = stbi_load(facePaths[i].c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
             if (!faceData) {
                 throw std::runtime_error("Failed to load cubemap face: " + facePaths[i]);
             }
 
-            if (static_cast<uint32_t>(texWidth) != cubemap->width ||
-                static_cast<uint32_t>(texHeight) != cubemap->height) {
+            if (static_cast<uint32_t>(texWidth) != cubemap->width || static_cast<uint32_t>(texHeight) != cubemap->height) {
                 stbi_image_free(faceData);
                 throw std::runtime_error("Cubemap faces must all have the same dimensions");
             }
@@ -106,7 +106,7 @@ namespace Atlas {
         allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
         allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
 
-        if (vmaCreateImage(device.allocator(), &imageInfo, &allocInfo,&cubemap->image, &cubemap->allocation, nullptr) != VK_SUCCESS) {
+        if (vmaCreateImage(device.allocator(), &imageInfo, &allocInfo, &cubemap->image, &cubemap->allocation, nullptr) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create cubemap image");
         }
 
@@ -119,144 +119,257 @@ namespace Atlas {
         return cubemap;
     }
 
-    std::shared_ptr<Cubemap> Cubemap::create(Device &device, const std::string &hdrPath) {
+    std::shared_ptr<Cubemap> Cubemap::create(Device &device, const std::string &filePath) {
         std::shared_ptr<Cubemap> cubemap(new Cubemap(device));
 
-        // Load HDR image
-        int texWidth, texHeight, texChannels;
-        float* hdrData = stbi_loadf(hdrPath.c_str(), &texWidth, &texHeight, &texChannels, 4);
+        if (filePath.ends_with(".hdr")) {
+            // Load HDR image
+            int texWidth, texHeight, texChannels;
+            float *hdrData = stbi_loadf(filePath.c_str(), &texWidth, &texHeight, &texChannels, 4);
 
-        if (!hdrData) {
-            throw std::runtime_error("Failed to load HDR image: " + hdrPath);
-        }
-
-        // Cubemap face size (use height of equirectangular as face size for good quality)
-        uint32_t faceSize = static_cast<uint32_t>(texHeight / 2);
-        cubemap->width = faceSize;
-        cubemap->height = faceSize;
-        cubemap->mipLevels = 1;
-
-        VkDeviceSize faceSizeBytes = faceSize * faceSize * 4 * sizeof(float);
-        VkDeviceSize totalSize = faceSizeBytes * 6;
-
-        // Create staging buffer
-        Buffer stagingBuffer(
-            device,
-            totalSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_AUTO,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-        );
-
-        stagingBuffer.map();
-
-        // Direction vectors for each cubemap face. Order: +X, -X, +Y, -Y, +Z, -Z
-        auto sampleEquirectangular = [&](float x, float y, float z) -> std::array<float, 4> {
-            float len = std::sqrt(x * x + y * y + z * z);
-            x /= len; y /= len; z /= len;
-
-            // Convert direction to equirectangular UV
-            float u = std::atan2(z, x) / (2.0f * glm::pi<float>()) + 0.5f;
-            float v = std::asin(std::clamp(y, -1.0f, 1.0f)) / glm::pi<float>() + 0.5f;
-
-            // Sample with bilinear filtering
-            float fx = u * (texWidth - 1);
-            float fy = (1.0f - v) * (texHeight - 1);
-
-            int x0 = static_cast<int>(fx);
-            int y0 = static_cast<int>(fy);
-            int x1 = std::min(x0 + 1, texWidth - 1);
-            int y1 = std::min(y0 + 1, texHeight - 1);
-
-            float xFrac = fx - x0;
-            float yFrac = fy - y0;
-
-            std::array<float, 4> result{};
-            for (int c = 0; c < 4; c++) {
-                float v00 = hdrData[(y0 * texWidth + x0) * 4 + c];
-                float v10 = hdrData[(y0 * texWidth + x1) * 4 + c];
-                float v01 = hdrData[(y1 * texWidth + x0) * 4 + c];
-                float v11 = hdrData[(y1 * texWidth + x1) * 4 + c];
-
-                float v0 = v00 * (1.0f - xFrac) + v10 * xFrac;
-                float v1 = v01 * (1.0f - xFrac) + v11 * xFrac;
-                result[c] = v0 * (1.0f - yFrac) + v1 * yFrac;
+            if (!hdrData) {
+                throw std::runtime_error("Failed to load HDR image: " + filePath);
             }
-            return result;
-        };
 
-        // Generate each cubemap face
-        std::vector<float> faceData(faceSize * faceSize * 4);
+            // Cubemap face size (use height of equirectangular as face size for good quality)
+            uint32_t faceSize = static_cast<uint32_t>(texHeight / 2);
+            cubemap->width = faceSize;
+            cubemap->height = faceSize;
+            cubemap->mipLevels = 1;
 
-        for (uint32_t face = 0; face < 6; face++) {
-            for (uint32_t y = 0; y < faceSize; y++) {
-                for (uint32_t x = 0; x < faceSize; x++) {
-                    // Convert pixel coordinates to [-1, 1] range
-                    float u = (2.0f * (x + 0.5f) / faceSize) - 1.0f;
-                    float v = (2.0f * (y + 0.5f) / faceSize) - 1.0f;
+            VkDeviceSize faceSizeBytes = faceSize * faceSize * 4 * sizeof(float);
+            VkDeviceSize totalSize = faceSizeBytes * 6;
 
-                    float dx, dy, dz;
-                    switch (face) {
-                        case 0: dx =  1.0f; dy = -v;    dz = -u;    break; // +X
-                        case 1: dx = -1.0f; dy = -v;    dz =  u;    break; // -X
-                        case 2: dx =  u;    dy =  1.0f; dz =  v;    break; // +Y
-                        case 3: dx =  u;    dy = -1.0f; dz = -v;    break; // -Y
-                        case 4: dx =  u;    dy = -v;    dz =  1.0f; break; // +Z
-                        case 5: dx = -u;    dy = -v;    dz = -1.0f; break; // -Z
-                        default: dx = dy = dz = 0.0f; break;
+            // Create staging buffer
+            Buffer stagingBuffer(
+                device,
+                totalSize,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VMA_MEMORY_USAGE_AUTO,
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+            );
+
+            stagingBuffer.map();
+
+            // Direction vectors for each cubemap face. Order: +X, -X, +Y, -Y, +Z, -Z
+            auto sampleEquirectangular = [&](float x, float y, float z) -> std::array<float, 4> {
+                float len = std::sqrt(x * x + y * y + z * z);
+                x /= len;
+                y /= len;
+                z /= len;
+
+                // Convert direction to equirectangular UV
+                float u = std::atan2(z, x) / (2.0f * glm::pi<float>()) + 0.5f;
+                float v = std::asin(std::clamp(y, -1.0f, 1.0f)) / glm::pi<float>() + 0.5f;
+
+                // Sample with bilinear filtering
+                float fx = u * (texWidth - 1);
+                float fy = (1.0f - v) * (texHeight - 1);
+
+                int x0 = static_cast<int>(fx);
+                int y0 = static_cast<int>(fy);
+                int x1 = std::min(x0 + 1, texWidth - 1);
+                int y1 = std::min(y0 + 1, texHeight - 1);
+
+                float xFrac = fx - x0;
+                float yFrac = fy - y0;
+
+                std::array<float, 4> result{};
+                for (int c = 0; c < 4; c++) {
+                    float v00 = hdrData[(y0 * texWidth + x0) * 4 + c];
+                    float v10 = hdrData[(y0 * texWidth + x1) * 4 + c];
+                    float v01 = hdrData[(y1 * texWidth + x0) * 4 + c];
+                    float v11 = hdrData[(y1 * texWidth + x1) * 4 + c];
+
+                    float v0 = v00 * (1.0f - xFrac) + v10 * xFrac;
+                    float v1 = v01 * (1.0f - xFrac) + v11 * xFrac;
+                    result[c] = v0 * (1.0f - yFrac) + v1 * yFrac;
+                }
+                return result;
+            };
+
+            // Generate each cubemap face
+            std::vector<float> faceData(faceSize * faceSize * 4);
+
+            for (uint32_t face = 0; face < 6; face++) {
+                for (uint32_t y = 0; y < faceSize; y++) {
+                    for (uint32_t x = 0; x < faceSize; x++) {
+                        // Convert pixel coordinates to [-1, 1] range
+                        float u = (2.0f * (x + 0.5f) / faceSize) - 1.0f;
+                        float v = (2.0f * (y + 0.5f) / faceSize) - 1.0f;
+
+                        float dx, dy, dz;
+                        switch (face) {
+                            case 0: dx = 1.0f;
+                                dy = -v;
+                                dz = -u;
+                                break; // +X
+                            case 1: dx = -1.0f;
+                                dy = -v;
+                                dz = u;
+                                break; // -X
+                            case 2: dx = u;
+                                dy = 1.0f;
+                                dz = v;
+                                break; // +Y
+                            case 3: dx = u;
+                                dy = -1.0f;
+                                dz = -v;
+                                break; // -Y
+                            case 4: dx = u;
+                                dy = -v;
+                                dz = 1.0f;
+                                break; // +Z
+                            case 5: dx = -u;
+                                dy = -v;
+                                dz = -1.0f;
+                                break; // -Z
+                            default: dx = dy = dz = 0.0f;
+                                break;
+                        }
+
+                        auto sample = sampleEquirectangular(dx, dy, dz);
+                        uint32_t pixelIndex = (y * faceSize + x) * 4;
+                        faceData[pixelIndex + 0] = sample[0];
+                        faceData[pixelIndex + 1] = sample[1];
+                        faceData[pixelIndex + 2] = sample[2];
+                        faceData[pixelIndex + 3] = sample[3];
                     }
+                }
 
-                    auto sample = sampleEquirectangular(dx, dy, dz);
-                    uint32_t pixelIndex = (y * faceSize + x) * 4;
-                    faceData[pixelIndex + 0] = sample[0];
-                    faceData[pixelIndex + 1] = sample[1];
-                    faceData[pixelIndex + 2] = sample[2];
-                    faceData[pixelIndex + 3] = sample[3];
+                stagingBuffer.uploadData(faceData.data(), faceSizeBytes, faceSizeBytes * face);
+            }
+
+            stbi_image_free(hdrData);
+            stagingBuffer.unmap();
+
+            // Create cubemap image with HDR format
+            VkImageCreateInfo imageInfo{};
+            imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+            imageInfo.imageType = VK_IMAGE_TYPE_2D;
+            imageInfo.extent.width = cubemap->width;
+            imageInfo.extent.height = cubemap->height;
+            imageInfo.extent.depth = 1;
+            imageInfo.mipLevels = cubemap->mipLevels;
+            imageInfo.arrayLayers = 6;
+            imageInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+            imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+            imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+            imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+            VmaAllocationCreateInfo allocInfo{};
+            allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+
+            if (vmaCreateImage(device.allocator(), &imageInfo, &allocInfo, &cubemap->image, &cubemap->allocation, nullptr) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create HDR cubemap image");
+            }
+
+            cubemap->transitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            cubemap->copyBufferToImage(stagingBuffer.get(), VK_FORMAT_R32G32B32A32_SFLOAT);
+            cubemap->transitionImageLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            cubemap->createImageView(VK_FORMAT_R32G32B32A32_SFLOAT);
+            cubemap->createSampler();
+
+            return cubemap;
+        }
+        
+        if (filePath.ends_with(".ktx2")) {
+            ktxTexture2 *ktxTex = nullptr;
+            if (ktxTexture2_CreateFromNamedFile(filePath.c_str(), KTX_TEXTURE_CREATE_LOAD_IMAGE_DATA_BIT, &ktxTex) != KTX_SUCCESS) {
+                throw std::runtime_error("Failed to load KTX2: " + filePath);
+            }
+
+            cubemap->width = ktxTex->baseWidth;
+            cubemap->height = ktxTex->baseHeight;
+            cubemap->mipLevels = ktxTex->numLevels;
+            VkFormat format = static_cast<VkFormat>(ktxTex->vkFormat);
+
+            // One staging buffer for all faces and mips
+            VkDeviceSize totalSize = ktxTexture_GetDataSize(ktxTexture(ktxTex));
+
+            Buffer stagingBuffer(
+                device,
+                totalSize,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VMA_MEMORY_USAGE_AUTO,
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+            );
+
+            stagingBuffer.map();
+            stagingBuffer.uploadData(ktxTexture_GetData(ktxTexture(ktxTex)), totalSize, 0);
+            stagingBuffer.unmap();
+
+            // Build copy regions — one per face per mip
+            std::vector<VkBufferImageCopy> regions;
+            for (uint32_t mip = 0; mip < cubemap->mipLevels; mip++) {
+                for (uint32_t face = 0; face < 6; face++) {
+                    ktx_size_t offset;
+                    ktxTexture_GetImageOffset(ktxTexture(ktxTex), mip, 0, face, &offset);
+
+                    VkBufferImageCopy region{};
+                    region.bufferOffset = offset;
+                    region.bufferRowLength = 0;
+                    region.bufferImageHeight = 0;
+                    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                    region.imageSubresource.mipLevel = mip;
+                    region.imageSubresource.baseArrayLayer = face;
+                    region.imageSubresource.layerCount = 1;
+                    region.imageOffset = {0, 0, 0};
+                    region.imageExtent = {
+                        std::max(1u, cubemap->width >> mip),
+                        std::max(1u, cubemap->height >> mip),
+                        1
+                    };
+                    regions.push_back(region);
                 }
             }
 
-            stagingBuffer.uploadData(faceData.data(), faceSizeBytes, faceSizeBytes * face);
+            // Create image
+            VkImageCreateInfo imageInfo{};
+            imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+            imageInfo.imageType = VK_IMAGE_TYPE_2D;
+            imageInfo.extent = {cubemap->width, cubemap->height, 1};
+            imageInfo.mipLevels = cubemap->mipLevels;
+            imageInfo.arrayLayers = 6;
+            imageInfo.format = format;
+            imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+            imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+            imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+            VmaAllocationCreateInfo allocInfo{};
+            allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
+            allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
+
+            if (vmaCreateImage(device.allocator(), &imageInfo, &allocInfo,
+                               &cubemap->image, &cubemap->allocation, nullptr) != VK_SUCCESS) {
+                ktxTexture_Destroy(ktxTexture(ktxTex));
+                throw std::runtime_error("Failed to create KTX2 cubemap image");
+            }
+
+            // Upload
+            cubemap->transitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+            Buffer::copyToImage(device, stagingBuffer.get(), cubemap->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions);
+            cubemap->transitionImageLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            cubemap->createImageView(format);
+            cubemap->createSampler();
+
+            ktxTexture_Destroy(ktxTexture(ktxTex));
+            return cubemap;
         }
-
-        stbi_image_free(hdrData);
-        stagingBuffer.unmap();
-
-        // Create cubemap image with HDR format
-        VkImageCreateInfo imageInfo{};
-        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType = VK_IMAGE_TYPE_2D;
-        imageInfo.extent.width = cubemap->width;
-        imageInfo.extent.height = cubemap->height;
-        imageInfo.extent.depth = 1;
-        imageInfo.mipLevels = cubemap->mipLevels;
-        imageInfo.arrayLayers = 6;
-        imageInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO;
-        allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT;
-
-        if (vmaCreateImage(device.allocator(), &imageInfo, &allocInfo, &cubemap->image, &cubemap->allocation, nullptr) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to create HDR cubemap image");
-        }
-
-        cubemap->transitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-        cubemap->copyBufferToImage(stagingBuffer.get(), VK_FORMAT_R32G32B32A32_SFLOAT);
-        cubemap->transitionImageLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        cubemap->createImageView(VK_FORMAT_R32G32B32A32_SFLOAT);
-        cubemap->createSampler();
-
-        return cubemap;
+        
+        AT_ERROR("Unsupported cubemap file type: {}", filePath);
+        return nullptr;
     }
 
     void Cubemap::transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout) {
-        VkCommandBuffer commandBuffer = device.beginTransferCommands();
+        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -279,25 +392,23 @@ namespace Atlas {
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             srcStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-
         } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
             barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
             dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-
         } else {
             throw std::invalid_argument("Unsupported layout transition");
         }
 
         vkCmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-        device.endTransferCommands(commandBuffer);
+        device.endSingleTimeCommands(commandBuffer);
         imageLayout = newLayout;
     }
 
     void Cubemap::copyBufferToImage(VkBuffer buffer, VkFormat format) {
-        VkCommandBuffer commandBuffer = device.beginTransferCommands();
+        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
         // Calculate bytes per pixel based on format
         VkDeviceSize bytesPerPixel = (format == VK_FORMAT_R32G32B32A32_SFLOAT) ? 16 : 4;
@@ -317,10 +428,10 @@ namespace Atlas {
         }
 
         vkCmdCopyBufferToImage(commandBuffer, buffer, image,
-                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                              static_cast<uint32_t>(regions.size()), regions.data());
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               static_cast<uint32_t>(regions.size()), regions.data());
 
-        device.endTransferCommands(commandBuffer);
+        device.endSingleTimeCommands(commandBuffer);
     }
 
     void Cubemap::createImageView(VkFormat format) {
@@ -362,5 +473,4 @@ namespace Atlas {
             throw std::runtime_error("Failed to create cubemap sampler");
         }
     }
-
 } // namespace Atlas
