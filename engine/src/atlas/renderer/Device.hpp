@@ -80,8 +80,8 @@ namespace Atlas {
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 
-        VkCommandBuffer beginTransferCommands();
-        void endTransferCommands(VkCommandBuffer commandBuffer) const;
+        VkCommandBuffer beginSingleTimeCommands();
+        void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
 
     private:
         static constexpr uint32_t APPLICATION_VERSION = VK_MAKE_VERSION(1, 0, 0);

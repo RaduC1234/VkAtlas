@@ -13,9 +13,9 @@
 
 #include "entity/Object.hpp"
 
-#if defined(__ANDROID__)
+#if defined(ATLAS_PLATFORM_ANDROID)
 #include "android/AndroidAssetManager.hpp"
-#elif defined(_WIN32)
+#elif defined(ATLAS_PLATFORM_DESKTOP)
 #include "desktop/DesktopAssetManager.hpp"
 #endif
 
@@ -47,10 +47,10 @@ namespace Atlas {
             return *instance;
         }
 
-#if defined(__ANDROID__)
+#if defined(ATLAS_PLATFORM_ANDROID)
         instance = std::shared_ptr<AndroidAssetManager>(new AndroidAssetManager(device, nativeApp));
         AT_INFO("Created Android AssetManager instance");
-#elif defined(_WIN32)
+#elif defined(ATLAS_PLATFORM_DESKTOP)
         instance = std::make_shared<DesktopAssetManager>(device, nativeApp);
         AT_INFO("Created Desktop AssetManager instance");
 #else
@@ -70,36 +70,49 @@ namespace Atlas {
         AT_INFO("AssetManager instance destroyed");
     }
 
-    AssetHandle AssetManager::loadTexture(const std::string &virtualPath) {
+    AssetHandle AssetManager::loadTexture(const std::string &virtualPath, VkFormat format, VkSamplerAddressMode addressMode) {
         auto it = pathToHandle.find(virtualPath);
         if (it != pathToHandle.end()) {
             AT_TRACE("Texture already loaded: {} (handle: {})", virtualPath, it->second);
             return it->second;
         }
 
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
-
         std::filesystem::path fullPath = getAssetsPath() / virtualPath;
+        std::string ext = fullPath.extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
         int width, height, channels;
+        void *pixels = nullptr;
+        bool isHDR = false;
+
         stbi_set_flip_vertically_on_load(true);
-        unsigned char *pixels = stbi_load(fullPath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
+
+        if (ext == ".hdr") {
+            pixels = stbi_loadf(fullPath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
+            isHDR = true;
+            // Override format for HDR if caller left it as default LDR format
+            if (format == VK_FORMAT_R8G8B8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB) {
+                format = VK_FORMAT_R32G32B32A32_SFLOAT;
+            }
+        } else {
+            pixels = stbi_load(fullPath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
+        }
 
         if (!pixels) {
             AT_ERROR("Failed to load texture: {}", fullPath.string());
             return INVALID_ASSET_HANDLE;
         }
 
-        VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+        AssetHandle handle = nextHandle++;
+        pathToHandle[virtualPath] = handle;
+        handleToPath[handle] = virtualPath;
 
-        auto sampler = Sampler::create(device, pixels, width, height, format);
+        auto sampler = Sampler::create(device, pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height), format, addressMode);
         texturePool[handle] = sampler;
 
         stbi_image_free(pixels);
 
-        AT_TRACE("Loaded texture: {} (handle: {}, {}x{})", virtualPath, handle, width, height);
+        AT_TRACE("Loaded texture: {} (handle: {}, {}x{}, hdr: {})", virtualPath, handle, width, height, isHDR);
         return handle;
     }
 
@@ -209,12 +222,12 @@ namespace Atlas {
 
         // Determine if this is an HDR file or a regular cubemap texture
         std::string extension = fullPath.extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+        std::ranges::transform(extension, extension.begin(), ::tolower);
 
         try {
             std::shared_ptr<Cubemap> cubemap;
 
-            if (extension == ".hdr") {
+            if (extension == ".hdr" || extension == ".ktx2") {
                 // Load HDR equirectangular and convert to cubemap
                 cubemap = Cubemap::create(device, fullPath.string());
             } else {
@@ -1020,6 +1033,19 @@ namespace Atlas {
                                 }
                             }
                         }
+
+                        if (mat.occlusionTexture.index >= 0) {
+                            int texIdx = mat.occlusionTexture.index;
+                            if (texIdx >= 0 && texIdx < static_cast<int>(model.textures.size())) {
+                                int imgIdx = model.textures[texIdx].source;
+                                if (imgIdx >= 0 && imgIdx < static_cast<int>(model.images.size())) {
+                                    std::string ambientOcclusionPath = meshPath + "_ambientOcclusion";
+                                    std::string matAmbientOcclusionPath = virtualPath + "#" + matName + "_ambientOcclusion";
+                                    pathToHandle[ambientOcclusionPath] = imageHandles[imgIdx];
+                                    pathToHandle[matAmbientOcclusionPath] = imageHandles[imgIdx];
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1219,6 +1245,7 @@ namespace Atlas {
 
                                     auto normIt = pathToHandle.find(imagePath);
                                     if (normIt != pathToHandle.end()) {
+                                        material.normalMap = normIt->second;
                                     }
                                 }
                             }
@@ -1242,7 +1269,7 @@ namespace Atlas {
             glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
 
             auto &transform = registry.emplace<TransformComponent>(entity);
-            transform.translation = translation;
+            transform.translation = translation * glm::vec3(1.0f, -1.0f, 1.0f);
             transform.rotation = glm::eulerAngles(rotation);
             transform.scale = scale;
 
@@ -1270,6 +1297,9 @@ namespace Atlas {
 
             light.intensity = static_cast<float>(gltfLight.intensity);
             light.range = static_cast<float>(gltfLight.range);
+
+            constexpr glm::vec3 defaultDir = glm::vec3{0.0f, 0.0f, -1.0f};
+            light.direction = glm::normalize(rotation * defaultDir);
 
             outEntities.push_back(entity);
 

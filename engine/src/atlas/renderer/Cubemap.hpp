@@ -21,7 +21,7 @@ namespace Atlas {
         static size_t computeHash(const std::array<std::string, 6> &facePaths);
 
         static std::shared_ptr<Cubemap> create(Device &device, const std::array<std::string, 6> &facePaths);
-        static std::shared_ptr<Cubemap> create(Device &device, const std::string &hdrPath);
+        static std::shared_ptr<Cubemap> create(Device &device, const std::string &filePath);
 
     private:
         Cubemap(Device &device) : device(device) {}

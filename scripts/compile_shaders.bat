@@ -10,6 +10,12 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: Remove any existing .spv files in the shader directory before compiling
+if exist "%SHADER_DIR%\*.spv" (
+    echo Removing existing .spv files from %SHADER_DIR%...
+    del /q "%SHADER_DIR%\*.spv" 2>nul
+)
+
 :: Compile all .vert and .frag shaders in the SHADER_DIR
 for %%F in (%SHADER_DIR%\*.vert) do (
     echo Compiling %%F...
