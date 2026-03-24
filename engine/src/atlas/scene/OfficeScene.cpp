@@ -14,7 +14,7 @@
 
 namespace Atlas {
     OfficeScene::OfficeScene(Renderer &renderer) : Scene(renderer) {
-        uboBuffers.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        uboBuffers.resize(WindowSwapChain::MAX_FRAMES_IN_FLIGHT);
         for (auto &uboBuffer: uboBuffers) {
             uboBuffer = std::make_unique<Buffer>(
                 renderer.getDevice(),
@@ -35,12 +35,12 @@ namespace Atlas {
 
         // Pool must provide enough combined image sampler descriptors for each frame-in-flight
         globalPool = DescriptorPool::Builder(renderer.getDevice())
-                .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, SwapChain::MAX_FRAMES_IN_FLIGHT)
+                .setMaxSets(ISwapChain::MAX_FRAMES_IN_FLIGHT)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, ISwapChain::MAX_FRAMES_IN_FLIGHT)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, ISwapChain::MAX_FRAMES_IN_FLIGHT)
                 .build();
 
-        globalDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        globalDescriptorSets.resize(WindowSwapChain::MAX_FRAMES_IN_FLIGHT);
         for (int i = 0; i < globalDescriptorSets.size(); i++) {
             auto bufferInfo = uboBuffers[i]->descriptorInfo();
             DescriptorWriter(*globalSetLayout, *globalPool)

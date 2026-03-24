@@ -1,25 +1,23 @@
-#include "SwapChain.hpp"
+#include "WindowSwapChain.hpp"
 
 // std
 #include <array>
-#include <iostream>
 #include <limits>
-#include <set>
 #include <stdexcept>
 #include <utility>
 
 namespace Atlas {
-    SwapChain::SwapChain(Device &deviceRef, VkExtent2D extent) : device{deviceRef}, windowExtent{extent} {
+    WindowSwapChain::WindowSwapChain(Device &deviceRef, VkExtent2D extent) : device{deviceRef}, windowExtent{extent} {
         init();
     }
 
-    SwapChain::SwapChain(Device &deviceRef, VkExtent2D extent, std::shared_ptr<SwapChain> previous) : device{deviceRef}, windowExtent{extent}, oldSwapChain(std::move(previous)) {
+    WindowSwapChain::WindowSwapChain(Device &deviceRef, VkExtent2D extent, std::shared_ptr<WindowSwapChain> previous) : device{deviceRef}, windowExtent{extent}, oldSwapChain(std::move(previous)) {
         init();
 
         oldSwapChain = nullptr;
     }
 
-    void SwapChain::init() {
+    void WindowSwapChain::init() {
         createSwapChain();
         createImageViews();
         createRenderPass();
@@ -28,7 +26,7 @@ namespace Atlas {
         createSyncObjects();
     }
 
-    SwapChain::~SwapChain() {
+    WindowSwapChain::~WindowSwapChain() {
         for (auto imageView: swapChainImageViews) {
             vkDestroyImageView(device.device(), imageView, nullptr);
         }
@@ -58,8 +56,7 @@ namespace Atlas {
         }
     }
 
-
-    VkResult SwapChain::acquireNextImage(uint32_t *imageIndex) const {
+    VkResult WindowSwapChain::acquireNextImage(uint32_t *imageIndex) {
         vkWaitForFences(device.device(), 1, &inFlightFences[currentFrame],VK_TRUE, std::numeric_limits<uint64_t>::max());
 
         VkResult result = vkAcquireNextImageKHR(
@@ -76,7 +73,7 @@ namespace Atlas {
         return result;
     }
 
-    VkResult SwapChain::submitCommandBuffers(const VkCommandBuffer *buffers, uint32_t *imageIndex) {
+    VkResult WindowSwapChain::submitCommandBuffers(const VkCommandBuffer *buffers, uint32_t *imageIndex) {
         if (imagesInFlight[*imageIndex] != VK_NULL_HANDLE) {
             vkWaitForFences(device.device(), 1, &imagesInFlight[*imageIndex], VK_TRUE, UINT64_MAX);
         }
@@ -122,7 +119,7 @@ namespace Atlas {
         return result;
     }
 
-    void SwapChain::createSwapChain() {
+    void WindowSwapChain::createSwapChain() {
         SwapChainSupportDetails swapChainSupport = device.getSwapChainSupport();
 
         VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
@@ -183,7 +180,7 @@ namespace Atlas {
         swapChainExtent = extent;
     }
 
-    void SwapChain::createImageViews() {
+    void WindowSwapChain::createImageViews() {
         swapChainImageViews.resize(swapChainImages.size());
         for (size_t i = 0; i < swapChainImages.size(); i++) {
             VkImageViewCreateInfo viewInfo{};
@@ -204,7 +201,7 @@ namespace Atlas {
         }
     }
 
-    void SwapChain::createRenderPass() {
+    void WindowSwapChain::createRenderPass() {
         VkAttachmentDescription depthAttachment{};
         depthAttachment.format = findDepthFormat();
         depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -220,7 +217,7 @@ namespace Atlas {
         depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         VkAttachmentDescription colorAttachment = {};
-        colorAttachment.format = getSwapChainImageFormat();
+        colorAttachment.format = getImageFormat();
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -262,12 +259,12 @@ namespace Atlas {
         }
     }
 
-    void SwapChain::createFramebuffers() {
+    void WindowSwapChain::createFramebuffers() {
         swapChainFramebuffers.resize(imageCount());
         for (size_t i = 0; i < imageCount(); i++) {
             std::array<VkImageView, 2> attachments = {swapChainImageViews[i], depthImageViews[i]};
 
-            VkExtent2D swapChainExtent = getSwapChainExtent();
+            VkExtent2D swapChainExtent = getExtent();
             VkFramebufferCreateInfo framebufferInfo = {};
             framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             framebufferInfo.renderPass = renderPass;
@@ -287,10 +284,10 @@ namespace Atlas {
         }
     }
 
-    void SwapChain::createDepthResources() {
+    void WindowSwapChain::createDepthResources() {
         VkFormat depthFormat = findDepthFormat();
         swapChainDepthFormat = depthFormat;
-        VkExtent2D swapChainExtent = getSwapChainExtent();
+        VkExtent2D swapChainExtent = getExtent();
 
         depthImages.resize(imageCount());
         depthImageAllocations.resize(imageCount());
@@ -338,7 +335,7 @@ namespace Atlas {
         }
     }
 
-    void SwapChain::createSyncObjects() {
+    void WindowSwapChain::createSyncObjects() {
         imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         inFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
@@ -362,7 +359,7 @@ namespace Atlas {
         }
     }
 
-    VkSurfaceFormatKHR SwapChain::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats) {
+    VkSurfaceFormatKHR WindowSwapChain::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats) {
         for (const auto &availableFormat: availableFormats) {
             if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM &&
                 availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
@@ -373,7 +370,7 @@ namespace Atlas {
         return availableFormats[0];
     }
 
-    VkPresentModeKHR SwapChain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
+    VkPresentModeKHR WindowSwapChain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
         /*for (const auto &availablePresentMode: availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
                 //std::cout << "Present mode: Mailbox" << std::endl;
@@ -392,7 +389,7 @@ namespace Atlas {
         return VK_PRESENT_MODE_FIFO_KHR;
     }
 
-    VkExtent2D SwapChain::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
+    VkExtent2D WindowSwapChain::chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
         if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
             return capabilities.currentExtent;
         } else {
@@ -408,7 +405,7 @@ namespace Atlas {
         }
     }
 
-    VkFormat SwapChain::findDepthFormat() {
+    VkFormat WindowSwapChain::findDepthFormat() {
         return device.findSupportedFormat(
             {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
             VK_IMAGE_TILING_OPTIMAL,

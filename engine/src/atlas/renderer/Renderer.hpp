@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Device.hpp"
-#include "SwapChain.hpp"
+#include "WindowSwapChain.hpp"
 #include "core/Window.hpp"
 
 #include <cassert>
@@ -21,9 +21,9 @@ namespace Atlas {
         Device &getDevice() const { return device; }
 
         // Swap chain accessors
-        VkRenderPass getSwapChainRenderPass() const { return swapChain->getRenderPass(); }
-        float getAspectRatio() const { return swapChain->extentAspectRatio(); }
-        size_t getImageCount() const { return swapChain->imageCount(); }
+        VkRenderPass getSwapChainRenderPass() const { return swapChains[0]->getRenderPass(); }
+        float getAspectRatio() const { return swapChains[0]->extentAspectRatio(); }
+        size_t getImageCount() const { return swapChains[0]->imageCount(); }
 
         // Frame state
         bool isFrameInProgress() const { return isFrameStarted; }
@@ -42,6 +42,8 @@ namespace Atlas {
             assert(isComputeStarted && "Cannot get command buffer when compute not in progress");
             return computeCommandBuffers[currentFrameIndex];
         }
+
+        const std::array<XrView,2> getEyeViews();
 
         // Frame lifecycle
         VkCommandBuffer beginFrame();
@@ -62,7 +64,7 @@ namespace Atlas {
 
         Window &window;
         Device &device;
-        std::unique_ptr<SwapChain> swapChain;
+        std::vector<std::unique_ptr<ISwapChain>> swapChains;
         std::vector<VkCommandBuffer> graphicsCommandBuffers_;
 
         uint32_t currentImageIndex;

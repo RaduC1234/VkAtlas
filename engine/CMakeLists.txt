@@ -31,6 +31,7 @@ add_subdirectory(dependencies/entt)
 add_subdirectory(dependencies/VulkanMemoryAllocator)
 add_subdirectory(dependencies/tinyobjloader)
 add_subdirectory(dependencies/tinygltf)
+add_subdirectory(dependencies/OpenXR-SDK)
 
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/stb)
@@ -44,6 +45,7 @@ target_link_libraries(atlas_engine PUBLIC
         GPUOpen::VulkanMemoryAllocator
         tinyobjloader
         tinygltf
+        OpenXR::openxr_loader
         ktx
 )
 

@@ -30,8 +30,8 @@ namespace Atlas {
     Mesh::Mesh(Device &device, const Builder &builder) : device{device} {
         vertices_ = builder.vertices;
         indices_ = builder.indices;
-        //createVertexBuffers(builder.vertices);
-        //createIndexBuffers(builder.indices);
+        createVertexBuffers(builder.vertices);
+        createIndexBuffers(builder.indices);
     }
 
     void Mesh::bind(VkCommandBuffer commandBuffer) {
