@@ -98,14 +98,6 @@ elseif (WIN32)
 
 endif ()
 
-add_custom_target(compile_shaders ALL
-        COMMAND ${CMAKE_COMMAND} -E echo "Running shader batch script"
-        COMMAND "${CMAKE_SOURCE_DIR}/scripts/compile_shaders.bat"
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-)
-
-add_dependencies(atlas_engine compile_shaders)
-
 target_include_directories(atlas_engine PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src/atlas
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform
