@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
 #include <cstdint>
+#include <vector>
 
 #include "Device.hpp"
 
@@ -116,6 +117,21 @@ public:
      * @param dstOffset Byte offset in the destination buffer.
      */
     static void copy(Device &device, VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset = 0, VkDeviceSize dstOffset = 0);
+
+    /**
+     * @brief Overload to copy from a buffer to an image using regions. Convenience wrapper named "copy" as requested.
+     */
+    static void copy(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions);
+
+    /**
+     * @brief Copy from a buffer to an image using provided regions.
+     * @param device Device wrapper.
+     * @param src Source buffer.
+     * @param dst Destination image.
+     * @param layout Destination image layout during copy.
+     * @param regions Array of VkBufferImageCopy regions.
+     */
+    static void copyToImage(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions);
 
 private:
     /**

@@ -19,12 +19,18 @@ namespace std {
 }
 
 namespace Atlas {
-    Sampler::Sampler(Device &device, uint32_t width, uint32_t height, const void *pixels, VkFormat format): device(device), width(width), height(height) {
+    Sampler::Sampler(Device &device, uint32_t width, uint32_t height, const void *pixels, VkFormat format, VkSamplerAddressMode addressMode): device(device), width(width), height(height) {
         uint32_t bytesPerPixel;
         switch (format) {
             case VK_FORMAT_R8_UNORM:
             case VK_FORMAT_R8_SNORM:
                 bytesPerPixel = 1;
+                break;
+            case VK_FORMAT_R32G32_SFLOAT:
+                bytesPerPixel = 8;
+                break;
+            case VK_FORMAT_R32G32B32_SFLOAT:
+               bytesPerPixel = 16;
                 break;
             default:
                 bytesPerPixel = 4;
@@ -35,7 +41,7 @@ namespace Atlas {
 
         createTextureImage(pixels, imageSize, format);
         createTextureImageView();
-        createTextureSampler();
+        createTextureSampler(addressMode);
     }
 
     Sampler::~Sampler() {
@@ -51,6 +57,8 @@ namespace Atlas {
             actualFormat = VK_FORMAT_R8G8B8A8_SRGB;
         } else if (format == VK_FORMAT_R8G8B8_UNORM) {
             actualFormat = VK_FORMAT_R8G8B8A8_UNORM;
+        } else if (format == VK_FORMAT_R32G32B32_SFLOAT) {
+            actualFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
         }
 
         // Store the actual format for use in createTextureImageView
@@ -114,14 +122,14 @@ namespace Atlas {
         }
     }
 
-    void Sampler::createTextureSampler() {
+    void Sampler::createTextureSampler(const VkSamplerAddressMode addressMode) {
         VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         samplerInfo.magFilter = VK_FILTER_LINEAR;
         samplerInfo.minFilter = VK_FILTER_LINEAR;
-        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        samplerInfo.addressModeU = addressMode;
+        samplerInfo.addressModeV = addressMode;
+        samplerInfo.addressModeW = addressMode;
         samplerInfo.anisotropyEnable = VK_TRUE;
         samplerInfo.maxAnisotropy = device.properties.limits.maxSamplerAnisotropy;
         samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
@@ -139,7 +147,7 @@ namespace Atlas {
     }
 
     void Sampler::transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout) {
-        VkCommandBuffer commandBuffer = device.beginTransferCommands();
+        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -182,12 +190,12 @@ namespace Atlas {
             1, &barrier
         );
 
-        device.endTransferCommands(commandBuffer);
+        device.endSingleTimeCommands(commandBuffer);
         imageLayout = newLayout;
     }
 
     void Sampler::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const {
-        VkCommandBuffer commandBuffer = device.beginTransferCommands();
+        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
         VkBufferImageCopy region{};
         region.bufferOffset = 0;
@@ -209,14 +217,14 @@ namespace Atlas {
             &region
         );
 
-        device.endTransferCommands(commandBuffer);
+        device.endSingleTimeCommands(commandBuffer);
     }
 
-    std::shared_ptr<Sampler> Sampler::create(Device &device, const void *pixels, uint32_t width, uint32_t height, VkFormat format) {
-        return std::shared_ptr<Sampler>(new Sampler(device, width, height, pixels, format));
+    std::shared_ptr<Sampler> Sampler::create(Device &device, const void *pixels, uint32_t width, uint32_t height, VkFormat format, VkSamplerAddressMode addressMode) {
+        return std::shared_ptr<Sampler>(new Sampler(device, width, height, pixels, format, addressMode));
     }
 
-    std::shared_ptr<Sampler> Sampler::create(Device &device, const std::string &filepath, VkFormat format) {
+    std::shared_ptr<Sampler> Sampler::create(Device &device, const std::string &filepath, VkFormat format, VkSamplerAddressMode addressMode) {
         int32_t width, height, channels;
         void *pixels = stbi_load(filepath.c_str(), &width, &height, &channels, STBI_rgb_alpha);
 
@@ -224,7 +232,7 @@ namespace Atlas {
             throw std::runtime_error("Failed to load texture image: " + filepath);
         }
 
-        auto texture = create(device, pixels, width, height, format);
+        auto texture = create(device, pixels, width, height, format, addressMode);
 
         stbi_image_free(pixels);
 

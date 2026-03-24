@@ -21,16 +21,16 @@ namespace Atlas {
         [[nodiscard]] VkImageView getImageView() const { return imageView; }
         [[nodiscard]] VkImageLayout getImageLayout() const { return imageLayout; }
 
-        static std::shared_ptr<Sampler> create(Device &device, const void *pixels, uint32_t width, uint32_t height, VkFormat format = VK_FORMAT_R8G8B8_SRGB);
-        static std::shared_ptr<Sampler> create(Device &device, const std::string &filepath, VkFormat format = VK_FORMAT_R8G8B8_SRGB);
+        static std::shared_ptr<Sampler> create(Device &device, const void *pixels, uint32_t width, uint32_t height, VkFormat format = VK_FORMAT_R8G8B8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+        static std::shared_ptr<Sampler> create(Device &device, const std::string &filepath, VkFormat format = VK_FORMAT_R8G8B8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
 
         static size_t computeHash(const void *pixels, VkDeviceSize imageSize);
     private:
-        Sampler(Device &device, uint32_t width, uint32_t height, const void *pixels, VkFormat format);
+        Sampler(Device &device, uint32_t width, uint32_t height, const void *pixels, VkFormat format, VkSamplerAddressMode addressMode);
 
         void createTextureImage(const void *pixels, VkDeviceSize imageSize, VkFormat format);
         void createTextureImageView();
-        void createTextureSampler();
+        void createTextureSampler(VkSamplerAddressMode addressMode);
 
         void transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout);
         void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const;

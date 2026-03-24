@@ -164,7 +164,7 @@ namespace Atlas {
     }
 
     void Buffer::copy(Device &device, VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
-        VkCommandBuffer commandBuffer = device.beginTransferCommands();
+        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
         VkBufferCopy copyRegion{};
         copyRegion.srcOffset = srcOffset;
@@ -172,6 +172,21 @@ namespace Atlas {
         copyRegion.size = size;
         vkCmdCopyBuffer(commandBuffer, src, dst, 1, &copyRegion);
 
-        device.endTransferCommands(commandBuffer);
+        device.endSingleTimeCommands(commandBuffer);
+    }
+
+    void Buffer::copyToImage(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {
+        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+
+        vkCmdCopyBufferToImage(
+            commandBuffer,
+            src,
+            dst,
+            layout,
+            static_cast<uint32_t>(regions.size()),
+            regions.data()
+        );
+
+        device.endSingleTimeCommands(commandBuffer);
     }
 } // namespace Atlas

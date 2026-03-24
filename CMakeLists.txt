@@ -23,3 +23,4 @@ if (WIN32 OR (UNIX AND NOT APPLE AND NOT ANDROID))
 endif ()
 
 add_subdirectory(engine)
+add_subdirectory(helpers/brdf_lut)

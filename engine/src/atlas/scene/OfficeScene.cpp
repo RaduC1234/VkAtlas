@@ -4,6 +4,7 @@
 #include <imgui.h>
 #endif
 
+#include "core/Log.hpp"
 #include "system/CameraSystem.hpp"
 #include "system/RenderSystemV2.hpp"
 #include "system/SkyboxSystem.hpp"
@@ -29,11 +30,14 @@ namespace Atlas {
 
         globalSetLayout = DescriptorSetLayout::Builder(renderer.getDevice())
                 .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+                .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
                 .build();
 
+        // Pool must provide enough combined image sampler descriptors for each frame-in-flight
         globalPool = DescriptorPool::Builder(renderer.getDevice())
-                .setMaxSets(WindowSwapChain::MAX_FRAMES_IN_FLIGHT)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, WindowSwapChain::MAX_FRAMES_IN_FLIGHT)
+                .setMaxSets(ISwapChain::MAX_FRAMES_IN_FLIGHT)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, ISwapChain::MAX_FRAMES_IN_FLIGHT)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, ISwapChain::MAX_FRAMES_IN_FLIGHT)
                 .build();
 
         globalDescriptorSets.resize(WindowSwapChain::MAX_FRAMES_IN_FLIGHT);
@@ -44,13 +48,29 @@ namespace Atlas {
                     .build(globalDescriptorSets[i]);
         }
 
+        AssetHandle brdfHandle = AssetManager::get().loadTexture("cubemaps/brdf_lut.hdr", VK_FORMAT_R32G32B32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        if (auto brdfSampler = AssetManager::get().getTexture(brdfHandle)) {
+            VkDescriptorImageInfo brdfImageInfo{};
+            brdfImageInfo.sampler = brdfSampler->getSampler();
+            brdfImageInfo.imageView = brdfSampler->getImageView();
+            brdfImageInfo.imageLayout = brdfSampler->getImageLayout();
+
+            for (size_t i = 0; i < globalDescriptorSets.size(); ++i) {
+                DescriptorWriter(*globalSetLayout, *globalPool)
+                        .writeImage(1, &brdfImageInfo)
+                        .overwrite(globalDescriptorSets[i]);
+            }
+        } else {
+            AT_WARN("Failed to get BRDF sampler asset after loading: {}", AssetManager::get().getPath(brdfHandle));
+        }
+
         cameraSystem = std::make_unique<CameraSystem>(renderer.getWindow());
         renderSystem = std::make_unique<RenderSystemV2>(renderer.getDevice(), renderer.getSwapChainRenderPass(), *globalSetLayout);
         skyboxSystem = std::make_unique<SkyboxSystem>(renderer.getDevice(), renderer.getSwapChainRenderPass(), *globalSetLayout);
     }
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
-        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet.glb");
+        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet_with_light2.glb");
 
         auto cameraEntity = registry.create();
         registry.emplace<TransformComponent>(cameraEntity);
@@ -79,8 +99,8 @@ namespace Atlas {
         int frameIndex = renderer.getFrameIndex();
 
         const GlobalUbo ubo{
-            camera.getData(true),
-            glm::vec4(1.0f, 1.0f, 1.0f, 0.025f), // ambient color
+            camera.getData(),
+            glm::vec4(0.02, 0.02, 0.03, 1.0), // ambient color
             glm::vec3(-1.0f), // light position
             0.0f,
             glm::vec4(1.0f) // light color

@@ -17,7 +17,7 @@ namespace Atlas {
     public:
         static constexpr uint32_t MAX_TEXTURES = 1024;
         static constexpr uint32_t MAX_OBJECTS = 10000;
-        static constexpr uint32_t MAX_LIGHTS = 100;
+        static constexpr uint32_t MAX_LIGHTS = 5;
         static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 1'000'000;
         static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
 
@@ -50,14 +50,16 @@ namespace Atlas {
         };
 
         struct Light {
-            uint32_t type{static_cast<uint32_t>(LightType::SPOT)};  // offset 0
-            float intensity{1.0f};                                   // offset 4
-            float range{0.0f};                                       // offset 8
-            float innerConeAngle{0.0f};                              // offset 12
-            glm::vec3 color{1.0f};                                   // offset 16
-            float outerConeAngle{glm::radians(45.0f)};               // offset 28
-            glm::vec3 position{0.0f};                                // offset 32
-            float _pad{0.0f};                                        // offset 44
+            uint32_t type{static_cast<uint32_t>(LightType::SPOT)};
+            float intensity{1.0f};
+            float range{0.0f};
+            float innerConeAngle{0.0f};
+            glm::vec3 color{1.0f};
+            float outerConeAngle{glm::radians(45.0f)};
+            glm::vec3 position{0.0f};
+            float _pad0{0.0f};
+            glm::vec3 direction{0.0f, -1.0f, 0.0f};
+            float _pad1{0.0f};
         };
 
         void createDescriptors();
