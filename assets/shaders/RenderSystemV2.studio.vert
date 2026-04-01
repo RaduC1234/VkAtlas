@@ -39,7 +39,7 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
     vec4 lightColor;
 } ubo;
 
-layout(std430, set = 2, binding = 0) readonly buffer ObjectDataBuffer {
+layout(std430, set = 3, binding = 0) readonly buffer ObjectDataBuffer {
     GPUObjectData objects[];
 } objectData;
 

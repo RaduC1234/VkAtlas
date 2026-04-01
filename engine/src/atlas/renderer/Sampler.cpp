@@ -30,7 +30,13 @@ namespace Atlas {
                 bytesPerPixel = 8;
                 break;
             case VK_FORMAT_R32G32B32_SFLOAT:
-               bytesPerPixel = 16;
+                bytesPerPixel = 12;
+                break;
+            case VK_FORMAT_R32G32B32A32_SFLOAT:
+                bytesPerPixel = 16;
+                break;
+            case VK_FORMAT_R16G16_SFLOAT:
+                bytesPerPixel = 4;
                 break;
             default:
                 bytesPerPixel = 4;

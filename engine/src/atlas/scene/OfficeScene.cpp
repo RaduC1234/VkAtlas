@@ -33,35 +33,41 @@ namespace Atlas {
                 .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
                 .build();
 
-        // Pool must provide enough combined image sampler descriptors for each frame-in-flight
         globalPool = DescriptorPool::Builder(renderer.getDevice())
                 .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, SwapChain::MAX_FRAMES_IN_FLIGHT)
                 .build();
 
-        globalDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
-        for (int i = 0; i < globalDescriptorSets.size(); i++) {
-            auto bufferInfo = uboBuffers[i]->descriptorInfo();
-            DescriptorWriter(*globalSetLayout, *globalPool)
-                    .writeBuffer(0, &bufferInfo)
-                    .build(globalDescriptorSets[i]);
+        // Load BRDF LUT first so both bindings can be written together in one pass
+        AssetHandle brdfHandle = AssetManager::get().loadTexture(
+            "cubemaps/brdf_lut.hdr",
+            VK_FORMAT_R32G32B32A32_SFLOAT,
+            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+        );
+
+        auto brdfTex = AssetManager::get().getTexture(brdfHandle);
+        if (!brdfTex) {
+            AT_ERROR("Failed to load BRDF LUT texture");
         }
 
-        AssetHandle brdfHandle = AssetManager::get().loadTexture("cubemaps/brdf_lut.hdr", VK_FORMAT_R32G32B32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-        if (auto brdfSampler = AssetManager::get().getTexture(brdfHandle)) {
-            VkDescriptorImageInfo brdfImageInfo{};
-            brdfImageInfo.sampler = brdfSampler->getSampler();
-            brdfImageInfo.imageView = brdfSampler->getImageView();
-            brdfImageInfo.imageLayout = brdfSampler->getImageLayout();
+        VkDescriptorImageInfo brdfImageInfo{};
+        brdfImageInfo.sampler     = brdfTex->getSampler();
+        brdfImageInfo.imageView   = brdfTex->getImageView();
+        brdfImageInfo.imageLayout = brdfTex->getImageLayout();
 
-            for (size_t i = 0; i < globalDescriptorSets.size(); ++i) {
-                DescriptorWriter(*globalSetLayout, *globalPool)
-                        .writeImage(1, &brdfImageInfo)
-                        .overwrite(globalDescriptorSets[i]);
+        // Single build pass — writes both binding 0 (UBO) and binding 1 (BRDF LUT) together
+        globalDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        for (int i = 0; i < static_cast<int>(globalDescriptorSets.size()); i++) {
+            auto bufferInfo = uboBuffers[i]->descriptorInfo();
+            const bool ok = DescriptorWriter(*globalSetLayout, *globalPool)
+                    .writeBuffer(0, &bufferInfo)
+                    .writeImage(1, &brdfImageInfo)
+                    .build(globalDescriptorSets[i]);
+
+            if (!ok) {
+                AT_ERROR("Failed to build global descriptor set {}", i);
             }
-        } else {
-            AT_WARN("Failed to get BRDF sampler asset after loading: {}", AssetManager::get().getPath(brdfHandle));
         }
 
         cameraSystem = std::make_unique<CameraSystem>(renderer.getWindow());
@@ -76,9 +82,12 @@ namespace Atlas {
         registry.emplace<TransformComponent>(cameraEntity);
         registry.emplace<CameraComponent>(cameraEntity, camera);
 
-        AssetHandle skybox = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k.hdr");
+        AssetHandle skybox     = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k.hdr");
+        AssetHandle irradiance = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k_irradiance.ktx2");
+        AssetHandle prefilter  = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k_prefilter.ktx2");
+
         auto skyboxEntity = registry.create();
-        registry.emplace<SkyboxComponent>(skyboxEntity, skybox);
+        registry.emplace<SkyboxComponent>(skyboxEntity, skybox, irradiance, prefilter);
 
         renderSystem->build(registry);
     }
@@ -90,9 +99,11 @@ namespace Atlas {
     }
 
     void OfficeScene::onRender(float deltaTime, float aspectRatio) {
+        static float ibl = 0.03f;
 #ifdef ATLAS_PLATFORM_DESKTOP
         ImGui::Begin("Debug Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        ImGui::SliderFloat("IBL Intensity", &ibl, 0.01, 0.5);
         ImGui::End();
 #endif
 
@@ -100,10 +111,10 @@ namespace Atlas {
 
         const GlobalUbo ubo{
             camera.getData(),
-            glm::vec4(0.02, 0.02, 0.03, 1.0), // ambient color
-            glm::vec3(-1.0f), // light position
-            0.0f,
-            glm::vec4(1.0f) // light color
+            glm::vec4(0.02, 0.02, 0.03, 1.0),
+            glm::vec3(-1.0f),
+            ibl,
+            glm::vec4(1.0f)
         };
         uboBuffers[frameIndex]->uploadData(&ubo, sizeof(GlobalUbo));
 

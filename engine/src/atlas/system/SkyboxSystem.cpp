@@ -79,7 +79,7 @@ namespace Atlas {
         AssetHandle cubemapHandle = INVALID_ASSET_HANDLE;
         for (auto entity: view) {
             auto &skybox = view.get<SkyboxComponent>(entity);
-            cubemapHandle = skybox.cubemapHandle;
+            cubemapHandle = skybox.skyboxHandle;
             break; // Only use first skybox
         }
 

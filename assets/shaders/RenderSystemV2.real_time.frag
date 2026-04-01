@@ -45,19 +45,22 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
     CameraData cameraData;
     vec4 ambientLightColor;
     vec3 lightPosition;
-    float padding1;
+    float iblIntensity;
     vec4 lightColor;
 } ubo;
 
 layout(set = 0, binding = 1) uniform sampler2D BRDF_LUT;
 
-layout(set = 1, binding = 0) uniform sampler2D textures[];
+layout(set = 1, binding = 0) uniform samplerCube irradianceMap;
+layout(set = 1, binding = 1) uniform samplerCube prefilterMap;
 
-layout(std430, set = 2, binding = 0) readonly buffer ObjectDataBuffer {
+layout(set = 2, binding = 0) uniform sampler2D textures[];
+
+layout(std430, set = 3, binding = 0) readonly buffer ObjectDataBuffer {
     GPUObjectData objects[];
 } objectData;
 
-layout(std430, set = 3, binding = 0) readonly buffer LightBuffer {
+layout(std430, set = 4, binding = 0) readonly buffer LightBuffer {
     Light lights[5];
 } lightData;
 
@@ -65,6 +68,10 @@ const float PI      = 3.14159265359;
 const float INV_PI  = 0.31830988618;
 const float EPSILON = 1e-5;
 const uint  MAX_LIGHTS = 5u;
+
+// Number of mip levels baked into the prefilter cubemap.
+// Must match what your IBL precompute pass uses.
+const float MAX_REFLECTION_LOD = 5.0;
 
 
 // ---- BRDF ----
@@ -84,10 +91,18 @@ float V_SmithGGXCorrelated(float NdotV, float NdotL, float roughness) {
     return 0.5 / max(v + l, EPSILON);
 }
 
-vec3 F_Schlick(float HdotV, vec3 F0) {
-    float f  = 1.0 - HdotV;
+vec3 F_Schlick(float cosTheta, vec3 F0) {
+    float f  = 1.0 - cosTheta;
     float f2 = f * f;
     return F0 + (1.0 - F0) * (f2 * f2 * f);
+}
+
+// Roughness-attenuated Fresnel for IBL — avoids over-darkening at grazing angles.
+vec3 F_SchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+    float f  = 1.0 - cosTheta;
+    float f2 = f * f;
+    vec3  r  = max(vec3(1.0 - roughness), F0);
+    return F0 + (r - F0) * (f2 * f2 * f);
 }
 
 
@@ -112,7 +127,7 @@ float spotAttenuation(vec3 L, vec3 dir, float innerAngle, float outerAngle) {
 }
 
 
-// ---- Light evaluation ----
+// ---- Direct light evaluation ----
 
 vec3 evaluateLight(
 Light light,
@@ -127,7 +142,7 @@ vec3 albedo, float metallic, float roughness, vec3 F0)
 
     float atten = distanceAttenuation(dist, light.range);
 
-    if (light.type == 2u) // spot
+    if (light.type == 2u)// spot
     atten *= spotAttenuation(L, normalize(light.direction), light.innerConeAngle, light.outerConeAngle);
 
     float NdotL = dot(N, L);
@@ -148,6 +163,33 @@ vec3 albedo, float metallic, float roughness, vec3 F0)
 
     vec3 radiance = light.color * light.intensity * atten;
     return (diffuse + specular) * radiance * NdotL;
+}
+
+
+// ---- IBL ambient (irradiance + split-sum specular) ----
+
+vec3 evaluateIBL(vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, vec3 F0, float ao)
+{
+    float NdotV = max(dot(N, V), 0.0);
+
+    // --- Diffuse IBL ---
+    // The irradiance map already integrates the hemisphere, so a single sample suffices.
+    vec3 irradiance = texture(irradianceMap, N).rgb;
+    vec3 kS_ibl     = F_SchlickRoughness(NdotV, F0, roughness);
+    vec3 kD_ibl     = (1.0 - kS_ibl) * (1.0 - metallic);
+    vec3 diffuse_ibl  = kD_ibl * irradiance * albedo * ao;
+
+    // --- Specular IBL (Epic split-sum) ---
+    // Sample the pre-filtered env map at the correct mip for this roughness.
+    vec3  R                = reflect(-V, N);
+    float lod              = roughness * MAX_REFLECTION_LOD;
+    vec3  prefilteredColor = textureLod(prefilterMap, R, lod).rgb;
+
+    // Sample the BRDF integration LUT (NdotV on x, roughness on y).
+    vec2 brdf        = texture(BRDF_LUT, vec2(NdotV, roughness)).rg;
+    vec3 specular_ibl = prefilteredColor * (kS_ibl * brdf.x + brdf.y);
+
+    return diffuse_ibl + specular_ibl;
 }
 
 
@@ -176,8 +218,8 @@ vec3 ACESFitted(vec3 color) {
     );
     const mat3 output_mat = mat3(
     1.60475, -0.10208, -0.00327,
-    -0.53108,  1.10813, -0.07276,
-    -0.07367, -0.00605,  1.07602
+    -0.53108, 1.10813, -0.07276,
+    -0.07367, -0.00605, 1.07602
     );
 
     color = input_mat * color;
@@ -213,7 +255,7 @@ void main() {
     obj.textureIndices.y
     );
 
-    // Metallic-roughness
+    // Metallic-roughness (glTF: G = roughness, B = metallic)
     float metallic  = 0.0;
     float roughness = 0.5;
     if (obj.textureIndices.z != 0u) {
@@ -228,13 +270,12 @@ void main() {
     if (obj.textureIndices.w != 0u)
     ao = texture(textures[nonuniformEXT(obj.textureIndices.w)], fragTexCoord).r;
 
-    // Setup
+    // Common setup
     vec3 V  = normalize(ubo.cameraData.position - fragWorldPos);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    // Ambient
-    vec3 ambient = ubo.ambientLightColor.rgb * ubo.ambientLightColor.a
-    * albedo * (1.0 - metallic) * ao;
+    // IBL ambient (replaces the old flat constant ambient)
+    vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao) * ubo.iblIntensity;
 
     // Direct lighting
     vec3 Lo = vec3(0.0);
@@ -246,7 +287,7 @@ void main() {
         );
     }
 
-    // Final
+    // Composite, tonemap, gamma
     vec3 color = ambient + Lo;
     color = ACESFitted(color);
     color = linearToSRGB(color);

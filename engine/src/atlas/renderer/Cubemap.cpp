@@ -287,8 +287,11 @@ namespace Atlas {
             cubemap->height = ktxTex->baseHeight;
             cubemap->mipLevels = ktxTex->numLevels;
             VkFormat format = static_cast<VkFormat>(ktxTex->vkFormat);
+            if (format == VK_FORMAT_UNDEFINED) {
+                format = VK_FORMAT_R32G32B32A32_SFLOAT;
+                AT_WARN("KTX2 vkFormat was UNDEFINED, defaulting to R32G32B32A32_SFLOAT");
+            }
 
-            // One staging buffer for all faces and mips
             VkDeviceSize totalSize = ktxTexture_GetDataSize(ktxTexture(ktxTex));
 
             Buffer stagingBuffer(

@@ -17,7 +17,7 @@ namespace Atlas {
         Camera::Data cameraData;
         glm::vec4 ambientColor{1.0f, 1.0f, 1.0f, 0.002f};
         glm::vec3 lightPosition{-1.0f};
-        float padding1;
+        float iblIntensity;
         glm::vec4 lightColor{1.0f};
     };
 

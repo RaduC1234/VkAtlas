@@ -80,8 +80,12 @@ namespace Atlas {
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         std::unique_ptr<DescriptorPool> rendererPool;
 
+        // set 1 - environment
+        std::unique_ptr<DescriptorSetLayout> environmentSetLayout;
+        VkDescriptorSet environmentSet = VK_NULL_HANDLE;
 
-        // Set 1 — bindless textures
+
+        // Set 2 — bindless textures
         std::unique_ptr<DescriptorSetLayout> textureSetLayout;
         VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
         uint32_t nextTextureSlot = 1; // slot 0 = default white
@@ -89,7 +93,7 @@ namespace Atlas {
         AssetHandle defaultWhiteTextureHandle = INVALID_ASSET_HANDLE;
 
 
-        // Set 2 — per-object SSBO
+        // Set 3 — per-object SSBO
         // Keyed by entt::entity — dense index == firstInstance in the draw command,
         // so the shader can index opaqueObjectData[gl_InstanceIndex] directly.
         std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
@@ -105,7 +109,7 @@ namespace Atlas {
         std::unique_ptr<Buffer> transparentIndirectCommandBuffer;
 
 
-        // Set 3 — lights SSBO
+        // Set 4 — lights SSBO
         Storage<Light> lights;
         std::unique_ptr<Buffer> lightsBuffer;
         VkDescriptorSet lightSet = VK_NULL_HANDLE;

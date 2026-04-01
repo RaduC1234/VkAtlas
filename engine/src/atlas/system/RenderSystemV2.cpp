@@ -12,16 +12,18 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
+#include "core/Log.hpp"
+
 namespace Atlas {
     RenderSystemV2::RenderSystemV2(Device &device, VkRenderPass renderPass, const DescriptorSetLayout &globalSetLayout)
         : device(device) {
         createDescriptors();
         createPipelineLayout(globalSetLayout);
         createPipelines(renderPass);
-        createGPUBuffers();
-
         defaultWhiteTextureHandle = AssetManager::get().createDefaultWhiteTexture();
         registerTexture(defaultWhiteTextureHandle);
+
+        createGPUBuffers();
     }
 
     RenderSystemV2::~RenderSystemV2() {
@@ -29,29 +31,38 @@ namespace Atlas {
     }
 
     void RenderSystemV2::createDescriptors() {
-        // Set 1 — bindless textures
+        // set 1 - environment
+        environmentSetLayout = DescriptorSetLayout::Builder(device)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+                .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+                .build();
+
+        // Set 2 — bindless textures
         textureSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES)
                 .setBindingFlags(0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
                 .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
                 .build();
 
-        // Set 2 — per-object SSBO
+        // Set 3 — per-object SSBO
         objectDataSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1)
                 .build();
 
-        // Set 3 — lights SSBO
+        // Set 4 — lights SSBO
         lightSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
                 .build();
 
         rendererPool = DescriptorPool::Builder(device)
-                .setMaxSets(4)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES)
+                .setMaxSets(5)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES + 2)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3)
                 .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                 .build();
+
+        if (!rendererPool->allocateDescriptor(environmentSetLayout->getDescriptorSetLayout(), environmentSet))
+            throw std::runtime_error("Failed to allocate environment descriptor set");
 
         if (!rendererPool->allocateDescriptor(textureSetLayout->getDescriptorSetLayout(), bindlessTextureSet))
             throw std::runtime_error("Failed to allocate bindless texture descriptor set");
@@ -69,9 +80,10 @@ namespace Atlas {
     void RenderSystemV2::createPipelineLayout(const DescriptorSetLayout &globalSetLayout) {
         const std::vector layouts{
             globalSetLayout.getDescriptorSetLayout(), // set 0 — camera / global UBO
-            textureSetLayout->getDescriptorSetLayout(), // set 1 — bindless textures
-            objectDataSetLayout->getDescriptorSetLayout(), // set 2 — per-object SSBO
-            lightSetLayout->getDescriptorSetLayout(), // set 3 — lights SSBO
+            environmentSetLayout->getDescriptorSetLayout(), // set 1 — IBL cubemaps
+            textureSetLayout->getDescriptorSetLayout(), // set 2 — bindless textures
+            objectDataSetLayout->getDescriptorSetLayout(), // set 3 — per-object SSBO
+            lightSetLayout->getDescriptorSetLayout(), // set 4 — lights SSBO
         };
 
         VkPipelineLayoutCreateInfo info{};
@@ -287,6 +299,41 @@ namespace Atlas {
     }
 
     void RenderSystemV2::build(entt::registry &registry) {
+        auto skyboxView = registry.view<SkyboxComponent>();
+
+        if (skyboxView.empty()) {
+            AT_WARN("No skybox bound.");
+        } else {
+            if (skyboxView.size() > 1) {
+                AT_WARN("Multiple skyboxes detected. Using the first one");
+            }
+
+            auto entity = *skyboxView.begin();
+            const auto &skybox = registry.get<SkyboxComponent>(entity);
+            const auto irradiance = AssetManager::get().getCubemap(skybox.irradianceHandle);
+            const auto prefilter = AssetManager::get().getCubemap(skybox.prefilterHandle);
+
+            if (irradiance && prefilter) {
+                VkDescriptorImageInfo irradianceInfo{irradiance->getSampler(), irradiance->getImageView(), irradiance->getImageLayout()};
+                VkDescriptorImageInfo prefilterInfo{prefilter->getSampler(), prefilter->getImageView(), prefilter->getImageLayout()};
+
+                VkWriteDescriptorSet w0{};
+                w0.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                w0.dstSet = environmentSet;
+                w0.dstBinding = 0;
+                w0.descriptorCount = 1;
+                w0.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                w0.pImageInfo = &irradianceInfo;
+
+                VkWriteDescriptorSet w1 = w0; // this is hacky, but I don't have time for a better implementation
+                w1.dstBinding = 1;
+                w1.pImageInfo = &prefilterInfo;
+
+                const VkWriteDescriptorSet writes[] = {w0, w1};
+                vkUpdateDescriptorSets(device.device(), 2, writes, 0, nullptr);
+            }
+        }
+
         auto *opaqueDrawCommands = static_cast<VkDrawIndexedIndirectCommand *>(indirectCommandBuffer->getMapped());
         auto *transparentDrawCommands = static_cast<VkDrawIndexedIndirectCommand *>(transparentIndirectCommandBuffer->getMapped());
 
@@ -371,7 +418,6 @@ namespace Atlas {
         }
     }
 
-
     void RenderSystemV2::render(VkCommandBuffer graphicsCommandBuffer, VkDescriptorSet globalSet) {
         // Opaque (non-transparent) pass
         if (!opaqueObjectData.empty()) {
@@ -380,12 +426,13 @@ namespace Atlas {
 
             const VkDescriptorSet opaqueSets[] = {
                 globalSet,
+                environmentSet,
                 bindlessTextureSet,
                 objectDataSet,
                 lightSet
             };
 
-            vkCmdBindDescriptorSets(graphicsCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, opaqueSets, 0, nullptr);
+            vkCmdBindDescriptorSets(graphicsCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 5, opaqueSets, 0, nullptr);
 
             VkBuffer opaqueVertexBuf = mergedVertexBuffer->get();
             VkDeviceSize opaqueOffset = 0;
@@ -407,12 +454,13 @@ namespace Atlas {
 
             const VkDescriptorSet transparentSets[] = {
                 globalSet,
+                environmentSet,
                 bindlessTextureSet,
                 transparentObjectDataSet,
                 lightSet
             };
 
-            vkCmdBindDescriptorSets(graphicsCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, transparentSets, 0, nullptr);
+            vkCmdBindDescriptorSets(graphicsCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 5, transparentSets, 0, nullptr);
 
             VkBuffer transparentVertexBuf = mergedVertexBuffer->get();
             VkDeviceSize transparentOffset = 0;
