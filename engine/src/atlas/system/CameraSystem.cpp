@@ -13,16 +13,25 @@ namespace Atlas {
         this->lastMousePosition = {x, y};
     }
 
-    void CameraSystem::update(entt::registry &registry, float deltaTime, float screenAspect) const {
+    void CameraSystem::update(entt::registry &registry, float deltaTime, float screenAspect) {
+        auto [mx, my] = Mouse::getCursorPosition();
+        glm::vec2 curPos = {mx, my};
+
         if (Mouse::isButtonPressed(keyMappings.lockCamera)) {
-            window.setCursorMode(WINDOW_CURSOR_DISABLED);
+            if (!locked) {
+                window.setCursorMode(WINDOW_CURSOR_DISABLED);
+                lastMousePosition = curPos;
+                locked = true;
+            }
         } else {
-            window.setCursorMode(WINDOW_CURSOR_NORMAL);
+            if (locked) {
+                window.setCursorMode(WINDOW_CURSOR_NORMAL);
+                locked = false;
+            }
+
             return;
         }
 
-        auto [mx, my] = Mouse::getCursorPosition();
-        glm::vec2 curPos = {mx, my};
         glm::vec2 delta = curPos - lastMousePosition;
         lastMousePosition = curPos;
 

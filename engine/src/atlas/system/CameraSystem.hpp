@@ -19,13 +19,14 @@ namespace Atlas {
 
         CameraSystem(Window &window);
 
-        void update(entt::registry &registry, float deltaTime, float screenAspect) const;;
+        void update(entt::registry &registry, float deltaTime, float screenAspect);
 
     private:
         Window &window;
         KeyMappings keyMappings{};
 
-        mutable glm::vec2 lastMousePosition{};
+        bool locked{false};
+        glm::vec2 lastMousePosition{};
         float moveSpeed{2.0f};
         float lookSpeed{1.5f};
         float mouseSens{0.25};
