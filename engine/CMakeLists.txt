@@ -7,6 +7,7 @@ file(GLOB_RECURSE ENGINE_SOURCES "src/*.cpp" "src/*.hpp")
 add_library(atlas_engine SHARED ${ENGINE_SOURCES})
 
 target_compile_definitions(atlas_engine
+        PRIVATE VMA_VULKAN_VERSION=1001000 # VMA use Vulkan 1.1
         PRIVATE AVALON_BUILD_SHARED
         INTERFACE AVALON_USE_SHARED
 )

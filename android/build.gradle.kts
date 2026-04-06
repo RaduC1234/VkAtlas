@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId = "me.radu.atlas"
-        minSdk = 33
+        minSdk = 31
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -18,6 +18,9 @@ android {
             cmake {
                 cppFlags += "-std=c++17"
             }
+        }
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 
@@ -40,7 +43,7 @@ android {
     externalNativeBuild {
         cmake {
             path = file("../CMakeLists.txt")
-            version = "3.22.1"
+            version = "3.30.5"
         }
     }
 
