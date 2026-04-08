@@ -666,6 +666,7 @@ namespace Atlas {
         std::string err, warn;
 
         loader.RemoveImageLoader();
+        loader.SetStoreOriginalJSONForExtrasAndExtensions(true);
 
         bool success = loader.LoadBinaryFromMemory(&model, &err, &warn, fileBuffer.data(), static_cast<const uint32_t>(fileBuffer.size()));
 
@@ -1258,10 +1259,12 @@ namespace Atlas {
         }
 
         // KHR_lights_punctual
+        entt::entity punctualLightEntity = entt::null;
         if (node.light >= 0 && node.light < static_cast<int>(model.lights.size())) {
             const tinygltf::Light &gltfLight = model.lights[node.light];
 
             auto entity = registry.create();
+            punctualLightEntity = entity;
 
             glm::vec3 translation, scale, skew;
             glm::quat rotation;
@@ -1306,6 +1309,91 @@ namespace Atlas {
             AT_TRACE("Created light entity: type={}, color=({}, {}, {}), intensity={}, range={}",
                      gltfLight.type, light.color.r, light.color.g, light.color.b,
                      light.intensity, light.range);
+        }
+
+        // ATLAS_lights_punctual
+        {
+            auto nodeAtlasIt = node.extensions.find("ATLAS_lights_special");
+            if (nodeAtlasIt != node.extensions.end() && nodeAtlasIt->second.IsObject()) {
+                const tinygltf::Value &nodeAtlas = nodeAtlasIt->second;
+
+                if (nodeAtlas.Has("light") && nodeAtlas.Get("light").IsInt()) {
+                    const int lightIndex = nodeAtlas.Get("light").Get<int>();
+
+                    auto modelAtlasIt = model.extensions.find("ATLAS_lights_special");
+                    if (modelAtlasIt != model.extensions.end() && modelAtlasIt->second.IsObject()) {
+                        const tinygltf::Value &modelAtlas = modelAtlasIt->second;
+
+                        if (modelAtlas.Has("lights") && modelAtlas.Get("lights").IsArray()) {
+                            const auto &lightsArr = modelAtlas.Get("lights").Get<tinygltf::Value::Array>();
+
+                            if (lightIndex >= 0 && lightIndex < static_cast<int>(lightsArr.size()) && lightsArr[lightIndex].IsObject()) {
+                                const tinygltf::Value &lobj = lightsArr[lightIndex];
+
+                                // Decompose node transform
+                                glm::vec3 translation, scale, skew;
+                                glm::quat rotation;
+                                glm::vec4 perspective;
+                                glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
+
+                                auto entity = registry.create();
+
+                                auto &transform = registry.emplace<TransformComponent>(entity);
+                                transform.translation = translation * glm::vec3(1.0f, -1.0f, 1.0f);
+                                transform.rotation = glm::eulerAngles(rotation);
+                                transform.scale = scale;
+
+                                auto &light = registry.emplace<LightComponent>(entity);
+
+                                // type
+                                std::string type = "rect";
+                                if (lobj.Has("type") && lobj.Get("type").IsString()) {
+                                    type = lobj.Get("type").Get<std::string>();
+                                }
+                                if (type == "rect") {
+                                    light.type = LightType::RECT;
+                                }
+
+                                // color
+                                light.color = glm::vec3(1.0f);
+                                if (lobj.Has("color") && lobj.Get("color").IsArray()) {
+                                    const auto &carr = lobj.Get("color").Get<tinygltf::Value::Array>();
+                                    if (carr.size() >= 3 && carr[0].IsNumber() && carr[1].IsNumber() && carr[2].IsNumber()) {
+                                        light.color = glm::vec3(
+                                            static_cast<float>(carr[0].Get<double>()),
+                                            static_cast<float>(carr[1].Get<double>()),
+                                            static_cast<float>(carr[2].Get<double>())
+                                        );
+                                    }
+                                }
+
+                                // intensity
+                                if (lobj.Has("intensity") && lobj.Get("intensity").IsNumber()) {
+                                    light.intensity = static_cast<float>(lobj.Get("intensity").Get<double>());
+                                }
+
+                                // width/height
+                                if (lobj.Has("width") && lobj.Get("width").IsNumber()) {
+                                    light.width = static_cast<float>(lobj.Get("width").Get<double>());
+                                }
+                                if (lobj.Has("height") && lobj.Get("height").IsNumber()) {
+                                    light.height = static_cast<float>(lobj.Get("height").Get<double>());
+                                }
+
+                                outEntities.push_back(entity);
+
+                                if (lobj.Has("name") && lobj.Get("name").IsString()) {
+                                    AT_TRACE("Created ATLAS_lights_special (ext) light '{}' idx={} type={} width={} height={} intensity={}",
+                                             lobj.Get("name").Get<std::string>(), lightIndex, type, light.width, light.height, light.intensity);
+                                } else {
+                                    AT_TRACE("Created ATLAS_lights_special (ext) light idx={} type={} width={} height={} intensity={}",
+                                             lightIndex, type, light.width, light.height, light.intensity);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         for (int childIdx: node.children) {

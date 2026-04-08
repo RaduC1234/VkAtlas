@@ -17,7 +17,7 @@ namespace Atlas {
     public:
         static constexpr uint32_t MAX_TEXTURES = 1024;
         static constexpr uint32_t MAX_OBJECTS = 10000;
-        static constexpr uint32_t MAX_LIGHTS = 5;
+        static constexpr uint32_t MAX_LIGHTS = 32;
         static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 1'000'000;
         static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
 
@@ -57,9 +57,9 @@ namespace Atlas {
             glm::vec3 color{1.0f};
             float outerConeAngle{glm::radians(45.0f)};
             glm::vec3 position{0.0f};
-            float _pad0{0.0f};
+            float width{0.0f};
             glm::vec3 direction{0.0f, -1.0f, 0.0f};
-            float _pad1{0.0f};
+            float height{0.0f};
         };
 
         void createDescriptors();

@@ -400,9 +400,9 @@ namespace Atlas {
                                light.color,
                                light.outerConeAngle,
                                transform.translation,
-                               0,
+                               light.width,
                                light.direction,
-                               0
+                               light.height
                            ));
         }
 

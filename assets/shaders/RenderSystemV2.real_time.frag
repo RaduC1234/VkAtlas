@@ -27,9 +27,9 @@ struct Light {
     vec3  color;
     float outerConeAngle;
     vec3  position;
-    float _pad0;
+    float width;
     vec3  direction;
-    float _pad1;
+    float height;
 };
 
 layout(location = 0) in vec3 fragWorldPos;
@@ -46,7 +46,10 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
     vec4 ambientLightColor;
     vec3 lightPosition;
     float iblIntensity;
-    vec4 lightColor;
+    float exposure;
+    float _padding1;
+    float _padding2;
+    float _padding3;
 } ubo;
 
 layout(set = 0, binding = 1) uniform sampler2D BRDF_LUT;
@@ -61,7 +64,7 @@ layout(std430, set = 3, binding = 0) readonly buffer ObjectDataBuffer {
 } objectData;
 
 layout(std430, set = 4, binding = 0) readonly buffer LightBuffer {
-    Light lights[5];
+    Light lights[];
 } lightData;
 
 const float PI      = 3.14159265359;
@@ -136,14 +139,23 @@ vec3 albedo, float metallic, float roughness, vec3 F0)
 {
     if (light.intensity <= 0.0) return vec3(0.0);
 
-    vec3  toLight = light.position - worldPos;
-    float dist    = length(toLight);
-    vec3  L       = toLight / max(dist, EPSILON);
+    vec3  L;
+    float atten;
 
-    float atten = distanceAttenuation(dist, light.range);
+    if (light.type == 1u) {
+        // Directional light — L is opposite of light direction, no attenuation
+        L     = normalize(-light.direction);
+        atten = 1.0;
+    } else {
+        // Point or spot light
+        vec3  toLight = light.position - worldPos;
+        float dist    = length(toLight);
+        L             = toLight / max(dist, EPSILON);
+        atten         = distanceAttenuation(dist, light.range);
 
-    if (light.type == 2u)// spot
-    atten *= spotAttenuation(L, normalize(light.direction), light.innerConeAngle, light.outerConeAngle);
+        if (light.type == 2u) // spot
+        atten *= spotAttenuation(L, normalize(light.direction), light.innerConeAngle, light.outerConeAngle);
+    }
 
     float NdotL = dot(N, L);
     if (NdotL <= 0.0) return vec3(0.0);
@@ -161,7 +173,11 @@ vec3 albedo, float metallic, float roughness, vec3 F0)
     vec3 kD       = (1.0 - F) * (1.0 - metallic);
     vec3 diffuse  = kD * albedo * INV_PI;
 
-    vec3 radiance = light.color * light.intensity * atten;
+    float intensityScale = (light.type == 0u) ? (1.0 / (4.0 * PI))
+    : (light.type == 2u) ? (1.0 / PI)
+    : 1.0;
+
+    vec3 radiance = light.color * light.intensity * intensityScale * atten;
     return (diffuse + specular) * radiance * NdotL;
 }
 
@@ -175,6 +191,7 @@ vec3 evaluateIBL(vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, v
     // --- Diffuse IBL ---
     // The irradiance map already integrates the hemisphere, so a single sample suffices.
     vec3 irradiance = texture(irradianceMap, N).rgb;
+    irradiance = irradiance / (irradiance + vec3(1.0)); // Reinhard normalize before use
     vec3 kS_ibl     = F_SchlickRoughness(NdotV, F0, roughness);
     vec3 kD_ibl     = (1.0 - kS_ibl) * (1.0 - metallic);
     vec3 diffuse_ibl  = kD_ibl * irradiance * albedo * ao;
@@ -289,8 +306,10 @@ void main() {
 
     // Composite, tonemap, gamma
     vec3 color = ambient + Lo;
+    color = color * ubo.exposure;
     color = ACESFitted(color);
     color = linearToSRGB(color);
 
     outColor = vec4(color, alpha);
 }
+

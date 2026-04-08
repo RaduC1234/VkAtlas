@@ -52,8 +52,8 @@ namespace Atlas {
         }
 
         VkDescriptorImageInfo brdfImageInfo{};
-        brdfImageInfo.sampler     = brdfTex->getSampler();
-        brdfImageInfo.imageView   = brdfTex->getImageView();
+        brdfImageInfo.sampler = brdfTex->getSampler();
+        brdfImageInfo.imageView = brdfTex->getImageView();
         brdfImageInfo.imageLayout = brdfTex->getImageLayout();
 
         // Single build pass — writes both binding 0 (UBO) and binding 1 (BRDF LUT) together
@@ -76,15 +76,15 @@ namespace Atlas {
     }
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
-        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet_with_light2.glb");
+        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet_with_light3.glb");
 
         auto cameraEntity = registry.create();
         registry.emplace<TransformComponent>(cameraEntity);
         registry.emplace<CameraComponent>(cameraEntity, camera);
 
-        AssetHandle skybox     = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k.hdr");
+        AssetHandle skybox = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k.hdr");
         AssetHandle irradiance = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k_irradiance.ktx2");
-        AssetHandle prefilter  = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k_prefilter.ktx2");
+        AssetHandle prefilter = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k_prefilter.ktx2");
 
         auto skyboxEntity = registry.create();
         registry.emplace<SkyboxComponent>(skyboxEntity, skybox, irradiance, prefilter);
@@ -100,10 +100,12 @@ namespace Atlas {
 
     void OfficeScene::onRender(float deltaTime, float aspectRatio) {
         static float ibl = 0.03f;
+        static float exposure = 1.0f;
 #ifdef ATLAS_PLATFORM_DESKTOP
         ImGui::Begin("Debug Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::SliderFloat("IBL Intensity", &ibl, 0.01, 0.5);
+        ImGui::SliderFloat("Exposure", &exposure, 0.01f, 5.0f);
         ImGui::End();
 #endif
 
@@ -114,7 +116,8 @@ namespace Atlas {
             glm::vec4(0.02, 0.02, 0.03, 1.0),
             glm::vec3(-1.0f),
             ibl,
-            glm::vec4(1.0f)
+            exposure,
+            0,0,0
         };
         uboBuffers[frameIndex]->uploadData(&ubo, sizeof(GlobalUbo));
 

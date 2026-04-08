@@ -34,6 +34,7 @@ namespace Atlas {
 
         void transitionImageLayout(VkImageLayout oldLayout, VkImageLayout newLayout);
         void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) const;
+        void generateMipmaps(VkImage, VkFormat, uint32_t, uint32_t, uint32_t);
 
         Device &device;
 
@@ -45,5 +46,6 @@ namespace Atlas {
 
         uint32_t width, height;
         VkFormat format = VK_FORMAT_R8G8B8A8_SRGB;
+        uint32_t mipLevels = 1;
     };
 }

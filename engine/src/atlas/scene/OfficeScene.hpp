@@ -18,7 +18,10 @@ namespace Atlas {
         glm::vec4 ambientColor{1.0f, 1.0f, 1.0f, 0.002f};
         glm::vec3 lightPosition{-1.0f};
         float iblIntensity;
-        glm::vec4 lightColor{1.0f};
+        float exposure;
+        float _padding1;
+        float _padding2;
+        float _padding3;
     };
 
     class OfficeScene : public Scene {

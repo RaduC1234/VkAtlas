@@ -98,9 +98,10 @@ namespace Atlas {
 
     enum class LightType : uint32_t {
         UNKNOWN = 0,
-        POINT,
-        SPOT,
-        DIRECTIONAL
+        POINT, // Uses KHR_punctual_lights
+        SPOT, // Uses KHR_punctual_lights
+        DIRECTIONAL, // Uses KHR_punctual_lights
+        RECT // Uses ATLAS_special_lights
     };
 
     struct LightComponent {
@@ -109,9 +110,13 @@ namespace Atlas {
         float intensity{1.0f};
         float range{0.0f}; // 0.0 = infinite
 
-        // For spot lights
+        // For SPOT lights
         glm::vec3 direction{0.0f, -1.0f, 0.0f};
         float innerConeAngle{0.0f};
         float outerConeAngle{glm::radians(45.0f)};
+
+        // For RECT lights
+        float width{0.0f};
+        float height{0.0f};
     };
 }

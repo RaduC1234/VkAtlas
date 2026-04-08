@@ -46,33 +46,12 @@ TYPE_SIZE = 4
 # RGBE loader (pure numpy, no extra deps)
 # ---------------------------------------------------------------------------
 def load_face(path: str) -> np.ndarray:
-    with open(path, "rb") as f:
-        raw = f.read()
-
-    # Skip header lines until blank line
-    i = 0
-    while True:
-        eol = raw.index(10, i)  # 10 = ord('\n')
-        line = raw[i:eol]
-        i = eol + 1
-        if line == b"":
-            break
-
-    # Resolution line: e.g. "-Y 32 +X 32"
-    eol = raw.index(10, i)
-    res = raw[i:eol].decode().split()
-    i = eol + 1
-    height = int(res[1])
-    width = int(res[3])
-
-    # Raw RGBE pixels
-    data = np.frombuffer(raw[i:], dtype=np.uint8).reshape(height, width, 4)
-    exp = data[:, :, 3].astype(np.int32) - 128 - 8
-    scale = np.ldexp(1.0, exp).astype(np.float32)
-    rgb = data[:, :, :3].astype(np.float32) * scale[:, :, np.newaxis]
-    alpha = np.ones((height, width, 1), dtype=np.float32)
-    return np.concatenate([rgb, alpha], axis=2)  # (H, W, 4) float32
-
+    import cv2
+    img = cv2.imread(path, cv2.IMREAD_UNCHANGED | cv2.IMREAD_ANYDEPTH)  # float32 BGR
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    h, w, c = img.shape
+    alpha = np.ones((h, w, 1), dtype=np.float32)
+    return np.concatenate([img, alpha], axis=2)
 
 # ---------------------------------------------------------------------------
 # KTX2 helpers
