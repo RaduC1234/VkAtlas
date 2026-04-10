@@ -1,0 +1,139 @@
+#pragma once
+#include <entt/entity/registry.hpp>
+
+#include "IRenderPass.hpp"
+#include "asset/AssetManager.hpp"
+#include "entity/Object.hpp"
+#include "renderer/Descriptors.hpp"
+#include "renderer/Mesh.hpp"
+#include "renderer/Pipeline.hpp"
+#include "utils/Storage.hpp"
+
+namespace Atlas {
+    class GeometryPass : IRenderPass {
+    public:
+        static constexpr uint32_t MAX_TEXTURES = 1024;
+        static constexpr uint32_t MAX_OBJECTS = 10000;
+        static constexpr uint32_t MAX_LIGHTS = 32;
+        static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 1'000'000;
+        static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
+
+        GeometryPass(Device &device, uint32_t width, uint32_t height, const DescriptorSetLayout &globalSetLayout);
+        ~GeometryPass();
+
+        GeometryPass(const GeometryPass &) = delete;
+        GeometryPass &operator=(const GeometryPass &) = delete;
+
+        VkRenderPass getRenderPass() const { return renderPass; }
+        VkImageView getColorView() const { return colorView; }
+
+        void begin(VkCommandBuffer cmd) override;
+        void end(VkCommandBuffer cmd) override;
+        void barrier(VkCommandBuffer cmd) override;
+        void getDeclaredResources(std::vector<PassResource> &out) const override;
+
+        void build(entt::registry &registry);
+        void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) const;
+
+    private:
+        struct GPUObjectData {
+            glm::mat4 modelMatrix;
+            glm::mat4 normalMatrix;
+            glm::uvec4 textureIndices; // albedo, normal, metallicRoughness, unused
+            glm::vec4 baseColor;
+        };
+
+        struct MeshAllocation {
+            uint32_t firstVertex = 0;
+            uint32_t vertexCount = 0;
+            uint32_t firstIndex = 0;
+            uint32_t indexCount = 0;
+        };
+
+        struct Light {
+            uint32_t type{static_cast<uint32_t>(LightType::SPOT)};
+            float intensity{1.0f};
+            float range{0.0f};
+            float innerConeAngle{0.0f};
+            glm::vec3 color{1.0f};
+            float outerConeAngle{glm::radians(45.0f)};
+            glm::vec3 position{0.0f};
+            float width{0.0f};
+            glm::vec3 direction{0.0f, -1.0f, 0.0f};
+            float height{0.0f};
+        };
+
+        Device& device;
+
+        // --- RT ---
+        VkImage colorImage = VK_NULL_HANDLE;
+        VmaAllocation colorAlloc = VK_NULL_HANDLE;
+        VkImageView colorView = VK_NULL_HANDLE;
+
+        VkImage depthImage = VK_NULL_HANDLE;
+        VmaAllocation depthAlloc = VK_NULL_HANDLE;
+        VkImageView depthView = VK_NULL_HANDLE;
+
+        VkRenderPass renderPass = VK_NULL_HANDLE;
+        VkFramebuffer framebuffer = VK_NULL_HANDLE;
+        VkExtent2D extent = {};
+
+        // Pipelines
+        std::unique_ptr<Pipeline> opaquePipeline;
+        //std::unique_ptr<Pipeline> transparentPipeline;
+        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+
+        // Descriptors
+        std::unique_ptr<DescriptorPool> pool;
+
+        // set 1 — environment (IBL cubemaps + BRDF LUT + shadow map)
+        std::unique_ptr<DescriptorSetLayout> environmentSetLayout;
+        VkDescriptorSet environmentSet = VK_NULL_HANDLE;
+
+        // set 2 — bindless textures
+        std::unique_ptr<DescriptorSetLayout> textureSetLayout;
+        VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
+        uint32_t nextTextureSlot = 1;
+        std::unordered_map<AssetHandle, uint32_t> handleToTextureSlot;
+        AssetHandle defaultWhiteHandle = INVALID_ASSET_HANDLE;
+
+        // set 3 — object SSBO
+        std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
+
+        Storage<GPUObjectData> opaqueObjectData;
+        std::unique_ptr<Buffer> objectDataBuffer;
+        VkDescriptorSet objectDataSet = VK_NULL_HANDLE;
+        std::unique_ptr<Buffer> opaqueIndirectCommandBuffer;
+
+        /*Storage<GPUObjectData> transparentObjectData;
+        std::unique_ptr<Buffer> transparentObjectDataBuffer;
+        VkDescriptorSet transparentObjectDataSet = VK_NULL_HANDLE;
+        std::unique_ptr<Buffer> transparentIndirectCommandBuffer;*/
+
+        // Set 4 — lights SSBO
+        Storage<Light> lights;
+        std::unique_ptr<Buffer> lightsBuffer;
+        VkDescriptorSet lightSet = VK_NULL_HANDLE;
+        std::unique_ptr<DescriptorSetLayout> lightSetLayout;
+
+        // Merged geometry buffers
+        std::unique_ptr<Buffer> mergedVertexBuffer;
+        std::unique_ptr<Buffer> mergedIndexBuffer;
+        uint32_t nextVertex = 0;
+        uint32_t nextIndex = 0;
+        std::unordered_map<AssetHandle, MeshAllocation> meshAllocations;
+
+        void createRenderTargets(uint32_t width, uint32_t height);
+        void destroyRenderTargets() const;
+        void createRenderPass();
+        void createFramebuffer();
+        void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
+        void createPipelines();
+        void createDescriptors();
+        void createGPUBuffers();
+
+        uint32_t registerTexture(AssetHandle handle);
+        void registerMesh(AssetHandle handle);
+        uint32_t resolveTextureIndex(AssetHandle handle) const;
+    };
+} // Atlas

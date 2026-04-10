@@ -1,11 +1,10 @@
 #pragma once
 
+#include <entt/entity/registry.hpp>
+#include <renderer/ImGuiLayer.hpp>
+
 #include "renderer/Camera.hpp"
 #include "renderer/Renderer.hpp"
-#include "system/RenderSystem.hpp"
-
-#ifdef ATLAS_PLATFORM_DESKTOP
-#endif
 
 namespace Atlas {
     class Scene {
@@ -15,7 +14,7 @@ namespace Atlas {
 
         virtual void onLoad(entt::registry&& registry);
         virtual void onUpdate(float deltaTime);
-        virtual void onRender(float deltaTime, float aspectRatio);
+        virtual void onRender(ImGuiLayer &imguiLayer);
         virtual void onDelete();
     protected:
         entt::registry registry;

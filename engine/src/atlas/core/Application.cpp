@@ -10,7 +10,6 @@
 
 #include "renderer/ImGuiLayer.hpp"
 #include "scene/OfficeScene.hpp"
-#include "scene/PBRTestScene.hpp"
 
 namespace Atlas {
     Application::Application(const ApplicationSpecification &specification) : specification(specification) {
@@ -44,8 +43,6 @@ namespace Atlas {
             float deltaTime = std::chrono::duration_cast<std::chrono::duration<float> >(newTime - currentTime).count();
             currentTime = newTime;
 
-            float aspect = renderer.getAspectRatio();
-
             renderer.beginCompute();
             if (currentScene) {
                 currentScene->onUpdate(deltaTime);
@@ -54,15 +51,11 @@ namespace Atlas {
 
             if (auto commandBuffer = renderer.beginFrame()) {
                 imGui.beginFrame();
-                renderer.beginSwapChainRenderPass(commandBuffer);
 
                 if (currentScene) {
-                    currentScene->onRender(deltaTime, aspect);
+                    currentScene->onRender(imGui);
                 }
 
-                imGui.endFrame(commandBuffer);
-
-                renderer.endSwapChainRenderPass(commandBuffer);
                 renderer.endFrame();
             }
         }
