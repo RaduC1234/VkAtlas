@@ -34,7 +34,7 @@ namespace Atlas {
 
     void PostProcessPass::createDescriptors(VkImageView geometryColorView) {
         AssetHandle BRDFHandle = AssetManager::get().loadTexture(
-            "cubemaps/brdf_lut.hdr",
+            "engine/brdf_lut.hdr",
             VK_FORMAT_R32G32B32A32_SFLOAT,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
         );

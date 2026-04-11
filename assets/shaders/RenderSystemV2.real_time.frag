@@ -44,12 +44,6 @@ layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform GlobalUbo {
     CameraData cameraData;
     vec4 ambientLightColor;
-    vec3 lightPosition;
-    float iblIntensity;
-    float exposure;
-    float _padding1;
-    float _padding2;
-    float _padding3;
 } ubo;
 
 layout(set = 1, binding = 0) uniform samplerCube irradianceMap;
@@ -239,7 +233,7 @@ void main() {
     vec3 V  = normalize(ubo.cameraData.position - fragWorldPos);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao) * ubo.iblIntensity;
+    vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao) * 0.03;
 
     vec3 Lo = vec3(0.0);
     for (uint i = 0u; i < MAX_LIGHTS; i++)

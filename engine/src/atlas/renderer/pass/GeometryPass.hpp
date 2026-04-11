@@ -80,6 +80,7 @@ namespace Atlas {
 
         // Pipelines
         std::unique_ptr<Pipeline> opaquePipeline;
+        std::unique_ptr<Pipeline> skyboxPipeline;
         //std::unique_ptr<Pipeline> transparentPipeline;
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
@@ -115,6 +116,11 @@ namespace Atlas {
         std::unique_ptr<Buffer> lightsBuffer;
         VkDescriptorSet lightSet = VK_NULL_HANDLE;
         std::unique_ptr<DescriptorSetLayout> lightSetLayout;
+
+        // Skybox
+        std::unique_ptr<DescriptorSetLayout> skyboxSetLayout;
+        VkDescriptorSet skyboxDescriptorSet = VK_NULL_HANDLE;
+        AssetHandle boundSkyboxHandle = INVALID_ASSET_HANDLE;
 
         // Merged geometry buffers
         std::unique_ptr<Buffer> mergedVertexBuffer;

@@ -43,6 +43,7 @@ namespace Atlas {
     void OfficeScene::onRender(ImGuiLayer& imguiLayer) {
 #ifdef ATLAS_PLATFORM_DESKTOP
         ImGui::Begin("Debug Settings");
+        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::End();
 #endif
 
