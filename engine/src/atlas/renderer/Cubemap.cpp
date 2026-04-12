@@ -9,7 +9,7 @@
 #include <ktx.h>
 #include <glm/ext/scalar_constants.hpp>
 
-#include "Buffer.hpp"
+#include "abstraction/Buffer.hpp"
 #include "core/Log.hpp"
 
 namespace Atlas {

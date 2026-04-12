@@ -1,6 +1,6 @@
 #include "Pipeline.hpp"
 
-#include "Mesh.hpp"
+#include "renderer/Mesh.hpp"
 
 #include <cassert>
 

@@ -4,16 +4,17 @@
 #include "asset/AssetManager.hpp"
 
 namespace Atlas {
-    PostProcessPass::PostProcessPass(Device &device, VkRenderPass swapchainRenderPass, VkImageView geometryColorView, const DescriptorSetLayout &globalSetLayout): device(device) {
+    PostProcessPass::PostProcessPass(Device &device, VkRenderPass swapchainRenderPass, const GPUImage &colorImage, const GPUImage &depthImage, const DescriptorSetLayout &globalSetLayout): device(device) {
         createSampler();
-        createDescriptors(geometryColorView);
+        createDescriptors(colorImage, depthImage);
         createPipelineLayout(globalSetLayout);
         createPipeline(swapchainRenderPass);
     }
 
     PostProcessPass::~PostProcessPass() {
         vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
-        vkDestroySampler(device.device(), sampler, nullptr);
+        vkDestroySampler(device.device(), stencilSampler, nullptr);
+        vkDestroySampler(device.device(), colorSampler, nullptr);
     }
 
     void PostProcessPass::createSampler() {
@@ -28,11 +29,20 @@ namespace Atlas {
         info.minLod = 0.0f;
         info.maxLod = 0.0f;
 
-        if (vkCreateSampler(device.device(), &info, nullptr, &sampler) != VK_SUCCESS)
-            throw std::runtime_error("PostProcessPass: failed to create sampler");
+        if (vkCreateSampler(device.device(), &info, nullptr, &colorSampler) != VK_SUCCESS)
+            throw std::runtime_error("PostProcessPass: failed to create colorSampler");
+
+        VkSamplerCreateInfo stencilSamplerInfo{};
+        stencilSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        stencilSamplerInfo.magFilter = VK_FILTER_NEAREST;
+        stencilSamplerInfo.minFilter = VK_FILTER_NEAREST;
+        stencilSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        stencilSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        stencilSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        vkCreateSampler(device.device(), &stencilSamplerInfo, nullptr, &stencilSampler);
     }
 
-    void PostProcessPass::createDescriptors(VkImageView geometryColorView) {
+    void PostProcessPass::createDescriptors(const GPUImage &colorImage, const GPUImage &depthImage) {
         AssetHandle BRDFHandle = AssetManager::get().loadTexture(
             "engine/brdf_lut.hdr",
             VK_FORMAT_R32G32B32A32_SFLOAT,
@@ -48,25 +58,31 @@ namespace Atlas {
         inputSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // hdrInput
                 .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // BRDF LUT
+                .addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // stencil
                 .build();
 
         pool = DescriptorPool::Builder(device)
                 .setMaxSets(1)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3)
                 .build();
 
         if (!pool->allocateDescriptor(inputSetLayout->getDescriptorSetLayout(), inputSet))
             throw std::runtime_error("PostProcessPass: failed to allocate descriptor set");
 
         VkDescriptorImageInfo hdrInfo{};
-        hdrInfo.sampler = sampler;
-        hdrInfo.imageView = geometryColorView;
+        hdrInfo.sampler = colorSampler;
+        hdrInfo.imageView = colorImage.view(0);
         hdrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkDescriptorImageInfo brdfInfo{};
         brdfInfo.sampler = BRDFTex->getSampler();
         brdfInfo.imageView = BRDFTex->getImageView();
         brdfInfo.imageLayout = BRDFTex->getImageLayout();
+
+        VkDescriptorImageInfo stencilInfo{};
+        stencilInfo.sampler = stencilSampler;
+        stencilInfo.imageView = depthImage.view(1);
+        stencilInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
         VkWriteDescriptorSet w0{};
         w0.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -80,8 +96,12 @@ namespace Atlas {
         w1.dstBinding = 1;
         w1.pImageInfo = &brdfInfo;
 
-        const VkWriteDescriptorSet writes[] = {w0, w1};
-        vkUpdateDescriptorSets(device.device(), 2, writes, 0, nullptr);
+        VkWriteDescriptorSet w2 = w0;
+        w2.dstBinding = 2;
+        w2.pImageInfo = &stencilInfo;
+
+        const VkWriteDescriptorSet writes[] = {w0, w1, w2};
+        vkUpdateDescriptorSets(device.device(), std::size(writes), writes, 0, nullptr);
     }
 
     void PostProcessPass::createPipelineLayout(const DescriptorSetLayout &globalSetLayout) {
@@ -121,9 +141,8 @@ namespace Atlas {
     void PostProcessPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
         pipeline->bind(cmd);
 
-        const VkDescriptorSet sets[] = { globalSet, inputSet };
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
-                                static_cast<uint32_t>(std::size(sets)), sets, 0, nullptr);
+        const VkDescriptorSet sets[] = {globalSet, inputSet};
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, std::size(sets), sets, 0, nullptr);
         vkCmdDraw(cmd, 3, 1, 0, 0);
     }
 } // Atlas

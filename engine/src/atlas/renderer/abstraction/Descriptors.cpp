@@ -1,8 +1,5 @@
 #include "Descriptors.hpp"
 
-// std
-#include <cassert>
-#include <stdexcept>
 
 namespace Atlas {
     // *************** Descriptor Set Layout Builder *********************
@@ -59,7 +56,7 @@ namespace Atlas {
         descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         descriptorSetLayoutInfo.bindingCount = static_cast<uint32_t>(setLayoutBindings.size());
         descriptorSetLayoutInfo.pBindings = setLayoutBindings.data();
-        descriptorSetLayoutInfo.flags = layoutFlags;  // Set the layout flags
+        descriptorSetLayoutInfo.flags = layoutFlags; // Set the layout flags
 
         // Only set pNext if we have binding flags
         if (!bindingFlags.empty()) {

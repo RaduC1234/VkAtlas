@@ -1,15 +1,18 @@
 #pragma once
+
 #include "IRenderPass.hpp"
 #include "renderer/Device.hpp"
-#include "renderer/Pipeline.hpp"
-#include "renderer/Descriptors.hpp"
+#include "renderer/abstraction/Pipeline.hpp"
+#include "renderer/abstraction/Descriptors.hpp"
+#include "renderer/abstraction/GPUImage.hpp"
+
 
 namespace Atlas {
     class PostProcessPass : public IRenderPass {
     public:
         // swapchainRenderPass  — the existing Renderer swapchain renderpass
         // geometryColorView    — HDR output from GeometryPass
-        PostProcessPass(Device &device, VkRenderPass swapchainRenderPass, VkImageView geometryColorView, const DescriptorSetLayout& globalSetLayout);
+        PostProcessPass(Device &device, VkRenderPass swapchainRenderPass, const GPUImage& colorImage, const GPUImage& depthImage, const DescriptorSetLayout& globalSetLayout);
         ~PostProcessPass() override;
 
         PostProcessPass(const PostProcessPass &) = delete;
@@ -33,12 +36,13 @@ namespace Atlas {
 
         std::unique_ptr<DescriptorSetLayout> inputSetLayout;
         VkDescriptorSet inputSet = VK_NULL_HANDLE;
-        VkSampler sampler = VK_NULL_HANDLE;
+        VkSampler colorSampler = VK_NULL_HANDLE;
+        VkSampler stencilSampler = VK_NULL_HANDLE;
 
         Device &device;
 
         void createSampler();
-        void createDescriptors(VkImageView geometryColorView);
+        void createDescriptors(const GPUImage &colorImage, const GPUImage &depthImage);
         void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
         void createPipeline(VkRenderPass swapChainRenderPass);
     };

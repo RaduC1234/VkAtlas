@@ -7,7 +7,7 @@
 
 #include "asset/AssetManager.hpp"
 #include "entity/Object.hpp"
-#include "renderer/Buffer.hpp"
+#include "../abstraction/Buffer.hpp"
 #include "core/Log.hpp"
 
 #define GLM_FORCE_RADIANS
@@ -31,10 +31,10 @@ namespace Atlas {
     }
 
     GeometryPass::~GeometryPass() {
+        vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
+        vkDestroyRenderPass(device.device(), renderPass, nullptr);
         vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
-        destroyRenderTargets();
     }
-
 
     void GeometryPass::begin(VkCommandBuffer cmd) {
         std::array<VkClearValue, 2> clears{};
@@ -68,28 +68,41 @@ namespace Atlas {
     }
 
     void GeometryPass::barrier(VkCommandBuffer cmd) {
-        // Color attachment finalLayout is already SHADER_READ_ONLY_OPTIMAL via
-        // the render pass, so we only need the execution barrier for the
-        // fragment shader stage that will sample it (post process pass).
-        VkImageMemoryBarrier barrier{};
-        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = colorImage;
-        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        std::array<VkImageMemoryBarrier, 2> barriers{};
 
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barriers[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barriers[0].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].image = colorTarget.image();
+        barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+        barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barriers[1].srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barriers[1].oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        barriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].image = depthTarget.image();
+        barriers[1].subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
+
+        vkCmdPipelineBarrier(cmd,
+                             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                             0, 0, nullptr, 0, nullptr, 1, &barrier);
+                             0, 0, nullptr, 0, nullptr,
+                             barriers.size(), barriers.data()
+        );
     }
 
     void GeometryPass::getDeclaredResources(std::vector<PassResource> &out) const {
-        out.push_back(PassResource{const_cast<VkImage *>(&colorImage), PassResource::Type::ColorAttachment, PassResource::Access::Write, "geometry_color"});
-        out.push_back(PassResource{const_cast<VkImage *>(&depthImage), PassResource::Type::DepthAttachment, PassResource::Access::Write, "geometry_depth"});
+        auto colorImage = colorTarget.image();
+        auto depthImage = depthTarget.image();
+        out.push_back(PassResource{&colorImage, PassResource::Type::ColorAttachment, PassResource::Access::Write, "geometry_color"});
+        out.push_back(PassResource{&depthImage, PassResource::Type::DepthAttachment, PassResource::Access::Write, "geometry_depth"});
     }
 
     void GeometryPass::build(entt::registry &registry) {
@@ -102,9 +115,9 @@ namespace Atlas {
                 AT_WARN("GeometryPass: multiple skyboxes detected, using the first one");
 
             const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
-            const auto irradiance = AssetManager::get().getCubemap(skybox.irradianceHandle != INVALID_ASSET_HANDLE? skybox.irradianceHandle : defaultWhiteHandle);
-            const auto prefilter = AssetManager::get().getCubemap(skybox.prefilterHandle != INVALID_ASSET_HANDLE? skybox.prefilterHandle : defaultWhiteHandle);
-            const auto skyboxCubemap = AssetManager::get().getCubemap(skybox.skyboxHandle != INVALID_ASSET_HANDLE? skybox.skyboxHandle : defaultWhiteHandle);
+            const auto irradiance = AssetManager::get().getCubemap(skybox.irradianceHandle != INVALID_ASSET_HANDLE ? skybox.irradianceHandle : defaultWhiteHandle);
+            const auto prefilter = AssetManager::get().getCubemap(skybox.prefilterHandle != INVALID_ASSET_HANDLE ? skybox.prefilterHandle : defaultWhiteHandle);
+            const auto skyboxCubemap = AssetManager::get().getCubemap(skybox.skyboxHandle != INVALID_ASSET_HANDLE ? skybox.skyboxHandle : defaultWhiteHandle);
 
             VkDescriptorImageInfo irradianceInfo = {irradiance->getSampler(), irradiance->getImageView(), irradiance->getImageLayout()};
             VkDescriptorImageInfo prefilterInfo = {prefilter->getSampler(), prefilter->getImageView(), prefilter->getImageLayout()};
@@ -253,76 +266,23 @@ namespace Atlas {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Private — RT
-    // -------------------------------------------------------------------------
-
     void GeometryPass::createRenderTargets(uint32_t width, uint32_t height) {
         extent = {width, height};
 
-        // Color — R16G16B16A16_SFLOAT (HDR)
-        VkImageCreateInfo colorInfo{};
-        colorInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        colorInfo.imageType = VK_IMAGE_TYPE_2D;
-        colorInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-        colorInfo.extent = {width, height, 1};
-        colorInfo.mipLevels = 1;
-        colorInfo.arrayLayers = 1;
-        colorInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-        colorInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-        colorInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-        colorInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorTarget = GPUImage::Builder(device)
+                .setExtent(width, height)
+                .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
+                .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+                .addView(VK_IMAGE_ASPECT_COLOR_BIT)
+                .build();
 
-        VmaAllocationCreateInfo allocCI{};
-        allocCI.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-        if (vmaCreateImage(device.allocator(), &colorInfo, &allocCI, &colorImage, &colorAlloc, nullptr) != VK_SUCCESS) {
-            throw std::runtime_error("GeometryPass: failed to create color image");
-        }
-
-        VkImageViewCreateInfo colorViewInfo{};
-        colorViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        colorViewInfo.image = colorImage;
-        colorViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        colorViewInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
-        colorViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        colorViewInfo.subresourceRange.baseMipLevel = 0;
-        colorViewInfo.subresourceRange.levelCount = 1;
-        colorViewInfo.subresourceRange.baseArrayLayer = 0;
-        colorViewInfo.subresourceRange.layerCount = 1;
-
-        if (vkCreateImageView(device.device(), &colorViewInfo, nullptr, &colorView) != VK_SUCCESS) {
-            throw std::runtime_error("GeometryPass: failed to create color image view");
-        }
-
-        // Depth — D32_SFLOAT
-        VkImageCreateInfo depthInfo = colorInfo;
-        depthInfo.format = VK_FORMAT_D32_SFLOAT;
-        depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-
-        if (vmaCreateImage(device.allocator(), &depthInfo, &allocCI, &depthImage, &depthAlloc, nullptr) != VK_SUCCESS) {
-            throw std::runtime_error("GeometryPass: failed to create depth image");
-        }
-
-        VkImageViewCreateInfo depthViewInfo = colorViewInfo;
-        depthViewInfo.image = depthImage;
-        depthViewInfo.format = VK_FORMAT_D32_SFLOAT;
-        depthViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-
-        if (vkCreateImageView(device.device(), &depthViewInfo, nullptr, &depthView) != VK_SUCCESS) {
-            throw std::runtime_error("GeometryPass: failed to create depth image view");
-        }
-    }
-
-    void GeometryPass::destroyRenderTargets() const {
-        vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
-        vkDestroyRenderPass(device.device(), renderPass, nullptr);
-
-        vkDestroyImageView(device.device(), colorView, nullptr);
-        vmaDestroyImage(device.allocator(), colorImage, colorAlloc);
-
-        vkDestroyImageView(device.device(), depthView, nullptr);
-        vmaDestroyImage(device.allocator(), depthImage, depthAlloc);
+        depthTarget = GPUImage::Builder(device)
+                .setExtent(width, height)
+                .setFormat(VK_FORMAT_D32_SFLOAT_S8_UINT)
+                .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
+                .addView(VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+                .addView(VK_IMAGE_ASPECT_STENCIL_BIT)
+                .build();
     }
 
     void GeometryPass::createRenderPass() {
@@ -338,14 +298,14 @@ namespace Atlas {
         color.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // ready for post process
 
         VkAttachmentDescription depth{};
-        depth.format = VK_FORMAT_D32_SFLOAT;
-        depth.samples = VK_SAMPLE_COUNT_1_BIT;
-        depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depth.format         = depthTarget.format();
+        depth.samples        = VK_SAMPLE_COUNT_1_BIT;
+        depth.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+        depth.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depth.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+        depth.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
         VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
         VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
@@ -381,7 +341,7 @@ namespace Atlas {
     }
 
     void GeometryPass::createFramebuffer() {
-        const std::array<VkImageView, 2> views = {colorView, depthView};
+        const std::array<VkImageView, 2> views = {colorTarget.view(0), depthTarget.view(0)};
 
         VkFramebufferCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -489,6 +449,8 @@ namespace Atlas {
         cfg.renderPass = renderPass;
         cfg.pipelineLayout = pipelineLayout;
 
+        cfg.depthStencilInfo = makeStencilWrite(1); // 1 - general layer
+
         opaquePipeline = std::make_unique<Pipeline>(
             device,
             "shaders/RenderSystemV2.studio.vert.spv",
@@ -503,12 +465,12 @@ namespace Atlas {
         cfg2.bindingDescriptions.clear();
         cfg2.attributeDescriptions.clear();
 
-        // Depth testing: write disabled, compare LESS_OR_EQUAL so it renders behind geometry
-        cfg2.depthStencilInfo.depthWriteEnable = VK_FALSE;
-        cfg2.depthStencilInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-
         cfg2.renderPass = renderPass;
         cfg2.pipelineLayout = pipelineLayout;
+
+        cfg.depthStencilInfo = makeStencilWrite(0); // 0 - skybox layer
+        cfg2.depthStencilInfo.depthWriteEnable = VK_FALSE; // Depth testing: write disabled, compare LESS_OR_EQUAL so it renders behind geometry
+        cfg2.depthStencilInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
         skyboxPipeline = std::make_unique<Pipeline>(
             device,
@@ -657,5 +619,26 @@ namespace Atlas {
         if (handle == INVALID_ASSET_HANDLE) return 0;
         const auto it = handleToTextureSlot.find(handle);
         return it != handleToTextureSlot.end() ? it->second : 0;
+    }
+
+    VkPipelineDepthStencilStateCreateInfo GeometryPass::makeStencilWrite(uint8_t ref) {
+        VkStencilOpState stencilOp{};
+        stencilOp.failOp = VK_STENCIL_OP_KEEP;
+        stencilOp.passOp = VK_STENCIL_OP_REPLACE;
+        stencilOp.depthFailOp = VK_STENCIL_OP_KEEP;
+        stencilOp.compareOp = VK_COMPARE_OP_ALWAYS;
+        stencilOp.compareMask = 0xFF;
+        stencilOp.writeMask = 0xFF;
+        stencilOp.reference = ref;
+
+        VkPipelineDepthStencilStateCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        info.depthTestEnable = VK_TRUE;
+        info.depthWriteEnable = VK_TRUE;
+        info.depthCompareOp = VK_COMPARE_OP_LESS;
+        info.stencilTestEnable = VK_TRUE;
+        info.front = stencilOp;
+        info.back = stencilOp;
+        return info;
     }
 } // namespace Atlas

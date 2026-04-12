@@ -1,12 +1,14 @@
 #pragma once
+
 #include <entt/entity/registry.hpp>
 
 #include "IRenderPass.hpp"
 #include "asset/AssetManager.hpp"
 #include "entity/Object.hpp"
-#include "renderer/Descriptors.hpp"
+#include "../abstraction/Descriptors.hpp"
 #include "renderer/Mesh.hpp"
-#include "renderer/Pipeline.hpp"
+#include "renderer/abstraction/GPUImage.hpp"
+#include "renderer/abstraction/Pipeline.hpp"
 #include "utils/Storage.hpp"
 
 namespace Atlas {
@@ -19,13 +21,14 @@ namespace Atlas {
         static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
 
         GeometryPass(Device &device, uint32_t width, uint32_t height, const DescriptorSetLayout &globalSetLayout);
-        ~GeometryPass();
+        ~GeometryPass() override;
 
         GeometryPass(const GeometryPass &) = delete;
         GeometryPass &operator=(const GeometryPass &) = delete;
 
         VkRenderPass getRenderPass() const { return renderPass; }
-        VkImageView getColorView() const { return colorView; }
+        const GPUImage& getColorTarget() const { return colorTarget; }
+        const GPUImage& getDepthTarget() const { return depthTarget; }
 
         void begin(VkCommandBuffer cmd) override;
         void end(VkCommandBuffer cmd) override;
@@ -65,14 +68,8 @@ namespace Atlas {
 
         Device& device;
 
-        // --- RT ---
-        VkImage colorImage = VK_NULL_HANDLE;
-        VmaAllocation colorAlloc = VK_NULL_HANDLE;
-        VkImageView colorView = VK_NULL_HANDLE;
-
-        VkImage depthImage = VK_NULL_HANDLE;
-        VmaAllocation depthAlloc = VK_NULL_HANDLE;
-        VkImageView depthView = VK_NULL_HANDLE;
+        GPUImage colorTarget;
+        GPUImage depthTarget;
 
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
@@ -130,7 +127,6 @@ namespace Atlas {
         std::unordered_map<AssetHandle, MeshAllocation> meshAllocations;
 
         void createRenderTargets(uint32_t width, uint32_t height);
-        void destroyRenderTargets() const;
         void createRenderPass();
         void createFramebuffer();
         void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
@@ -141,5 +137,6 @@ namespace Atlas {
         uint32_t registerTexture(AssetHandle handle);
         void registerMesh(AssetHandle handle);
         uint32_t resolveTextureIndex(AssetHandle handle) const;
+        VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
     };
 } // Atlas

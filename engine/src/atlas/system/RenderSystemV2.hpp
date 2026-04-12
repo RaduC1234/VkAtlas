@@ -7,9 +7,9 @@
 
 #include "asset/AssetManager.hpp"
 #include "entity/Object.hpp"
-#include "renderer/Descriptors.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/Renderer.hpp"
+#include "renderer/abstraction/Descriptors.hpp"
 #include "renderer/pass/GeometryPass.hpp"
 #include "renderer/pass/PostProcessingPass.hpp"
 

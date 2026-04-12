@@ -1,12 +1,5 @@
 #include "SwapChain.hpp"
 
-// std
-#include <array>
-#include <iostream>
-#include <limits>
-#include <set>
-#include <stdexcept>
-#include <utility>
 
 namespace Atlas {
     SwapChain::SwapChain(Device &deviceRef, VkExtent2D extent) : device{deviceRef}, windowExtent{extent} {

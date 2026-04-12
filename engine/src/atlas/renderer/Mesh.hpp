@@ -5,7 +5,7 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
-#include "Buffer.hpp"
+#include "abstraction/Buffer.hpp"
 #include "asset/Asset.hpp"
 
 namespace Atlas {

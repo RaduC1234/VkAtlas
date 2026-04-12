@@ -1,10 +1,10 @@
 #pragma once
 #include "asset/AssetManager.hpp"
-#include "renderer/Buffer.hpp"
+#include "../renderer/abstraction/Buffer.hpp"
 #include "renderer/Camera.hpp"
-#include "renderer/Descriptors.hpp"
+#include "../renderer/abstraction/Descriptors.hpp"
 #include "renderer/Device.hpp"
-#include "renderer/Pipeline.hpp"
+#include "../renderer/abstraction/Pipeline.hpp"
 
 namespace Atlas {
     class SkyboxSystem {

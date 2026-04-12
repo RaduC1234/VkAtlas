@@ -2,9 +2,9 @@
 #include <entt/entt.hpp>
 
 #include "asset/AssetManager.hpp"
-#include "renderer/Descriptors.hpp"
+#include "../renderer/abstraction/Descriptors.hpp"
 #include "renderer/Device.hpp"
-#include "renderer/Pipeline.hpp"
+#include "../renderer/abstraction/Pipeline.hpp"
 
 
 namespace Atlas {

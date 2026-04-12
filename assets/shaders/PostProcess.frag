@@ -5,6 +5,7 @@ layout(location = 0) out vec4 outColor;
 
 layout(set = 1, binding = 0) uniform sampler2D hdrInput;
 layout(set = 1, binding = 1) uniform sampler2D BRDF_LUT;
+layout(set = 1, binding = 2) uniform usampler2D stencil;
 
 // ---- Tone mapping ----
 
@@ -34,18 +35,17 @@ vec3 linearToSRGB(vec3 c) {
 }
 
 
-// ---- Main ----
-
 void main() {
     vec3 hdr = texture(hdrInput, inUV).rgb;
+    uint layer = texture(stencil, inUV).r;
 
-    // exposure
+    if(layer == 0u) {
+        outColor = vec4(hdr, 1.0);
+        return;
+    }
+
     //hdr *= /*ubo.exposure;*/ 0.3;
-
-    // tonemap
     hdr = ACESFitted(hdr);
-
-    // gamma
     hdr = linearToSRGB(hdr);
 
     outColor = vec4(hdr, 1.0);

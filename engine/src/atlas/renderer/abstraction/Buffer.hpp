@@ -2,11 +2,11 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
-#include <vk_mem_alloc.h>
+#include <../../../../dependencies/VulkanMemoryAllocator/include/vk_mem_alloc.h>
 #include <cstdint>
 #include <vector>
 
-#include "Device.hpp"
+#include "../Device.hpp"
 
 namespace Atlas {
 /**

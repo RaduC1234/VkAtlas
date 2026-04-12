@@ -3,14 +3,13 @@
 #include <renderer/ImGuiLayer.hpp>
 
 #include "core/Log.hpp"
-#include "renderer/SwapChain.hpp"
 
 namespace Atlas {
     RenderSystemV2::RenderSystemV2(Device& device, VkRenderPass swapChainRenderPass) : device(device) {
         createGlobalUbo();
 
         geometryPass = std::make_unique<GeometryPass>(device, G_BUFFER_WIDTH, G_BUFFER_HEIGHT, *globalSetLayout);
-        postProcessPass = std::make_unique<PostProcessPass>(device, swapChainRenderPass, geometryPass->getColorView(), *globalSetLayout);
+        postProcessPass = std::make_unique<PostProcessPass>(device, swapChainRenderPass, geometryPass->getColorTarget(), geometryPass->getDepthTarget(), *globalSetLayout);
     }
 
     void RenderSystemV2::build(entt::registry &registry) {

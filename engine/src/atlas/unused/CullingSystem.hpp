@@ -2,10 +2,10 @@
 #include <memory>
 #include <entt/entity/registry.hpp>
 
-#include "renderer/Buffer.hpp"
+#include "../renderer/abstraction/Buffer.hpp"
 #include "renderer/Camera.hpp"
-#include "renderer/Descriptors.hpp"
-#include "renderer/Pipeline.hpp"
+#include "../renderer/abstraction/Descriptors.hpp"
+#include "../renderer/abstraction/Pipeline.hpp"
 
 namespace Atlas {
     struct GPUInstanceData {

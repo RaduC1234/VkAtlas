@@ -7,7 +7,7 @@
 #include <thread>
 
 #include "stb_image.h"
-#include "Buffer.hpp"
+#include "abstraction/Buffer.hpp"
 #include "utils/Hash.hpp"
 
 namespace std {

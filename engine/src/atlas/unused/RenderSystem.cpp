@@ -11,7 +11,7 @@
 #include <glm/glm.hpp>
 
 #include "entity/Object.hpp"
-#include "renderer/Buffer.hpp"
+#include "../renderer/abstraction/Buffer.hpp"
 
 namespace Atlas {
     struct SimplePushConstantData {
