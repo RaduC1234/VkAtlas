@@ -119,4 +119,11 @@ namespace Atlas {
         float width{0.0f};
         float height{0.0f};
     };
+
+    struct PostProcessingVolumeComponent {
+        float exposure{1.0f};
+        float contrast{1.0f};
+        float saturation{1.0};
+        glm::vec3 colorTint = {1.0f, 1.0f, 1.0f};
+    };
 }

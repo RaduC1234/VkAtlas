@@ -44,15 +44,7 @@ layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform GlobalUbo {
     CameraData cameraData;
     vec4 ambientLightColor;
-    vec3 lightPosition;
-    float iblIntensity;
-    float exposure;
-    float _padding1;
-    float _padding2;
-    float _padding3;
 } ubo;
-
-layout(set = 0, binding = 1) uniform sampler2D BRDF_LUT;
 
 layout(set = 1, binding = 0) uniform samplerCube irradianceMap;
 layout(set = 1, binding = 1) uniform samplerCube prefilterMap;
@@ -67,13 +59,10 @@ layout(std430, set = 4, binding = 0) readonly buffer LightBuffer {
     Light lights[];
 } lightData;
 
-const float PI      = 3.14159265359;
-const float INV_PI  = 0.31830988618;
-const float EPSILON = 1e-5;
-const uint  MAX_LIGHTS = 5u;
-
-// Number of mip levels baked into the prefilter cubemap.
-// Must match what your IBL precompute pass uses.
+const float PI             = 3.14159265359;
+const float INV_PI         = 0.31830988618;
+const float EPSILON        = 1e-5;
+const uint  MAX_LIGHTS     = 5u;
 const float MAX_REFLECTION_LOD = 5.0;
 
 
@@ -100,7 +89,6 @@ vec3 F_Schlick(float cosTheta, vec3 F0) {
     return F0 + (1.0 - F0) * (f2 * f2 * f);
 }
 
-// Roughness-attenuated Fresnel for IBL — avoids over-darkening at grazing angles.
 vec3 F_SchlickRoughness(float cosTheta, vec3 F0, float roughness) {
     float f  = 1.0 - cosTheta;
     float f2 = f * f;
@@ -114,7 +102,6 @@ vec3 F_SchlickRoughness(float cosTheta, vec3 F0, float roughness) {
 float distanceAttenuation(float dist, float range) {
     if (range <= 0.0)
     return 1.0 / max(dist * dist, EPSILON);
-
     float ratio  = dist / range;
     float ratio2 = ratio * ratio;
     float ratio4 = ratio2 * ratio2;
@@ -132,9 +119,7 @@ float spotAttenuation(vec3 L, vec3 dir, float innerAngle, float outerAngle) {
 
 // ---- Direct light evaluation ----
 
-vec3 evaluateLight(
-Light light,
-vec3 N, vec3 V, vec3 worldPos,
+vec3 evaluateLight(Light light, vec3 N, vec3 V, vec3 worldPos,
 vec3 albedo, float metallic, float roughness, vec3 F0)
 {
     if (light.intensity <= 0.0) return vec3(0.0);
@@ -143,18 +128,16 @@ vec3 albedo, float metallic, float roughness, vec3 F0)
     float atten;
 
     if (light.type == 1u) {
-        // Directional light — L is opposite of light direction, no attenuation
         L     = normalize(-light.direction);
         atten = 1.0;
     } else {
-        // Point or spot light
         vec3  toLight = light.position - worldPos;
         float dist    = length(toLight);
         L             = toLight / max(dist, EPSILON);
         atten         = distanceAttenuation(dist, light.range);
-
-        if (light.type == 2u) // spot
-        atten *= spotAttenuation(L, normalize(light.direction), light.innerConeAngle, light.outerConeAngle);
+        if (light.type == 2u)
+        atten *= spotAttenuation(L, normalize(light.direction),
+        light.innerConeAngle, light.outerConeAngle);
     }
 
     float NdotL = dot(N, L);
@@ -182,29 +165,25 @@ vec3 albedo, float metallic, float roughness, vec3 F0)
 }
 
 
-// ---- IBL ambient (irradiance + split-sum specular) ----
+// ---- IBL — diffuse + prefiltered specular, no BRDF LUT ----
 
-vec3 evaluateIBL(vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, vec3 F0, float ao)
+vec3 evaluateIBL(vec3 N, vec3 V, vec3 albedo, float metallic,
+float roughness, vec3 F0, float ao)
 {
     float NdotV = max(dot(N, V), 0.0);
 
-    // --- Diffuse IBL ---
-    // The irradiance map already integrates the hemisphere, so a single sample suffices.
-    vec3 irradiance = texture(irradianceMap, N).rgb;
-    irradiance = irradiance / (irradiance + vec3(1.0)); // Reinhard normalize before use
-    vec3 kS_ibl     = F_SchlickRoughness(NdotV, F0, roughness);
-    vec3 kD_ibl     = (1.0 - kS_ibl) * (1.0 - metallic);
-    vec3 diffuse_ibl  = kD_ibl * irradiance * albedo * ao;
+    // diffuse
+    vec3 irradiance  = texture(irradianceMap, N).rgb;
+    irradiance       = irradiance / (irradiance + vec3(1.0));
+    vec3 kS_ibl      = F_SchlickRoughness(NdotV, F0, roughness);
+    vec3 kD_ibl      = (1.0 - kS_ibl) * (1.0 - metallic);
+    vec3 diffuse_ibl = kD_ibl * irradiance * albedo * ao;
 
-    // --- Specular IBL (Epic split-sum) ---
-    // Sample the pre-filtered env map at the correct mip for this roughness.
-    vec3  R                = reflect(-V, N);
-    float lod              = roughness * MAX_REFLECTION_LOD;
+    // specular — prefilter sample only, BRDF LUT correction done in post process
+    vec3  R              = reflect(-V, N);
+    float lod            = roughness * MAX_REFLECTION_LOD;
     vec3  prefilteredColor = textureLod(prefilterMap, R, lod).rgb;
-
-    // Sample the BRDF integration LUT (NdotV on x, roughness on y).
-    vec2 brdf        = texture(BRDF_LUT, vec2(NdotV, roughness)).rg;
-    vec3 specular_ibl = prefilteredColor * (kS_ibl * brdf.x + brdf.y);
+    vec3  specular_ibl   = prefilteredColor * kS_ibl;
 
     return diffuse_ibl + specular_ibl;
 }
@@ -214,43 +193,11 @@ vec3 evaluateIBL(vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, v
 
 vec3 perturbNormal(vec3 N, vec4 tangent, vec2 uv, uint texIdx) {
     if (texIdx == 0u) return N;
-
     vec3 ts = texture(textures[nonuniformEXT(texIdx)], uv).rgb * 2.0 - 1.0;
-
-    vec3 T = normalize(tangent.xyz);
-    T      = normalize(T - dot(T, N) * N);
-    vec3 B = cross(N, T) * tangent.w;
-
+    vec3 T  = normalize(tangent.xyz);
+    T       = normalize(T - dot(T, N) * N);
+    vec3 B  = cross(N, T) * tangent.w;
     return normalize(mat3(T, B, N) * ts);
-}
-
-
-// ---- Tone mapping ----
-
-vec3 ACESFitted(vec3 color) {
-    const mat3 input_mat = mat3(
-    0.59719, 0.07600, 0.02840,
-    0.35458, 0.90834, 0.13383,
-    0.04823, 0.01566, 0.83777
-    );
-    const mat3 output_mat = mat3(
-    1.60475, -0.10208, -0.00327,
-    -0.53108, 1.10813, -0.07276,
-    -0.07367, -0.00605, 1.07602
-    );
-
-    color = input_mat * color;
-    vec3 a = color * (color + 0.0245786) - 0.000090537;
-    vec3 b = color * (0.983729 * color + 0.4329510) + 0.238081;
-    return clamp(output_mat * (a / b), 0.0, 1.0);
-}
-
-vec3 linearToSRGB(vec3 c) {
-    return mix(
-    1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055,
-    c * 12.92,
-    lessThanEqual(c, vec3(0.0031308))
-    );
 }
 
 
@@ -259,20 +206,16 @@ vec3 linearToSRGB(vec3 c) {
 void main() {
     GPUObjectData obj = objectData.objects[fragObjectIndex];
 
-    // Albedo
+    // albedo
     vec4 albedoSample = texture(textures[nonuniformEXT(obj.textureIndices.x)], fragTexCoord);
-    vec3 albedo = pow(albedoSample.rgb, vec3(2.2)) * obj.baseColor.rgb;
-    float alpha = albedoSample.a * obj.baseColor.a;
+    vec3 albedo       = pow(albedoSample.rgb, vec3(2.2)) * obj.baseColor.rgb;
+    float alpha       = albedoSample.a * obj.baseColor.a;
 
-    // Normal
-    vec3 N = perturbNormal(
-    normalize(fragNormal),
-    fragTangent,
-    fragTexCoord,
-    obj.textureIndices.y
-    );
+    // normal
+    vec3 N = perturbNormal(normalize(fragNormal), fragTangent,
+    fragTexCoord, obj.textureIndices.y);
 
-    // Metallic-roughness (glTF: G = roughness, B = metallic)
+    // metallic-roughness
     float metallic  = 0.0;
     float roughness = 0.5;
     if (obj.textureIndices.z != 0u) {
@@ -287,29 +230,15 @@ void main() {
     if (obj.textureIndices.w != 0u)
     ao = texture(textures[nonuniformEXT(obj.textureIndices.w)], fragTexCoord).r;
 
-    // Common setup
     vec3 V  = normalize(ubo.cameraData.position - fragWorldPos);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    // IBL ambient (replaces the old flat constant ambient)
-    vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao) * ubo.iblIntensity;
+    vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao) * 0.03;
 
-    // Direct lighting
     vec3 Lo = vec3(0.0);
-    for (uint i = 0u; i < MAX_LIGHTS; i++) {
-        Lo += evaluateLight(
-        lightData.lights[i],
-        N, V, fragWorldPos,
-        albedo, metallic, roughness, F0
-        );
-    }
+    for (uint i = 0u; i < MAX_LIGHTS; i++)
+    Lo += evaluateLight(lightData.lights[i], N, V, fragWorldPos,
+    albedo, metallic, roughness, F0);
 
-    // Composite, tonemap, gamma
-    vec3 color = ambient + Lo;
-    color = color * ubo.exposure;
-    color = ACESFitted(color);
-    color = linearToSRGB(color);
-
-    outColor = vec4(color, alpha);
+    outColor = vec4(ambient + Lo, alpha);
 }
-

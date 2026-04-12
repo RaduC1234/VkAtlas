@@ -1,10 +1,9 @@
 #pragma once
 
 #include "Device.hpp"
-#include "SwapChain.hpp"
-#include "core/Window.hpp"
 
-#include <cassert>
+#include "core/Window.hpp"
+#include "swapchain/SwapChain.hpp"
 
 namespace Atlas {
     class Renderer {

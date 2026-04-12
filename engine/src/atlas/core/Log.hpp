@@ -53,7 +53,7 @@ namespace Atlas {
     };
 }
 
-#define AT_FATAL(...) { Atlas::Log::getCoreLogger()->log(Atlas::LogLevel::Fatal, __VA_ARGS__); }
+#define AT_FATAL(...) { Atlas::Log::getCoreLogger()->log(Atlas::LogLevel::Fatal, __VA_ARGS__); exit(1);}
 #define AT_ERROR(...) { Atlas::Log::getCoreLogger()->log(Atlas::LogLevel::Error, __VA_ARGS__); }
 #define AT_WARN(...)  { Atlas::Log::getCoreLogger()->log(Atlas::LogLevel::Warn, __VA_ARGS__); }
 #define AT_INFO(...)  { Atlas::Log::getCoreLogger()->log(Atlas::LogLevel::Info, __VA_ARGS__); }

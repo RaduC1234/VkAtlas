@@ -1354,6 +1354,9 @@ namespace Atlas {
                                     light.type = LightType::RECT;
                                 }
 
+                                constexpr glm::vec3 defaultDir = glm::vec3{0.0f, 0.0f, -1.0f};
+                                light.direction = glm::normalize(rotation * defaultDir);
+
                                 // color
                                 light.color = glm::vec3(1.0f);
                                 if (lobj.Has("color") && lobj.Get("color").IsArray()) {
