@@ -1,16 +1,13 @@
 #include "Cubemap.hpp"
 
-#include <stb_image.h>
-#include <stdexcept>
-#include <cstring>
-#include <cmath>
-#include <algorithm>
-#include <functional>
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <ktx.h>
+#include <stb_image.h>
 #include <glm/ext/scalar_constants.hpp>
 
-#include "abstraction/Buffer.hpp"
 #include "core/Log.hpp"
+#include "renderer/abstraction/Buffer.hpp"
 
 namespace Atlas {
     Cubemap::~Cubemap() {

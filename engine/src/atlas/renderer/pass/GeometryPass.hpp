@@ -3,13 +3,13 @@
 #include <entt/entity/registry.hpp>
 
 #include "IRenderPass.hpp"
-#include "asset/AssetManager.hpp"
 #include "entity/Object.hpp"
-#include "../abstraction/Descriptors.hpp"
-#include "renderer/Mesh.hpp"
+#include "renderer/Device.hpp"
+#include "renderer/abstraction/Descriptors.hpp"
 #include "renderer/abstraction/GPUImage.hpp"
 #include "renderer/abstraction/Pipeline.hpp"
 #include "utils/Storage.hpp"
+
 
 namespace Atlas {
     class GeometryPass : IRenderPass {

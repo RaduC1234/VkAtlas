@@ -1,11 +1,12 @@
 #pragma once
-#include "Device.hpp"
+
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
-#include "abstraction/Buffer.hpp"
+#include "renderer/Device.hpp"
+#include "renderer/abstraction/Buffer.hpp"
 #include "asset/Asset.hpp"
 
 namespace Atlas {

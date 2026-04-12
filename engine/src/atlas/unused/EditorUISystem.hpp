@@ -1,13 +1,11 @@
 #pragma once
 
-#include "renderer/Device.hpp"
-#include "../renderer/abstraction/Pipeline.hpp"
-
 #include <entt/entt.hpp>
 
 #include "asset/AssetManager.hpp"
-#include "../renderer/abstraction/Descriptors.hpp"
-#include "renderer/Sampler.hpp"
+#include "renderer/Device.hpp"
+#include "renderer/abstraction/Descriptors.hpp"
+#include "renderer/abstraction/Pipeline.hpp"
 
 namespace Atlas {
     class EditorUISystem {

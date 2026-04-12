@@ -2,11 +2,9 @@
 
 #include <optional>
 #include <vector>
+#include <vk_mem_alloc.h>
 
-#include "core/Core.hpp"
 #include "core/Window.hpp"
-
-#include "vk_mem_alloc.h"
 #include "utils/ExecutorService.hpp"
 
 namespace Atlas {

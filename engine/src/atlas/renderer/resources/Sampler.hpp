@@ -1,10 +1,7 @@
 #pragma once
 
-#include "Device.hpp"
-#include <string>
-#include <memory>
-
 #include "asset/Asset.hpp"
+#include "renderer/Device.hpp"
 
 namespace Atlas {
     class Sampler final : public Asset {

@@ -8,9 +8,9 @@
 #include <unordered_map>
 #include <entt/entity/registry.hpp>
 
-#include "renderer/Cubemap.hpp"
-#include "renderer/Mesh.hpp"
-#include "renderer/Sampler.hpp"
+#include "renderer/resources/Cubemap.hpp"
+#include "renderer/resources/Mesh.hpp"
+#include "renderer/resources/Sampler.hpp"
 
 namespace Atlas {
     /**

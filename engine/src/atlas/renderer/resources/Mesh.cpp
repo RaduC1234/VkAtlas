@@ -4,9 +4,6 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
 
-#include <cassert>
-#include <stdexcept>
-#include <tiny_gltf.h>
 
 namespace std {
     template<>

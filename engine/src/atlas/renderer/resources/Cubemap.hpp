@@ -1,5 +1,6 @@
 #pragma once
-#include "Device.hpp"
+
+#include "renderer/Device.hpp"
 #include "asset/Asset.hpp"
 
 namespace Atlas {

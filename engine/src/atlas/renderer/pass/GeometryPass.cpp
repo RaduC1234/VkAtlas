@@ -1,19 +1,11 @@
 #include "GeometryPass.hpp"
 
-#include <cassert>
-#include <cstring>
-#include <stdexcept>
-#include <array>
-
-#include "asset/AssetManager.hpp"
-#include "entity/Object.hpp"
-#include "../abstraction/Buffer.hpp"
-#include "core/Log.hpp"
-
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
+
+#include "core/Log.hpp"
 
 namespace Atlas {
     GeometryPass::GeometryPass(Device &device, uint32_t width, uint32_t height, const DescriptorSetLayout &globalSetLayout): device(device) {

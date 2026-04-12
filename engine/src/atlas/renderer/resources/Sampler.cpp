@@ -1,13 +1,9 @@
 #include "Sampler.hpp"
 
-#include <cassert>
-#include <cmath>
-#include <future>
-#include <stdexcept>
-#include <thread>
+#include <stb_image.h>
 
-#include "stb_image.h"
-#include "abstraction/Buffer.hpp"
+#include "renderer/Device.hpp"
+#include "renderer/abstraction/Buffer.hpp"
 #include "utils/Hash.hpp"
 
 namespace std {

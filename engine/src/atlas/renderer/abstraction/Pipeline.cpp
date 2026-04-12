@@ -1,9 +1,5 @@
 #include "Pipeline.hpp"
 
-#include "renderer/Mesh.hpp"
-
-#include <cassert>
-
 #include "asset/AssetManager.hpp"
 
 namespace Atlas {
