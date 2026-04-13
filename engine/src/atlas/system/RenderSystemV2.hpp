@@ -10,8 +10,8 @@
 #include "renderer/Device.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
-#include "renderer/pass/GeometryPass.hpp"
-#include "renderer/pass/PostProcessingPass.hpp"
+#include "renderer/stage/GeometryPass.hpp"
+#include "renderer/stage/PostProcessingPass.hpp"
 
 namespace Atlas {
     struct alignas(16) GlobalUbo {

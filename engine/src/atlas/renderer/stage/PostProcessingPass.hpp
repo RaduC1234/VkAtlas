@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IRenderPass.hpp"
+#include "IRenderStage.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/abstraction/Pipeline.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
@@ -8,7 +8,7 @@
 
 
 namespace Atlas {
-    class PostProcessPass : public IRenderPass {
+    class PostProcessPass : public IRenderStage {
     public:
         // swapchainRenderPass  — the existing Renderer swapchain renderpass
         // geometryColorView    — HDR output from GeometryPass
@@ -18,12 +18,12 @@ namespace Atlas {
         PostProcessPass(const PostProcessPass &) = delete;
         PostProcessPass &operator=(const PostProcessPass &) = delete;
 
-        // IRenderPass — post process runs inside the already-open swapchain pass
+        // IRenderStage — post process runs inside the already-open swapchain pass
         // so begin/end/barrier are no-ops; only record() is used
         void begin(VkCommandBuffer cmd) override {}
         void end(VkCommandBuffer cmd) override {}
         void barrier(VkCommandBuffer cmd) override {}
-        void getDeclaredResources(std::vector<PassResource> &out) const override {}
+        void getDeclaredOutputs(std::vector<StageResource> &out) const override {}
 
         // call inside the open swapchain renderpass
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet);

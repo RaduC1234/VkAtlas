@@ -90,11 +90,11 @@ namespace Atlas {
         );
     }
 
-    void GeometryPass::getDeclaredResources(std::vector<PassResource> &out) const {
+    void GeometryPass::getDeclaredOutputs(std::vector<StageResource> &out) const {
         auto colorImage = colorTarget.image();
         auto depthImage = depthTarget.image();
-        out.push_back(PassResource{&colorImage, PassResource::Type::ColorAttachment, PassResource::Access::Write, "geometry_color"});
-        out.push_back(PassResource{&depthImage, PassResource::Type::DepthAttachment, PassResource::Access::Write, "geometry_depth"});
+        out.push_back(StageResource{&colorImage, StageResource::Type::ColorAttachment, StageResource::Access::Write, "geometry_color"});
+        out.push_back(StageResource{&depthImage, StageResource::Type::DepthAttachment, StageResource::Access::Write, "geometry_depth"});
     }
 
     void GeometryPass::build(entt::registry &registry) {
@@ -211,10 +211,6 @@ namespace Atlas {
             lightsBuffer->uploadData(lights.data(), sizeof(Light) * lights.size());
     }
 
-    // -------------------------------------------------------------------------
-    // Record — called every frame between begin() / end()
-    // -------------------------------------------------------------------------
-
     void GeometryPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) const {
         // Render opaque geometry
         if (!opaqueObjectData.empty()) {
@@ -287,7 +283,7 @@ namespace Atlas {
         color.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         color.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        color.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // ready for post process
+        color.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkAttachmentDescription depth{};
         depth.format         = depthTarget.format();
@@ -347,10 +343,6 @@ namespace Atlas {
         if (vkCreateFramebuffer(device.device(), &info, nullptr, &framebuffer) != VK_SUCCESS)
             throw std::runtime_error("GeometryPass: failed to create framebuffer");
     }
-
-    // -------------------------------------------------------------------------
-    // Private — descriptors
-    // -------------------------------------------------------------------------
 
     void GeometryPass::createDescriptors() {
         // set 1 — environment (irradiance + prefilter)
@@ -471,10 +463,6 @@ namespace Atlas {
             cfg2
         );
     }
-
-    // -------------------------------------------------------------------------
-    // Private — GPU buffers
-    // -------------------------------------------------------------------------
 
     void GeometryPass::createGPUBuffers() {
         mergedVertexBuffer = std::make_unique<Buffer>(

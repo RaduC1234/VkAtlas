@@ -2,7 +2,7 @@
 
 #include <entt/entity/registry.hpp>
 
-#include "IRenderPass.hpp"
+#include "IRenderStage.hpp"
 #include "entity/Object.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
@@ -12,7 +12,7 @@
 
 
 namespace Atlas {
-    class GeometryPass : IRenderPass {
+    class GeometryPass : IRenderStage {
     public:
         static constexpr uint32_t MAX_TEXTURES = 1024;
         static constexpr uint32_t MAX_OBJECTS = 10000;
@@ -33,7 +33,7 @@ namespace Atlas {
         void begin(VkCommandBuffer cmd) override;
         void end(VkCommandBuffer cmd) override;
         void barrier(VkCommandBuffer cmd) override;
-        void getDeclaredResources(std::vector<PassResource> &out) const override;
+        void getDeclaredOutputs(std::vector<StageResource> &out) const override;
 
         void build(entt::registry &registry);
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) const;

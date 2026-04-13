@@ -4,7 +4,6 @@
 #include "asset/AssetManager.hpp"
 
 #include <glm/glm.hpp>
-#include <entt/entt.hpp>
 
 namespace Atlas {
     struct TransformComponent {
@@ -125,5 +124,9 @@ namespace Atlas {
         float contrast{1.0f};
         float saturation{1.0};
         glm::vec3 colorTint = {1.0f, 1.0f, 1.0f};
+    };
+
+    struct DirtyTag {
+        bool dirty{false};
     };
 }
