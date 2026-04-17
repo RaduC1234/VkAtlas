@@ -16,7 +16,7 @@ namespace Atlas {
     }
 
     Renderer::~Renderer() {
-        for (auto fence : computeInFlightFences) {
+        for (auto fence: computeInFlightFences) {
             vkDestroyFence(device.device(), fence, nullptr);
         }
         freeCommandBuffers();
@@ -67,7 +67,7 @@ namespace Atlas {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
-        //this->imGuiLayer->beginFrame();
+        this->imGuiLayer->beginFrame();
 
         return commandBuffer;
     }
@@ -75,6 +75,17 @@ namespace Atlas {
     void Renderer::endFrame() {
         assert(isFrameStarted && "Can't call endFrame while not in progress");
         auto commandBuffer = getCurrentGraphicsCommandBuffer();
+
+        VkRenderPassBeginInfo rpInfo{};
+        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        rpInfo.renderPass = swapChain->getImGuiRenderPass();
+        rpInfo.framebuffer = swapChain->getImGuiFrameBuffer(currentImageIndex);
+        rpInfo.renderArea.offset = {0, 0};
+        rpInfo.renderArea.extent = swapChain->getSwapChainExtent();
+
+        vkCmdBeginRenderPass(commandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+        imGuiLayer->endFrame(commandBuffer);
+        vkCmdEndRenderPass(commandBuffer);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -128,7 +139,7 @@ namespace Atlas {
         assert(isFrameStarted && "Can't call endSwapChainRenderPass if frame is not in progress");
         assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't end render pass on command buffer from a different frame");
 
-       // imGuiLayer->endFrame(commandBuffer);
+        // imGuiLayer->endFrame(commandBuffer);
         vkCmdEndRenderPass(commandBuffer);
     }
 
@@ -194,7 +205,12 @@ namespace Atlas {
     }
 
     void Renderer::createImGuiLayer() {
-        //this->imGuiLayer = std::make_unique<ImGuiLayer>(device, window, getSwapChainRenderPass(), static_cast<uint32_t>(getImageCount()));
+        this->imGuiLayer = std::make_unique<ImGuiLayer>(
+            device,
+            window,
+            swapChain->getImGuiRenderPass(),
+            static_cast<uint32_t>(getImageCount())
+        );
     }
 
     void Renderer::createCommandBuffers() {

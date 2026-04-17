@@ -226,10 +226,6 @@ namespace Atlas {
         );
     }
 
-    // -------------------------------------------------------------------------
-    // Record
-    // -------------------------------------------------------------------------
-
     void PostProcessPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
         VkRenderPassBeginInfo rpInfo{};
         rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -237,7 +233,6 @@ namespace Atlas {
         rpInfo.framebuffer = framebuffer;
         rpInfo.renderArea.offset = {0, 0};
         rpInfo.renderArea.extent = extent;
-        // No clear value needed — loadOp is DONT_CARE.
 
         vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -253,8 +248,7 @@ namespace Atlas {
         pipeline->bind(cmd);
 
         const VkDescriptorSet sets[] = {globalSet, inputSet};
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 0, std::size(sets), sets, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, std::size(sets), sets, 0, nullptr);
 
         vkCmdDraw(cmd, 3, 1, 0, 0); // full-screen triangle
 

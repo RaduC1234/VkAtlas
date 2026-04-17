@@ -65,7 +65,7 @@ namespace Atlas {
 
         Window &window;
         Device &device;
-        //std::unique_ptr<ImGuiLayer> imGuiLayer;
+        std::unique_ptr<ImGuiLayer> imGuiLayer;
         std::unique_ptr<SwapChain> swapChain;
         std::vector<VkCommandBuffer> graphicsCommandBuffers_;
 

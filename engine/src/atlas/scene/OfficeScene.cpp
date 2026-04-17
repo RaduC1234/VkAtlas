@@ -41,11 +41,11 @@ namespace Atlas {
     }
 
     void OfficeScene::onRender(VkCommandBuffer graphicsCmdBuffer) {
-/*#ifdef ATLAS_PLATFORM_DESKTOP
+#ifdef ATLAS_PLATFORM_DESKTOP
         ImGui::Begin("Debug Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::End();
-#endif*/
+#endif
 
         const GlobalUbo ubo{
             camera.getData(),

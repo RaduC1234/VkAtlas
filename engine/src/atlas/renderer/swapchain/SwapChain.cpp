@@ -40,7 +40,14 @@ namespace Atlas {
         for (auto framebuffer: swapChainFramebuffers) {
             vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
         }
+        swapChainFramebuffers.clear();
 
+        for (auto framebuffer: imguiFramebuffers) {
+            vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
+        }
+        imguiFramebuffers.clear();
+
+        vkDestroyRenderPass(device.device(), imguiRenderPass, nullptr);
         vkDestroyRenderPass(device.device(), renderPass, nullptr);
 
         // cleanup synchronization objects
@@ -253,6 +260,44 @@ namespace Atlas {
         if (vkCreateRenderPass(device.device(), &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
             throw std::runtime_error("failed to create render pass!");
         }
+
+        VkAttachmentDescription colorAttachment1{};
+        colorAttachment1.format = swapChainImageFormat;
+        colorAttachment1.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment1.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        colorAttachment1.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment1.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment1.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment1.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // OutputPass left it here
+        colorAttachment1.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        VkAttachmentReference colorRef1{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+
+        VkSubpassDescription subpass1{};
+        subpass1.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass1.colorAttachmentCount = 1;
+        subpass1.pColorAttachments = &colorRef1;
+
+        VkSubpassDependency dep1{};
+        dep1.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dep1.dstSubpass = 0;
+        dep1.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        dep1.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dep1.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        dep1.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        VkRenderPassCreateInfo info1{};
+        info1.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        info1.attachmentCount = 1;
+        info1.pAttachments = &colorAttachment1;
+        info1.subpassCount = 1;
+        info1.pSubpasses = &subpass1;
+        info1.dependencyCount = 1;
+        info1.pDependencies = &dep1;
+
+        if (vkCreateRenderPass(device.device(), &info1, nullptr, &imguiRenderPass) != VK_SUCCESS) {
+            throw std::runtime_error("SwapChain: failed to create imgui render pass");
+        }
     }
 
     void SwapChain::createFramebuffers() {
@@ -270,13 +315,24 @@ namespace Atlas {
             framebufferInfo.height = swapChainExtent.height;
             framebufferInfo.layers = 1;
 
-            if (vkCreateFramebuffer(
-                    device.device(),
-                    &framebufferInfo,
-                    nullptr,
-                    &swapChainFramebuffers[i]) != VK_SUCCESS) {
+            if (vkCreateFramebuffer(device.device(), &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
                 throw std::runtime_error("failed to create framebuffer!");
-            }
+        }
+
+        imguiFramebuffers.resize(swapChainImageViews.size());
+        for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+            VkExtent2D swapChainExtent = getSwapChainExtent();
+            VkFramebufferCreateInfo fbInfo{};
+            fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            fbInfo.renderPass = imguiRenderPass;
+            fbInfo.attachmentCount = 1;
+            fbInfo.pAttachments = &swapChainImageViews[i];
+            fbInfo.width = swapChainExtent.width;
+            fbInfo.height = swapChainExtent.height;
+            fbInfo.layers = 1;
+
+            if (vkCreateFramebuffer(device.device(), &fbInfo, nullptr, &imguiFramebuffers[i]) != VK_SUCCESS)
+                throw std::runtime_error("SwapChain: failed to create imgui framebuffer");
         }
     }
 

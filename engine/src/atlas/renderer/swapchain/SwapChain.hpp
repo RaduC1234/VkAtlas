@@ -18,7 +18,7 @@ namespace Atlas {
         VkResult submitCommandBuffers(const VkCommandBuffer *buffers, uint32_t *imageIndex);
 
         VkFormat findDepthFormat();
-        VkFormat getSwapChainImageFormat() const {return swapChainImageFormat; }
+        VkFormat getSwapChainImageFormat() const { return swapChainImageFormat; }
         VkExtent2D getSwapChainExtent() const { return swapChainExtent; }
         size_t imageCount() const { return swapChainImages.size(); }
         VkImage getImage(uint32_t index) const { return swapChainImages[index]; }
@@ -29,9 +29,12 @@ namespace Atlas {
         VkRenderPass getRenderPass() const { return renderPass; }
         VkFramebuffer getFrameBuffer(int32_t index) const { return swapChainFramebuffers[index]; }
 
-        bool compareSwapFormats(const SwapChain& swapChain) const {
+        VkRenderPass getImGuiRenderPass() const { return imguiRenderPass; }
+        VkFramebuffer getImGuiFrameBuffer(uint32_t i) const { return imguiFramebuffers[i]; }
+
+        bool compareSwapFormats(const SwapChain &swapChain) const {
             return swapChain.swapChainDepthFormat == swapChainDepthFormat &&
-                swapChain.swapChainImageFormat == swapChainImageFormat;
+                   swapChain.swapChainImageFormat == swapChainImageFormat;
         }
 
         float extentAspectRatio() const {
@@ -64,6 +67,9 @@ namespace Atlas {
         std::vector<VkFence> inFlightFences;
         std::vector<VkFence> imagesInFlight;
         size_t currentFrame = 0;
+
+        VkRenderPass imguiRenderPass;
+        std::vector<VkFramebuffer> imguiFramebuffers;
 
         void init();
         void createSwapChain();

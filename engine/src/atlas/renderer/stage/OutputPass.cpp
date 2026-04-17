@@ -10,13 +10,6 @@ namespace Atlas {
     }
 
     void OutputPass::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {
-        // ------------------------------------------------------------------ //
-        // post_color arrives here in SHADER_READ_ONLY_OPTIMAL                 //
-        // (set by PostProcessPass's render pass finalLayout, matching what     //
-        //  RenderGraph::writeLayoutFor(COLOR_ATTACHMENT) tracks).              //
-        // We need TRANSFER_SRC to blit from it.                               //
-        // ------------------------------------------------------------------ //
-
         VkImageMemoryBarrier barriers[2]{};
 
         // 1. post_color: SHADER_READ_ONLY → TRANSFER_SRC
@@ -64,12 +57,10 @@ namespace Atlas {
         VkImageBlit region{};
         region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         region.srcOffsets[0]  = {0, 0, 0};
-        region.srcOffsets[1]  = {static_cast<int32_t>(srcExtent.width),
-                                  static_cast<int32_t>(srcExtent.height), 1};
+        region.srcOffsets[1]  = {static_cast<int32_t>(srcExtent.width), static_cast<int32_t>(srcExtent.height), 1};
         region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
         region.dstOffsets[0]  = {0, 0, 0};
-        region.dstOffsets[1]  = {static_cast<int32_t>(dstExtent.width),
-                                  static_cast<int32_t>(dstExtent.height), 1};
+        region.dstOffsets[1]  = {static_cast<int32_t>(dstExtent.width), static_cast<int32_t>(dstExtent.height), 1};
 
         vkCmdBlitImage(cmd,
             postColorSource->image(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,

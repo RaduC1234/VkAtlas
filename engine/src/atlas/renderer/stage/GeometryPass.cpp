@@ -35,7 +35,7 @@ namespace Atlas {
         // No inputs
     }
 
-    void GeometryPass::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<GPUImage>> &resources) {
+    void GeometryPass::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<GPUImage> > &resources) {
         colorTarget = &resources.at("geometry_color").get();
         depthTarget = &resources.at("geometry_depth").get();
         extent = {colorTarget->extent().width, colorTarget->extent().height};
@@ -237,8 +237,7 @@ namespace Atlas {
                 objectDataSet,
                 lightSet,
             };
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipelineLayout, 0, std::size(sets), sets, 0, nullptr);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, std::size(sets), sets, 0, nullptr);
 
             VkBuffer vb = mergedVertexBuffer->get();
             VkDeviceSize offset = 0;
@@ -255,10 +254,8 @@ namespace Atlas {
             skyboxPipeline->bind(cmd);
 
             const VkDescriptorSet sets[] = {globalSet, skyboxDescriptorSet};
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipelineLayout, 0, 1, &sets[0], 0, nullptr);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipelineLayout, 5, 1, &sets[1], 0, nullptr);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &sets[0], 0, nullptr);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 5, 1, &sets[1], 0, nullptr);
 
             vkCmdDraw(cmd, 36, 1, 0, 0);
         }
@@ -549,14 +546,12 @@ namespace Atlas {
         meshAllocations[handle] = alloc;
 
         const VkDeviceSize vSize = vertices.size() * sizeof(Mesh::Vertex);
-        Buffer vStaging(device, vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO,
-                        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+        Buffer vStaging(device, vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
         vStaging.uploadData(vertices.data(), vSize);
         Buffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, nextVertex * sizeof(Mesh::Vertex));
 
         const VkDeviceSize iSize = indices.size() * sizeof(uint32_t);
-        Buffer iStaging(device, iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO,
-                        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+        Buffer iStaging(device, iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
         iStaging.uploadData(indices.data(), iSize);
         Buffer::copy(device, iStaging.get(), mergedIndexBuffer->get(), iSize, 0, nextIndex * sizeof(uint32_t));
 
