@@ -1,41 +1,28 @@
 #include "RenderSystemV2.hpp"
 
-#include <renderer/ImGuiLayer.hpp>
-
 #include "core/Log.hpp"
+#include "renderer/stage/OutputPass.hpp"
 
 namespace Atlas {
-    RenderSystemV2::RenderSystemV2(Device& device, VkRenderPass swapChainRenderPass) : device(device) {
+    RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer) : device(device) {
         createGlobalUbo();
 
-        geometryPass = std::make_unique<GeometryPass>(device, G_BUFFER_WIDTH, G_BUFFER_HEIGHT, *globalSetLayout);
-        postProcessPass = std::make_unique<PostProcessPass>(device, swapChainRenderPass, geometryPass->getColorTarget(), geometryPass->getDepthTarget(), *globalSetLayout);
+        this->renderGraph = RenderGraph::Builder(device)
+                .addStage<GeometryPass>(device, *globalSetLayout)
+                .addStage<PostProcessPass>(device, *globalSetLayout)
+                .addStage<OutputPass>(device, renderer)
+                .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
+                .build();
     }
 
     void RenderSystemV2::build(entt::registry &registry) {
-        geometryPass->build(registry);
+        renderGraph->build(registry);
     }
 
-    void RenderSystemV2::render(Renderer& renderer, const GlobalUbo &globalUbo, ImGuiLayer& imGui) {
-        uint32_t frameIndex = renderer.getFrameIndex();
+    void RenderSystemV2::render(VkCommandBuffer graphicsCmdBuffer, uint32_t frameIndex, const GlobalUbo &globalUbo) {
+        globalUboBuffers[frameIndex]->uploadData(&globalUbo, sizeof(GlobalUbo));
 
-        if (VkCommandBuffer graphicsCommandBuffer = renderer.getCurrentGraphicsCommandBuffer()) {
-            globalUboBuffers[frameIndex]->uploadData(&globalUbo, sizeof(GlobalUbo));
-
-            // pass 1
-            geometryPass->begin(graphicsCommandBuffer);
-            geometryPass->record(graphicsCommandBuffer, globalDescriptorSets[frameIndex]);
-            geometryPass->end(graphicsCommandBuffer);
-            geometryPass->barrier(graphicsCommandBuffer);
-
-            // pass 2
-            renderer.beginSwapChainRenderPass(graphicsCommandBuffer);
-            postProcessPass->record(graphicsCommandBuffer, globalDescriptorSets[frameIndex]);
-            imGui.endFrame(graphicsCommandBuffer);
-            renderer.endSwapChainRenderPass(graphicsCommandBuffer);
-        } else {
-            AT_FATAL("Could not get current graphics command buffer.");
-        }
+        renderGraph->render(graphicsCmdBuffer, globalDescriptorSets[frameIndex]);
     }
 
     void RenderSystemV2::createGlobalUbo() {

@@ -21,6 +21,7 @@ namespace Atlas {
         VkFormat getSwapChainImageFormat() const {return swapChainImageFormat; }
         VkExtent2D getSwapChainExtent() const { return swapChainExtent; }
         size_t imageCount() const { return swapChainImages.size(); }
+        VkImage getImage(uint32_t index) const { return swapChainImages[index]; }
 
         uint32_t width() const { return swapChainExtent.width; }
         uint32_t height() const { return swapChainExtent.height; }

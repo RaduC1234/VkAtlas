@@ -6,44 +6,54 @@
 #include "renderer/abstraction/Descriptors.hpp"
 #include "renderer/abstraction/GPUImage.hpp"
 
-
 namespace Atlas {
     class PostProcessPass : public IRenderStage {
     public:
-        // swapchainRenderPass  — the existing Renderer swapchain renderpass
-        // geometryColorView    — HDR output from GeometryPass
-        PostProcessPass(Device &device, VkRenderPass swapchainRenderPass, const GPUImage& colorImage, const GPUImage& depthImage, const DescriptorSetLayout& globalSetLayout);
+        PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout);
         ~PostProcessPass() override;
 
         PostProcessPass(const PostProcessPass &) = delete;
         PostProcessPass &operator=(const PostProcessPass &) = delete;
 
-        // IRenderStage — post process runs inside the already-open swapchain pass
-        // so begin/end/barrier are no-ops; only record() is used
-        void begin(VkCommandBuffer cmd) override {}
-        void end(VkCommandBuffer cmd) override {}
-        void barrier(VkCommandBuffer cmd) override {}
-        void getDeclaredOutputs(std::vector<StageResource> &out) const override {}
+        void getDeclaredOutputs(std::vector<Resource> &out) const override {
+            out.push_back(Resource::color("post_color", VK_FORMAT_R8G8B8A8_UNORM));
+        }
 
-        // call inside the open swapchain renderpass
-        void record(VkCommandBuffer cmd, VkDescriptorSet globalSet);
+        void getDeclaredInputs(std::vector<std::string> &out) const override {
+            out.push_back("geometry_color");
+            out.push_back("geometry_depth");
+        }
+
+        void onResourcesCreated(
+            const std::unordered_map<std::string, std::reference_wrapper<GPUImage>> &resources) override;
+
+        void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 
     private:
-        std::unique_ptr<Pipeline> pipeline;
-        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
-
-        std::unique_ptr<DescriptorPool> pool;
-
-        std::unique_ptr<DescriptorSetLayout> inputSetLayout;
-        VkDescriptorSet inputSet = VK_NULL_HANDLE;
-        VkSampler colorSampler = VK_NULL_HANDLE;
-        VkSampler stencilSampler = VK_NULL_HANDLE;
-
         Device &device;
+        const DescriptorSetLayout &globalSetLayout;
+
+        // Owned render pass + framebuffer targeting post_color.
+        VkRenderPass  renderPass  = VK_NULL_HANDLE;
+        VkFramebuffer framebuffer = VK_NULL_HANDLE;
+        VkExtent2D    extent      = {};
+
+        // Non-owning pointer; lifetime managed by RenderGraph.
+        const GPUImage *postColorTarget = nullptr;
+
+        std::unique_ptr<Pipeline>           pipeline;
+        VkPipelineLayout                    pipelineLayout = VK_NULL_HANDLE;
+        std::unique_ptr<DescriptorPool>     pool;
+        std::unique_ptr<DescriptorSetLayout> inputSetLayout;
+        VkDescriptorSet                     inputSet       = VK_NULL_HANDLE;
+        VkSampler                           colorSampler   = VK_NULL_HANDLE;
+        VkSampler                           stencilSampler = VK_NULL_HANDLE;
 
         void createSampler();
+        void createRenderPass(VkFormat colorFmt);
+        void createFramebuffer(const GPUImage &colorImage);
         void createDescriptors(const GPUImage &colorImage, const GPUImage &depthImage);
-        void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
-        void createPipeline(VkRenderPass swapChainRenderPass);
+        void createPipelineLayout();
+        void createPipeline();
     };
-} // Atlas
+} // namespace Atlas

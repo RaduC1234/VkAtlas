@@ -111,10 +111,18 @@ namespace Atlas {
         destroy();
     }
 
-    GPUImage::GPUImage(GPUImage &&other) noexcept {
+    GPUImage::GPUImage(GPUImage&& other) noexcept
+        : device_(other.device_)
+        , image_(other.image_)
+        , alloc_(other.alloc_)
+        , views_(std::move(other.views_))
+        , format_(other.format_)
+        , extent_(other.extent_)
+        , mipLevels_(other.mipLevels_)
+    {
         other.device_ = nullptr;
-        other.image_ = VK_NULL_HANDLE;
-        other.alloc_ = VK_NULL_HANDLE;
+        other.image_  = VK_NULL_HANDLE;
+        other.alloc_  = VK_NULL_HANDLE;
     }
 
     GPUImage &GPUImage::operator=(GPUImage &&other) noexcept {

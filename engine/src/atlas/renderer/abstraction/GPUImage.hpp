@@ -55,7 +55,7 @@ namespace Atlas {
         GPUImage &operator=(GPUImage &&) noexcept;
 
         VkImage image() const { return image_; }
-        VkImageView view(uint32_t i) const { return views_.at(i); }
+        VkImageView view(uint32_t i) const { return views_.at(i); } // invalid vector subscript
         uint32_t viewCount() const { return static_cast<uint32_t>(views_.size()); }
         VkFormat format() const { return format_; }
         VkExtent2D extent() const { return extent_; }

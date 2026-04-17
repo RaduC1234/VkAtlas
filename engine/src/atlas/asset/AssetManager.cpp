@@ -683,7 +683,7 @@ namespace Atlas {
         std::vector<AssetHandle> imageHandles(model.images.size(), INVALID_ASSET_HANDLE);
 
         // Get executor service
-        auto &executor = device.getExecutor();
+        auto &executor = device.executor();
 
         AT_INFO("Loading assets...");
 
@@ -1259,12 +1259,10 @@ namespace Atlas {
         }
 
         // KHR_lights_punctual
-        entt::entity punctualLightEntity = entt::null;
         if (node.light >= 0 && node.light < static_cast<int>(model.lights.size())) {
             const tinygltf::Light &gltfLight = model.lights[node.light];
 
             auto entity = registry.create();
-            punctualLightEntity = entity;
 
             glm::vec3 translation, scale, skew;
             glm::quat rotation;

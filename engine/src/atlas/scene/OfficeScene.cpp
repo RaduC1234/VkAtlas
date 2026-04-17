@@ -14,7 +14,7 @@
 namespace Atlas {
     OfficeScene::OfficeScene(Renderer &renderer) : Scene(renderer) {
         cameraSystem = std::make_unique<CameraSystem>(renderer.getWindow());
-        renderSystem = std::make_unique<RenderSystemV2>(renderer.getDevice(), renderer.getSwapChainRenderPass());
+        renderSystem = std::make_unique<RenderSystemV2>(renderer.getDevice(), renderer);
     }
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
@@ -40,18 +40,19 @@ namespace Atlas {
         camera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 200.f);
     }
 
-    void OfficeScene::onRender(ImGuiLayer& imguiLayer) {
-#ifdef ATLAS_PLATFORM_DESKTOP
+    void OfficeScene::onRender(VkCommandBuffer graphicsCmdBuffer) {
+/*#ifdef ATLAS_PLATFORM_DESKTOP
         ImGui::Begin("Debug Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::End();
-#endif
+#endif*/
 
         const GlobalUbo ubo{
             camera.getData(),
             glm::vec4(0.02, 0.02, 0.03, 1.0)
         };
-        renderSystem->render(renderer, ubo, imguiLayer);
+
+        renderSystem->render(graphicsCmdBuffer, renderer.getFrameIndex(), ubo);
     }
 
     void OfficeScene::onDelete() {

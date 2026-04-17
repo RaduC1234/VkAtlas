@@ -20,7 +20,7 @@ namespace Atlas {
 
         void onLoad(entt::registry&& registry) override;
         void onUpdate(float deltaTime) override;
-        void onRender(ImGuiLayer &imguiLayer) override;
+        void onRender(VkCommandBuffer graphicsCmdBuffer) override;
         void onDelete() override;
     protected:
 

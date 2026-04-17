@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Device.hpp"
+#include "ImGuiLayer.hpp"
 
 #include "core/Window.hpp"
 #include "swapchain/SwapChain.hpp"
@@ -23,6 +24,8 @@ namespace Atlas {
         VkRenderPass getSwapChainRenderPass() const { return swapChain->getRenderPass(); }
         float getAspectRatio() const { return swapChain->extentAspectRatio(); }
         size_t getImageCount() const { return swapChain->imageCount(); }
+        VkImage    getCurrentSwapchainImage() const { return swapChain->getImage(currentImageIndex); }
+        VkExtent2D getSwapchainExtent()       const { return swapChain->getSwapChainExtent(); }
 
         // Frame state
         bool isFrameInProgress() const { return isFrameStarted; }
@@ -58,9 +61,11 @@ namespace Atlas {
         void freeCommandBuffers();
         void recreateSwapChain();
         void createComputeSyncObjects();
+        void createImGuiLayer();
 
         Window &window;
         Device &device;
+        //std::unique_ptr<ImGuiLayer> imGuiLayer;
         std::unique_ptr<SwapChain> swapChain;
         std::vector<VkCommandBuffer> graphicsCommandBuffers_;
 

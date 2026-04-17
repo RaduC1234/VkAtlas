@@ -10,9 +10,8 @@
 #include "renderer/abstraction/Pipeline.hpp"
 #include "utils/Storage.hpp"
 
-
 namespace Atlas {
-    class GeometryPass : IRenderStage {
+    class GeometryPass : public IRenderStage {
     public:
         static constexpr uint32_t MAX_TEXTURES = 1024;
         static constexpr uint32_t MAX_OBJECTS = 10000;
@@ -20,29 +19,29 @@ namespace Atlas {
         static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 1'000'000;
         static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
 
-        GeometryPass(Device &device, uint32_t width, uint32_t height, const DescriptorSetLayout &globalSetLayout);
+        GeometryPass(Device &device, const DescriptorSetLayout &globalSetLayout);
         ~GeometryPass() override;
 
         GeometryPass(const GeometryPass &) = delete;
         GeometryPass &operator=(const GeometryPass &) = delete;
 
         VkRenderPass getRenderPass() const { return renderPass; }
-        const GPUImage& getColorTarget() const { return colorTarget; }
-        const GPUImage& getDepthTarget() const { return depthTarget; }
+        const GPUImage &getColorTarget() const { return *colorTarget; }
+        const GPUImage &getDepthTarget() const { return *depthTarget; }
 
-        void begin(VkCommandBuffer cmd) override;
-        void end(VkCommandBuffer cmd) override;
-        void barrier(VkCommandBuffer cmd) override;
-        void getDeclaredOutputs(std::vector<StageResource> &out) const override;
+        void getDeclaredOutputs(std::vector<Resource> &out) const override;
+        void getDeclaredInputs(std::vector<std::string> &out) const override;
 
-        void build(entt::registry &registry);
-        void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) const;
+        void onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<GPUImage>> &resources) override;
+        void onSceneChanged(entt::registry &registry) override;
+
+        void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 
     private:
         struct GPUObjectData {
             glm::mat4 modelMatrix;
             glm::mat4 normalMatrix;
-            glm::uvec4 textureIndices; // albedo, normal, metallicRoughness, unused
+            glm::uvec4 textureIndices;
             glm::vec4 baseColor;
         };
 
@@ -66,70 +65,59 @@ namespace Atlas {
             float height{0.0f};
         };
 
-        Device& device;
+        Device &device;
+        const DescriptorSetLayout &globalSetLayout;
 
-        GPUImage colorTarget;
-        GPUImage depthTarget;
+        const GPUImage *colorTarget = nullptr;
+        const GPUImage *depthTarget = nullptr;
 
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
         VkExtent2D extent = {};
 
-        // Pipelines
         std::unique_ptr<Pipeline> opaquePipeline;
         std::unique_ptr<Pipeline> skyboxPipeline;
-        //std::unique_ptr<Pipeline> transparentPipeline;
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
 
-        // Descriptors
         std::unique_ptr<DescriptorPool> pool;
 
-        // set 1 — environment (IBL cubemaps + BRDF LUT + shadow map)
         std::unique_ptr<DescriptorSetLayout> environmentSetLayout;
         VkDescriptorSet environmentSet = VK_NULL_HANDLE;
 
-        // set 2 — bindless textures
         std::unique_ptr<DescriptorSetLayout> textureSetLayout;
         VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
         uint32_t nextTextureSlot = 1;
         std::unordered_map<AssetHandle, uint32_t> handleToTextureSlot;
         AssetHandle defaultWhiteHandle = INVALID_ASSET_HANDLE;
 
-        // set 3 — object SSBO
         std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
-
         Storage<GPUObjectData> opaqueObjectData;
         std::unique_ptr<Buffer> objectDataBuffer;
         VkDescriptorSet objectDataSet = VK_NULL_HANDLE;
         std::unique_ptr<Buffer> opaqueIndirectCommandBuffer;
 
-        /*Storage<GPUObjectData> transparentObjectData;
-        std::unique_ptr<Buffer> transparentObjectDataBuffer;
-        VkDescriptorSet transparentObjectDataSet = VK_NULL_HANDLE;
-        std::unique_ptr<Buffer> transparentIndirectCommandBuffer;*/
-
-        // Set 4 — lights SSBO
         Storage<Light> lights;
         std::unique_ptr<Buffer> lightsBuffer;
         VkDescriptorSet lightSet = VK_NULL_HANDLE;
         std::unique_ptr<DescriptorSetLayout> lightSetLayout;
 
-        // Skybox
         std::unique_ptr<DescriptorSetLayout> skyboxSetLayout;
         VkDescriptorSet skyboxDescriptorSet = VK_NULL_HANDLE;
         AssetHandle boundSkyboxHandle = INVALID_ASSET_HANDLE;
 
-        // Merged geometry buffers
         std::unique_ptr<Buffer> mergedVertexBuffer;
         std::unique_ptr<Buffer> mergedIndexBuffer;
         uint32_t nextVertex = 0;
         uint32_t nextIndex = 0;
         std::unordered_map<AssetHandle, MeshAllocation> meshAllocations;
 
-        void createRenderTargets(uint32_t width, uint32_t height);
+        void begin(VkCommandBuffer cmd);
+        void end(VkCommandBuffer cmd);
+        void barrier(VkCommandBuffer cmd);
+
         void createRenderPass();
         void createFramebuffer();
-        void createPipelineLayout(const DescriptorSetLayout &globalSetLayout);
+        void createPipelineLayout();
         void createPipelines();
         void createDescriptors();
         void createGPUBuffers();
@@ -139,4 +127,4 @@ namespace Atlas {
         uint32_t resolveTextureIndex(AssetHandle handle) const;
         VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
     };
-} // Atlas
+} // namespace Atlas

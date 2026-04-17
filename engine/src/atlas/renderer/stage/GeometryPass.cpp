@@ -5,27 +5,162 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
+#include "asset/AssetManager.hpp"
 #include "core/Log.hpp"
+#include "entity/Object.hpp"
+#include "renderer/abstraction/Buffer.hpp"
 
 namespace Atlas {
-    GeometryPass::GeometryPass(Device &device, uint32_t width, uint32_t height, const DescriptorSetLayout &globalSetLayout): device(device) {
-        createRenderTargets(width, height);
-        createRenderPass();
-        createFramebuffer();
+    GeometryPass::GeometryPass(Device &device, const DescriptorSetLayout &globalSetLayout)
+        : device(device), globalSetLayout(globalSetLayout) {
         createDescriptors();
-        createPipelineLayout(globalSetLayout);
-        createPipelines();
+        createGPUBuffers();
 
         defaultWhiteHandle = AssetManager::get().createDefaultWhiteTexture();
         registerTexture(defaultWhiteHandle);
-
-        createGPUBuffers();
     }
 
     GeometryPass::~GeometryPass() {
         vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
         vkDestroyRenderPass(device.device(), renderPass, nullptr);
         vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
+    }
+
+    void GeometryPass::getDeclaredOutputs(std::vector<Resource> &out) const {
+        out.push_back(Resource::color("geometry_color"));
+        out.push_back(Resource::depth("geometry_depth"));
+    }
+
+    void GeometryPass::getDeclaredInputs(std::vector<std::string> &out) const {
+        // No inputs
+    }
+
+    void GeometryPass::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<GPUImage>> &resources) {
+        colorTarget = &resources.at("geometry_color").get();
+        depthTarget = &resources.at("geometry_depth").get();
+        extent = {colorTarget->extent().width, colorTarget->extent().height};
+
+        createRenderPass();
+        createFramebuffer();
+        createPipelineLayout();
+        createPipelines();
+    }
+
+    void GeometryPass::onSceneChanged(entt::registry &registry) {
+        opaqueObjectData.clear();
+        lights.clear();
+
+        auto skyboxView = registry.view<SkyboxComponent>();
+        if (skyboxView.empty()) {
+            AT_WARN("GeometryPass: no skybox entity found, IBL and skybox will be unavailable");
+        } else {
+            if (skyboxView.size() > 1) {
+                AT_WARN("GeometryPass: multiple skyboxes detected, using the first one");
+            }
+
+            const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
+            const auto irradiance = AssetManager::get().getCubemap(skybox.irradianceHandle != INVALID_ASSET_HANDLE ? skybox.irradianceHandle : defaultWhiteHandle);
+            const auto prefilter = AssetManager::get().getCubemap(skybox.prefilterHandle != INVALID_ASSET_HANDLE ? skybox.prefilterHandle : defaultWhiteHandle);
+            const auto skyboxCubemap = AssetManager::get().getCubemap(skybox.skyboxHandle != INVALID_ASSET_HANDLE ? skybox.skyboxHandle : defaultWhiteHandle);
+
+            VkDescriptorImageInfo irradianceInfo = {irradiance->getSampler(), irradiance->getImageView(), irradiance->getImageLayout()};
+            VkDescriptorImageInfo prefilterInfo = {prefilter->getSampler(), prefilter->getImageView(), prefilter->getImageLayout()};
+            VkDescriptorImageInfo skyboxInfo = {skyboxCubemap->getSampler(), skyboxCubemap->getImageView(), skyboxCubemap->getImageLayout()};
+
+            VkWriteDescriptorSet wIrradiance{};
+            wIrradiance.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            wIrradiance.dstSet = environmentSet;
+            wIrradiance.dstBinding = 0;
+            wIrradiance.descriptorCount = 1;
+            wIrradiance.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            wIrradiance.pImageInfo = &irradianceInfo;
+
+            VkWriteDescriptorSet wPrefilter = wIrradiance;
+            wPrefilter.dstBinding = 1;
+            wPrefilter.pImageInfo = &prefilterInfo;
+
+            VkWriteDescriptorSet wSkybox{};
+            wSkybox.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            wSkybox.dstSet = skyboxDescriptorSet;
+            wSkybox.dstBinding = 0;
+            wSkybox.descriptorCount = 1;
+            wSkybox.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            wSkybox.pImageInfo = &skyboxInfo;
+            boundSkyboxHandle = skybox.skyboxHandle;
+
+            std::vector writes = {wIrradiance, wPrefilter, wSkybox};
+            vkUpdateDescriptorSets(device.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        }
+
+        auto *opaqueDrawCmds = static_cast<VkDrawIndexedIndirectCommand *>(
+            opaqueIndirectCommandBuffer->getMapped());
+
+        for (auto entity: registry.view<TransformComponent, MaterialComponent, ModelComponent>()) {
+            auto &transform = registry.get<TransformComponent>(entity);
+            auto &material = registry.get<MaterialComponent>(entity);
+            auto &model = registry.get<ModelComponent>(entity);
+
+            registerTexture(material.albedoTexture);
+            registerTexture(material.normalMap);
+            registerTexture(material.metallicRoughnessMap);
+            registerTexture(material.ambientOcclusion);
+            registerMesh(model.meshHandle);
+
+            const auto allocIt = meshAllocations.find(model.meshHandle);
+            if (allocIt == meshAllocations.end()) { continue; }
+
+            const MeshAllocation &alloc = allocIt->second;
+            const glm::mat4 model4 = transform.mat4();
+
+            const GPUObjectData data{
+                .modelMatrix = model4,
+                .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(model4))),
+                .textureIndices = glm::uvec4(
+                    resolveTextureIndex(material.albedoTexture != INVALID_ASSET_HANDLE ? material.albedoTexture : defaultWhiteHandle),
+                    resolveTextureIndex(material.normalMap != INVALID_ASSET_HANDLE ? material.normalMap : defaultWhiteHandle),
+                    resolveTextureIndex(material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? material.metallicRoughnessMap : defaultWhiteHandle),
+                    resolveTextureIndex(material.ambientOcclusion != INVALID_ASSET_HANDLE ? material.ambientOcclusion : defaultWhiteHandle)
+                ),
+                .baseColor = material.baseColor,
+            };
+
+            if (material.baseColor.w >= 1.0f) {
+                const auto idx = static_cast<uint32_t>(opaqueObjectData.size());
+                opaqueObjectData.emplace(entity, data);
+                opaqueDrawCmds[idx] = {
+                    .indexCount = alloc.indexCount,
+                    .instanceCount = 1,
+                    .firstIndex = alloc.firstIndex,
+                    .vertexOffset = static_cast<int32_t>(alloc.firstVertex),
+                    .firstInstance = idx,
+                };
+            }
+        }
+
+        for (auto entity: registry.view<TransformComponent, LightComponent>()) {
+            auto [transform, light] = registry.get<TransformComponent, LightComponent>(entity);
+            lights.emplace(entity, Light{
+                               static_cast<uint32_t>(light.type),
+                               light.intensity,
+                               light.range == 0.0f ? 20.0f : light.range,
+                               light.innerConeAngle,
+                               light.color,
+                               light.outerConeAngle,
+                               transform.translation,
+                               light.width,
+                               light.direction,
+                               light.height,
+                           });
+        }
+
+        if (!opaqueObjectData.empty()) {
+            objectDataBuffer->uploadData(opaqueObjectData.data(),
+                                         sizeof(GPUObjectData) * opaqueObjectData.size());
+        }
+
+        if (!lights.empty()) {
+            lightsBuffer->uploadData(lights.data(), sizeof(Light) * lights.size());
+        }
     }
 
     void GeometryPass::begin(VkCommandBuffer cmd) {
@@ -69,7 +204,7 @@ namespace Atlas {
         barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barriers[0].image = colorTarget.image();
+        barriers[0].image = colorTarget->image();
         barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
         barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -79,152 +214,31 @@ namespace Atlas {
         barriers[1].newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
         barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barriers[1].image = depthTarget.image();
+        barriers[1].image = depthTarget->image();
         barriers[1].subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
 
         vkCmdPipelineBarrier(cmd,
                              VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                              0, 0, nullptr, 0, nullptr,
-                             barriers.size(), barriers.data()
-        );
+                             static_cast<uint32_t>(barriers.size()), barriers.data());
     }
 
-    void GeometryPass::getDeclaredOutputs(std::vector<StageResource> &out) const {
-        auto colorImage = colorTarget.image();
-        auto depthImage = depthTarget.image();
-        out.push_back(StageResource{&colorImage, StageResource::Type::ColorAttachment, StageResource::Access::Write, "geometry_color"});
-        out.push_back(StageResource{&depthImage, StageResource::Type::DepthAttachment, StageResource::Access::Write, "geometry_depth"});
-    }
+    void GeometryPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
+        begin(cmd);
 
-    void GeometryPass::build(entt::registry &registry) {
-        // --- Environment (IBL) + Skybox ---
-        auto skyboxView = registry.view<SkyboxComponent>();
-        if (skyboxView.empty()) {
-            AT_WARN("GeometryPass: no skybox entity found, IBL and skybox will be unavailable");
-        } else {
-            if (skyboxView.size() > 1)
-                AT_WARN("GeometryPass: multiple skyboxes detected, using the first one");
-
-            const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
-            const auto irradiance = AssetManager::get().getCubemap(skybox.irradianceHandle != INVALID_ASSET_HANDLE ? skybox.irradianceHandle : defaultWhiteHandle);
-            const auto prefilter = AssetManager::get().getCubemap(skybox.prefilterHandle != INVALID_ASSET_HANDLE ? skybox.prefilterHandle : defaultWhiteHandle);
-            const auto skyboxCubemap = AssetManager::get().getCubemap(skybox.skyboxHandle != INVALID_ASSET_HANDLE ? skybox.skyboxHandle : defaultWhiteHandle);
-
-            VkDescriptorImageInfo irradianceInfo = {irradiance->getSampler(), irradiance->getImageView(), irradiance->getImageLayout()};
-            VkDescriptorImageInfo prefilterInfo = {prefilter->getSampler(), prefilter->getImageView(), prefilter->getImageLayout()};
-            VkDescriptorImageInfo skyboxInfo = {skyboxCubemap->getSampler(), skyboxCubemap->getImageView(), skyboxCubemap->getImageLayout()};
-
-            VkWriteDescriptorSet wIrradiance{};
-            wIrradiance.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            wIrradiance.dstSet = environmentSet;
-            wIrradiance.dstBinding = 0;
-            wIrradiance.descriptorCount = 1;
-            wIrradiance.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            wIrradiance.pImageInfo = &irradianceInfo;
-
-            VkWriteDescriptorSet wPrefilter = wIrradiance;
-            wPrefilter.dstBinding = 1;
-            wPrefilter.pImageInfo = &prefilterInfo;
-
-            VkWriteDescriptorSet wSkybox{};
-            wSkybox.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            wSkybox.dstSet = skyboxDescriptorSet;
-            wSkybox.dstBinding = 0;
-            wSkybox.descriptorCount = 1;
-            wSkybox.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            wSkybox.pImageInfo = &skyboxInfo;
-            boundSkyboxHandle = skybox.skyboxHandle;
-
-            std::vector writes = {wIrradiance, wPrefilter, wSkybox};
-
-            vkUpdateDescriptorSets(device.device(), writes.size(), writes.data(), 0, nullptr);
-        }
-
-        auto *opaqueDrawCmds = static_cast<VkDrawIndexedIndirectCommand *>(opaqueIndirectCommandBuffer->getMapped());
-
-        for (auto entity: registry.view<TransformComponent, MaterialComponent, ModelComponent>()) {
-            auto &transform = registry.get<TransformComponent>(entity);
-            auto &material = registry.get<MaterialComponent>(entity);
-            auto &model = registry.get<ModelComponent>(entity);
-
-            registerTexture(material.albedoTexture);
-            registerTexture(material.normalMap);
-            registerTexture(material.metallicRoughnessMap);
-            registerTexture(material.ambientOcclusion);
-            registerMesh(model.meshHandle);
-
-            const auto allocIt = meshAllocations.find(model.meshHandle);
-            if (allocIt == meshAllocations.end()) continue;
-
-            const MeshAllocation &alloc = allocIt->second;
-            const glm::mat4 model4 = transform.mat4();
-
-            const GPUObjectData data{
-                .modelMatrix = model4,
-                .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(model4))),
-                .textureIndices = glm::uvec4(
-                    resolveTextureIndex(material.albedoTexture != INVALID_ASSET_HANDLE ? material.albedoTexture : defaultWhiteHandle),
-                    resolveTextureIndex(material.normalMap != INVALID_ASSET_HANDLE ? material.normalMap : defaultWhiteHandle),
-                    resolveTextureIndex(material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? material.metallicRoughnessMap : defaultWhiteHandle),
-                    resolveTextureIndex(material.ambientOcclusion != INVALID_ASSET_HANDLE ? material.ambientOcclusion : defaultWhiteHandle)
-                ),
-                .baseColor = material.baseColor,
-            };
-
-            if (material.baseColor.w >= 1.0f) {
-                const auto idx = static_cast<uint32_t>(opaqueObjectData.size());
-                opaqueObjectData.emplace(entity, data);
-                opaqueDrawCmds[idx] = {
-                    .indexCount = alloc.indexCount,
-                    .instanceCount = 1,
-                    .firstIndex = alloc.firstIndex,
-                    .vertexOffset = static_cast<int32_t>(alloc.firstVertex),
-                    .firstInstance = idx,
-                };
-            }
-        }
-
-        // --- Lights ---
-        for (auto entity: registry.view<TransformComponent, LightComponent>()) {
-            auto [transform, light] = registry.get<TransformComponent, LightComponent>(entity);
-            lights.emplace(entity, Light{
-                               static_cast<uint32_t>(light.type),
-                               light.intensity,
-                               light.range == 0.0f ? 20.0f : light.range,
-                               light.innerConeAngle,
-                               light.color,
-                               light.outerConeAngle,
-                               transform.translation,
-                               light.width,
-                               light.direction,
-                               light.height,
-                           });
-        }
-
-        // --- Upload SSBOs ---
-        if (!opaqueObjectData.empty())
-            objectDataBuffer->uploadData(opaqueObjectData.data(),
-                                         sizeof(GPUObjectData) * opaqueObjectData.size());
-
-        if (!lights.empty())
-            lightsBuffer->uploadData(lights.data(), sizeof(Light) * lights.size());
-    }
-
-    void GeometryPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) const {
-        // Render opaque geometry
         if (!opaqueObjectData.empty()) {
             opaquePipeline->bind(cmd);
 
             const VkDescriptorSet sets[] = {
-                globalSet, // set 0 — global UBO (owned by RenderSystemV2)
-                environmentSet, // set 1 — IBL
-                bindlessTextureSet, // set 2 — textures
-                objectDataSet, // set 3 — object SSBO
-                lightSet, // set 4 — lights SSBO
+                globalSet,
+                environmentSet,
+                bindlessTextureSet,
+                objectDataSet,
+                lightSet,
             };
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipelineLayout, 0, 5, sets, 0, nullptr);
+                                    pipelineLayout, 0, std::size(sets), sets, 0, nullptr);
 
             VkBuffer vb = mergedVertexBuffer->get();
             VkDeviceSize offset = 0;
@@ -237,14 +251,10 @@ namespace Atlas {
                                      sizeof(VkDrawIndexedIndirectCommand));
         }
 
-        // Render skybox after geometry
         if (boundSkyboxHandle != INVALID_ASSET_HANDLE && skyboxPipeline) {
             skyboxPipeline->bind(cmd);
 
-            const VkDescriptorSet sets[] = {
-                globalSet, // set 0 — global UBO
-                skyboxDescriptorSet, // set 5 — skybox cubemap
-            };
+            const VkDescriptorSet sets[] = {globalSet, skyboxDescriptorSet};
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     pipelineLayout, 0, 1, &sets[0], 0, nullptr);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -252,31 +262,14 @@ namespace Atlas {
 
             vkCmdDraw(cmd, 36, 1, 0, 0);
         }
-    }
 
-    void GeometryPass::createRenderTargets(uint32_t width, uint32_t height) {
-        extent = {width, height};
-
-        colorTarget = GPUImage::Builder(device)
-                .setExtent(width, height)
-                .setFormat(VK_FORMAT_R16G16B16A16_SFLOAT)
-                .setUsage(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-                .addView(VK_IMAGE_ASPECT_COLOR_BIT)
-                .build();
-
-        depthTarget = GPUImage::Builder(device)
-                .setExtent(width, height)
-                .setFormat(VK_FORMAT_D32_SFLOAT_S8_UINT)
-                .setUsage(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT)
-                .addView(VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
-                .addView(VK_IMAGE_ASPECT_STENCIL_BIT)
-                .build();
+        end(cmd);
+        barrier(cmd);
     }
 
     void GeometryPass::createRenderPass() {
-        // Color attachment — HDR offscreen
         VkAttachmentDescription color{};
-        color.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        color.format = colorTarget->format();
         color.samples = VK_SAMPLE_COUNT_1_BIT;
         color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -286,14 +279,14 @@ namespace Atlas {
         color.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkAttachmentDescription depth{};
-        depth.format         = depthTarget.format();
-        depth.samples        = VK_SAMPLE_COUNT_1_BIT;
-        depth.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depth.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-        depth.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth.format = depthTarget->format();
+        depth.samples = VK_SAMPLE_COUNT_1_BIT;
+        depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-        depth.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-        depth.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
         VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
         VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
@@ -304,7 +297,6 @@ namespace Atlas {
         subpass.pColorAttachments = &colorRef;
         subpass.pDepthStencilAttachment = &depthRef;
 
-        // Dependency: ensure post process waits for color write to finish
         VkSubpassDependency dep{};
         dep.srcSubpass = VK_SUBPASS_EXTERNAL;
         dep.dstSubpass = 0;
@@ -324,12 +316,13 @@ namespace Atlas {
         info.dependencyCount = 1;
         info.pDependencies = &dep;
 
-        if (vkCreateRenderPass(device.device(), &info, nullptr, &renderPass) != VK_SUCCESS)
+        if (vkCreateRenderPass(device.device(), &info, nullptr, &renderPass) != VK_SUCCESS) {
             throw std::runtime_error("GeometryPass: failed to create render pass");
+        }
     }
 
     void GeometryPass::createFramebuffer() {
-        const std::array<VkImageView, 2> views = {colorTarget.view(0), depthTarget.view(0)};
+        const std::array views = {colorTarget->view(0), depthTarget->view(0)};
 
         VkFramebufferCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -340,36 +333,32 @@ namespace Atlas {
         info.height = extent.height;
         info.layers = 1;
 
-        if (vkCreateFramebuffer(device.device(), &info, nullptr, &framebuffer) != VK_SUCCESS)
+        if (vkCreateFramebuffer(device.device(), &info, nullptr, &framebuffer) != VK_SUCCESS) {
             throw std::runtime_error("GeometryPass: failed to create framebuffer");
+        }
     }
 
     void GeometryPass::createDescriptors() {
-        // set 1 — environment (irradiance + prefilter)
         environmentSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
                 .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
                 .build();
 
-        // set 2 — bindless textures
         textureSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES)
                 .setBindingFlags(0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
                 .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
                 .build();
 
-        // set 3 — object SSBO
         objectDataSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
                             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1)
                 .build();
 
-        // set 4 — lights SSBO
         lightSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
                 .build();
 
-        // set 5 — skybox cubemap
         skyboxSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
                 .build();
@@ -384,32 +373,28 @@ namespace Atlas {
         if (!pool->allocateDescriptor(environmentSetLayout->getDescriptorSetLayout(), environmentSet)) {
             throw std::runtime_error("GeometryPass: failed to allocate environment set");
         }
-
         if (!pool->allocateDescriptor(textureSetLayout->getDescriptorSetLayout(), bindlessTextureSet)) {
             throw std::runtime_error("GeometryPass: failed to allocate bindless texture set");
         }
-
         if (!pool->allocateDescriptor(objectDataSetLayout->getDescriptorSetLayout(), objectDataSet)) {
             throw std::runtime_error("GeometryPass: failed to allocate object data set");
         }
-
         if (!pool->allocateDescriptor(lightSetLayout->getDescriptorSetLayout(), lightSet)) {
             throw std::runtime_error("GeometryPass: failed to allocate light set");
         }
-
         if (!pool->allocateDescriptor(skyboxSetLayout->getDescriptorSetLayout(), skyboxDescriptorSet)) {
             throw std::runtime_error("GeometryPass: failed to allocate skybox descriptor set");
         }
     }
 
-    void GeometryPass::createPipelineLayout(const DescriptorSetLayout &globalSetLayout) {
+    void GeometryPass::createPipelineLayout() {
         const std::vector layouts = {
-            globalSetLayout.getDescriptorSetLayout(), // set 0
-            environmentSetLayout->getDescriptorSetLayout(), // set 1
-            textureSetLayout->getDescriptorSetLayout(), // set 2
-            objectDataSetLayout->getDescriptorSetLayout(), // set 3
-            lightSetLayout->getDescriptorSetLayout(), // set 4
-            skyboxSetLayout->getDescriptorSetLayout(), // set 5
+            globalSetLayout.getDescriptorSetLayout(),
+            environmentSetLayout->getDescriptorSetLayout(),
+            textureSetLayout->getDescriptorSetLayout(),
+            objectDataSetLayout->getDescriptorSetLayout(),
+            lightSetLayout->getDescriptorSetLayout(),
+            skyboxSetLayout->getDescriptorSetLayout(),
         };
 
         VkPipelineLayoutCreateInfo info{};
@@ -432,8 +417,7 @@ namespace Atlas {
         cfg.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
         cfg.renderPass = renderPass;
         cfg.pipelineLayout = pipelineLayout;
-
-        cfg.depthStencilInfo = makeStencilWrite(1); // 1 - general layer
+        cfg.depthStencilInfo = makeStencilWrite(1);
 
         opaquePipeline = std::make_unique<Pipeline>(
             device,
@@ -444,16 +428,11 @@ namespace Atlas {
 
         GraphicsPipelineConfigInfo cfg2{};
         Pipeline::defaultGraphicsPipelineConfigInfo(cfg2);
-
-        // Skybox renders without vertex buffers — hardcoded in shader
         cfg2.bindingDescriptions.clear();
         cfg2.attributeDescriptions.clear();
-
         cfg2.renderPass = renderPass;
         cfg2.pipelineLayout = pipelineLayout;
-
-        cfg.depthStencilInfo = makeStencilWrite(0); // 0 - skybox layer
-        cfg2.depthStencilInfo.depthWriteEnable = VK_FALSE; // Depth testing: write disabled, compare LESS_OR_EQUAL so it renders behind geometry
+        cfg2.depthStencilInfo.depthWriteEnable = VK_FALSE;
         cfg2.depthStencilInfo.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
         skyboxPipeline = std::make_unique<Pipeline>(
@@ -470,6 +449,7 @@ namespace Atlas {
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
         );
+
         mergedIndexBuffer = std::make_unique<Buffer>(
             device, INDEX_BUDGET,
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -481,8 +461,7 @@ namespace Atlas {
             sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
             VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
             VMA_MEMORY_USAGE_AUTO,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-            | VMA_ALLOCATION_CREATE_MAPPED_BIT
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
         );
         opaqueIndirectCommandBuffer->map();
 
@@ -501,8 +480,7 @@ namespace Atlas {
             device, sizeof(Light) * MAX_LIGHTS,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_AUTO,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-            | VMA_ALLOCATION_CREATE_MAPPED_BIT
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
         );
         lightsBuffer->map();
         std::memset(lightsBuffer->getMapped(), 0, sizeof(Light) * MAX_LIGHTS);
@@ -514,16 +492,17 @@ namespace Atlas {
     }
 
     uint32_t GeometryPass::registerTexture(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) return 0;
+        if (handle == INVALID_ASSET_HANDLE) { return 0; }
 
         auto [it, inserted] = handleToTextureSlot.emplace(handle, nextTextureSlot);
-        if (!inserted) return it->second; // already registered
+        if (!inserted) { return it->second; }
 
-        if (nextTextureSlot >= MAX_TEXTURES)
-            throw std::runtime_error("Exceeded maximum bindless texture count");
+        if (nextTextureSlot >= MAX_TEXTURES) {
+            throw std::runtime_error("GeometryPass: exceeded maximum bindless texture count");
+        }
 
         const auto texture = AssetManager::get().getTexture(handle);
-        if (!texture) return 0;
+        if (!texture) { return 0; }
 
         const uint32_t slot = nextTextureSlot++;
         it->second = slot;
@@ -548,18 +527,20 @@ namespace Atlas {
     }
 
     void GeometryPass::registerMesh(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE || meshAllocations.contains(handle)) return;
+        if (handle == INVALID_ASSET_HANDLE || meshAllocations.contains(handle)) { return; }
 
         const auto mesh = AssetManager::get().getMesh(handle);
-        if (!mesh) return;
+        if (!mesh) { return; }
 
         const auto &vertices = mesh->getVertices();
         const auto &indices = mesh->getIndices();
 
-        if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(Mesh::Vertex))
-            throw std::runtime_error("Merged vertex buffer out of space");
-        if (nextIndex + indices.size() > INDEX_BUDGET / sizeof(uint32_t))
-            throw std::runtime_error("Merged index buffer out of space");
+        if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(Mesh::Vertex)) {
+            throw std::runtime_error("GeometryPass: merged vertex buffer out of space");
+        }
+        if (nextIndex + indices.size() > INDEX_BUDGET / sizeof(uint32_t)) {
+            throw std::runtime_error("GeometryPass: merged index buffer out of space");
+        }
 
         const MeshAllocation alloc{
             nextVertex, static_cast<uint32_t>(vertices.size()),
@@ -568,26 +549,14 @@ namespace Atlas {
         meshAllocations[handle] = alloc;
 
         const VkDeviceSize vSize = vertices.size() * sizeof(Mesh::Vertex);
-        Buffer vStaging(
-            device,
-            vSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_AUTO,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-        );
-
+        Buffer vStaging(device, vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO,
+                        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
         vStaging.uploadData(vertices.data(), vSize);
         Buffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, nextVertex * sizeof(Mesh::Vertex));
 
         const VkDeviceSize iSize = indices.size() * sizeof(uint32_t);
-        Buffer iStaging(
-            device,
-            iSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_AUTO,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-        );
-
+        Buffer iStaging(device, iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO,
+                        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
         iStaging.uploadData(indices.data(), iSize);
         Buffer::copy(device, iStaging.get(), mergedIndexBuffer->get(), iSize, 0, nextIndex * sizeof(uint32_t));
 
@@ -596,7 +565,7 @@ namespace Atlas {
     }
 
     uint32_t GeometryPass::resolveTextureIndex(AssetHandle handle) const {
-        if (handle == INVALID_ASSET_HANDLE) return 0;
+        if (handle == INVALID_ASSET_HANDLE) { return 0; }
         const auto it = handleToTextureSlot.find(handle);
         return it != handleToTextureSlot.end() ? it->second : 0;
     }

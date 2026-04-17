@@ -12,6 +12,7 @@ namespace Atlas {
         recreateSwapChain();
         createCommandBuffers();
         createComputeSyncObjects();
+        createImGuiLayer();
     }
 
     Renderer::~Renderer() {
@@ -65,6 +66,8 @@ namespace Atlas {
         if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
+
+        //this->imGuiLayer->beginFrame();
 
         return commandBuffer;
     }
@@ -125,6 +128,7 @@ namespace Atlas {
         assert(isFrameStarted && "Can't call endSwapChainRenderPass if frame is not in progress");
         assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't end render pass on command buffer from a different frame");
 
+       // imGuiLayer->endFrame(commandBuffer);
         vkCmdEndRenderPass(commandBuffer);
     }
 
@@ -187,6 +191,10 @@ namespace Atlas {
                 throw std::runtime_error("failed to create compute fence!");
             }
         }
+    }
+
+    void Renderer::createImGuiLayer() {
+        //this->imGuiLayer = std::make_unique<ImGuiLayer>(device, window, getSwapChainRenderPass(), static_cast<uint32_t>(getImageCount()));
     }
 
     void Renderer::createCommandBuffers() {

@@ -4,18 +4,37 @@
 #include "asset/AssetManager.hpp"
 
 namespace Atlas {
-    PostProcessPass::PostProcessPass(Device &device, VkRenderPass swapchainRenderPass, const GPUImage &colorImage, const GPUImage &depthImage, const DescriptorSetLayout &globalSetLayout): device(device) {
+    PostProcessPass::PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout) : device(device), globalSetLayout(globalSetLayout) {
         createSampler();
-        createDescriptors(colorImage, depthImage);
-        createPipelineLayout(globalSetLayout);
-        createPipeline(swapchainRenderPass);
     }
 
     PostProcessPass::~PostProcessPass() {
+        vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
+        vkDestroyRenderPass(device.device(), renderPass, nullptr);
         vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
         vkDestroySampler(device.device(), stencilSampler, nullptr);
         vkDestroySampler(device.device(), colorSampler, nullptr);
     }
+
+    void PostProcessPass::onResourcesCreated(
+        const std::unordered_map<std::string, std::reference_wrapper<GPUImage> > &resources) {
+        const GPUImage &colorImage = resources.at("geometry_color").get();
+        const GPUImage &depthImage = resources.at("geometry_depth").get();
+        const GPUImage &outImage = resources.at("post_color").get();
+
+        postColorTarget = &outImage;
+        extent = outImage.extent();
+
+        createDescriptors(colorImage, depthImage);
+        createPipelineLayout();
+        createRenderPass(outImage.format());
+        createFramebuffer(outImage);
+        createPipeline();
+    }
+
+    // -------------------------------------------------------------------------
+    // Samplers
+    // -------------------------------------------------------------------------
 
     void PostProcessPass::createSampler() {
         VkSamplerCreateInfo info{};
@@ -32,29 +51,99 @@ namespace Atlas {
         if (vkCreateSampler(device.device(), &info, nullptr, &colorSampler) != VK_SUCCESS)
             throw std::runtime_error("PostProcessPass: failed to create colorSampler");
 
-        VkSamplerCreateInfo stencilSamplerInfo{};
-        stencilSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        stencilSamplerInfo.magFilter = VK_FILTER_NEAREST;
-        stencilSamplerInfo.minFilter = VK_FILTER_NEAREST;
-        stencilSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-        stencilSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        stencilSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        vkCreateSampler(device.device(), &stencilSamplerInfo, nullptr, &stencilSampler);
+        VkSamplerCreateInfo stencilInfo{};
+        stencilInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        stencilInfo.magFilter = VK_FILTER_NEAREST;
+        stencilInfo.minFilter = VK_FILTER_NEAREST;
+        stencilInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        stencilInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        stencilInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+        if (vkCreateSampler(device.device(), &stencilInfo, nullptr, &stencilSampler) != VK_SUCCESS)
+            throw std::runtime_error("PostProcessPass: failed to create stencilSampler");
+    }
+
+    // -------------------------------------------------------------------------
+    // Render pass — single LDR colour attachment, no depth.
+    // finalLayout = SHADER_READ_ONLY so RenderGraph layout tracking matches
+    // writeLayoutFor(COLOR_ATTACHMENT) and no extra barrier is inserted before
+    // OutputPass reads it.
+    // -------------------------------------------------------------------------
+
+    void PostProcessPass::createRenderPass(VkFormat colorFmt) {
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = colorFmt;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; // full-screen draw overwrites everything
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        // Transition directly to SHADER_READ_ONLY so OutputPass can blit without
+        // an intermediate layout barrier from the RenderGraph.
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        VkAttachmentReference colorRef{};
+        colorRef.attachment = 0;
+        colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorRef;
+
+        // Subpass dependency: ensure geometry writes are visible to the fragment
+        // shader that samples geometry_color/depth.
+        VkSubpassDependency dep{};
+        dep.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dep.dstSubpass = 0;
+        dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                           VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        dep.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        dep.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+        VkRenderPassCreateInfo rpInfo{};
+        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        rpInfo.attachmentCount = 1;
+        rpInfo.pAttachments = &colorAttachment;
+        rpInfo.subpassCount = 1;
+        rpInfo.pSubpasses = &subpass;
+        rpInfo.dependencyCount = 1;
+        rpInfo.pDependencies = &dep;
+
+        if (vkCreateRenderPass(device.device(), &rpInfo, nullptr, &renderPass) != VK_SUCCESS)
+            throw std::runtime_error("PostProcessPass: failed to create render pass");
+    }
+
+    void PostProcessPass::createFramebuffer(const GPUImage &colorImage) {
+        VkImageView view = colorImage.view(0); // view 0 = COLOR aspect
+
+        VkFramebufferCreateInfo fbInfo{};
+        fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbInfo.renderPass = renderPass;
+        fbInfo.attachmentCount = 1;
+        fbInfo.pAttachments = &view;
+        fbInfo.width = extent.width;
+        fbInfo.height = extent.height;
+        fbInfo.layers = 1;
+
+        if (vkCreateFramebuffer(device.device(), &fbInfo, nullptr, &framebuffer) != VK_SUCCESS)
+            throw std::runtime_error("PostProcessPass: failed to create framebuffer");
     }
 
     void PostProcessPass::createDescriptors(const GPUImage &colorImage, const GPUImage &depthImage) {
-        AssetHandle BRDFHandle = AssetManager::get().loadTexture(
+        AssetHandle brdfHandle = AssetManager::get().loadTexture(
             "engine/brdf_lut.hdr",
             VK_FORMAT_R32G32B32A32_SFLOAT,
             VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
         );
 
-        auto BRDFTex = AssetManager::get().getTexture(BRDFHandle);
-        if (!BRDFTex) {
-            throw std::runtime_error("Failed to load BRDF LUT!");
-        }
+        auto brdfTex = AssetManager::get().getTexture(brdfHandle);
+        if (!brdfTex)
+            throw std::runtime_error("PostProcessPass: failed to load BRDF LUT");
 
-        // set 1 - hdrInput + BRDF LUT
         inputSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // hdrInput
                 .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // BRDF LUT
@@ -75,13 +164,13 @@ namespace Atlas {
         hdrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         VkDescriptorImageInfo brdfInfo{};
-        brdfInfo.sampler = BRDFTex->getSampler();
-        brdfInfo.imageView = BRDFTex->getImageView();
-        brdfInfo.imageLayout = BRDFTex->getImageLayout();
+        brdfInfo.sampler = brdfTex->getSampler();
+        brdfInfo.imageView = brdfTex->getImageView();
+        brdfInfo.imageLayout = brdfTex->getImageLayout();
 
         VkDescriptorImageInfo stencilInfo{};
         stencilInfo.sampler = stencilSampler;
-        stencilInfo.imageView = depthImage.view(1);
+        stencilInfo.imageView = depthImage.view(1); // stencil aspect view
         stencilInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
         VkWriteDescriptorSet w0{};
@@ -95,7 +184,6 @@ namespace Atlas {
         VkWriteDescriptorSet w1 = w0;
         w1.dstBinding = 1;
         w1.pImageInfo = &brdfInfo;
-
         VkWriteDescriptorSet w2 = w0;
         w2.dstBinding = 2;
         w2.pImageInfo = &stencilInfo;
@@ -104,7 +192,7 @@ namespace Atlas {
         vkUpdateDescriptorSets(device.device(), std::size(writes), writes, 0, nullptr);
     }
 
-    void PostProcessPass::createPipelineLayout(const DescriptorSetLayout &globalSetLayout) {
+    void PostProcessPass::createPipelineLayout() {
         const std::vector layouts = {
             globalSetLayout.getDescriptorSetLayout(),
             inputSetLayout->getDescriptorSetLayout(),
@@ -119,7 +207,7 @@ namespace Atlas {
             throw std::runtime_error("PostProcessPass: failed to create pipeline layout");
     }
 
-    void PostProcessPass::createPipeline(VkRenderPass swapChainRenderPass) {
+    void PostProcessPass::createPipeline() {
         GraphicsPipelineConfigInfo cfg{};
         Pipeline::defaultGraphicsPipelineConfigInfo(cfg);
 
@@ -127,7 +215,7 @@ namespace Atlas {
         cfg.attributeDescriptions = {};
         cfg.depthStencilInfo.depthTestEnable = VK_FALSE;
         cfg.depthStencilInfo.depthWriteEnable = VK_FALSE;
-        cfg.renderPass = swapChainRenderPass;
+        cfg.renderPass = renderPass; // our offscreen pass now
         cfg.pipelineLayout = pipelineLayout;
 
         pipeline = std::make_unique<Pipeline>(
@@ -138,11 +226,38 @@ namespace Atlas {
         );
     }
 
+    // -------------------------------------------------------------------------
+    // Record
+    // -------------------------------------------------------------------------
+
     void PostProcessPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
+        VkRenderPassBeginInfo rpInfo{};
+        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        rpInfo.renderPass = renderPass;
+        rpInfo.framebuffer = framebuffer;
+        rpInfo.renderArea.offset = {0, 0};
+        rpInfo.renderArea.extent = extent;
+        // No clear value needed — loadOp is DONT_CARE.
+
+        vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        VkViewport viewport{};
+        viewport.width = static_cast<float>(extent.width);
+        viewport.height = static_cast<float>(extent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        VkRect2D scissor{{0, 0}, extent};
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
         pipeline->bind(cmd);
 
         const VkDescriptorSet sets[] = {globalSet, inputSet};
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, std::size(sets), sets, 0, nullptr);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout, 0, std::size(sets), sets, 0, nullptr);
+
+        vkCmdDraw(cmd, 3, 1, 0, 0); // full-screen triangle
+
+        vkCmdEndRenderPass(cmd);
     }
-} // Atlas
+} // namespace Atlas

@@ -8,7 +8,6 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
-#include "renderer/ImGuiLayer.hpp"
 #include "scene/OfficeScene.hpp"
 
 namespace Atlas {
@@ -32,8 +31,6 @@ namespace Atlas {
     }
 
     void Application::run() {
-        ImGuiLayer imGui{device, *window, renderer.getSwapChainRenderPass(), static_cast<uint32_t>(renderer.getImageCount())};
-
         auto currentTime = std::chrono::high_resolution_clock::now();
 
         while (!window->shouldClose()) {
@@ -50,10 +47,8 @@ namespace Atlas {
             renderer.endCompute();
 
             if (auto commandBuffer = renderer.beginFrame()) {
-                imGui.beginFrame();
-
                 if (currentScene) {
-                    currentScene->onRender(imGui);
+                    currentScene->onRender(commandBuffer);
                 }
 
                 renderer.endFrame();
