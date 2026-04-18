@@ -26,18 +26,18 @@ namespace Atlas {
         vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
     }
 
-    void GeometryPass::getDeclaredOutputs(std::vector<Resource> &out) const {
-        out.push_back(Resource::color("geometry_color"));
-        out.push_back(Resource::depth("geometry_depth"));
-    }
-
     void GeometryPass::getDeclaredInputs(std::vector<std::string> &out) const {
         // No inputs
     }
 
-    void GeometryPass::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<GPUImage> > &resources) {
-        colorTarget = &resources.at("geometry_color").get();
-        depthTarget = &resources.at("geometry_depth").get();
+    void GeometryPass::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
+        out.push_back(Resource::Description::color("geometry_color"));
+        out.push_back(Resource::Description::depth("geometry_depth"));
+    }
+
+    void GeometryPass::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource>> &resources) {
+        colorTarget = &resources.at("geometry_color").get().asImage();
+        depthTarget = &resources.at("geometry_depth").get().asImage();
         extent = {colorTarget->extent().width, colorTarget->extent().height};
 
         createRenderPass();
@@ -88,8 +88,8 @@ namespace Atlas {
             wSkybox.pImageInfo = &skyboxInfo;
             boundSkyboxHandle = skybox.skyboxHandle;
 
-            std::vector writes = {wIrradiance, wPrefilter, wSkybox};
-            vkUpdateDescriptorSets(device.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+            VkWriteDescriptorSet writes[] = {wIrradiance, wPrefilter, wSkybox};
+            vkUpdateDescriptorSets(device.device(), std::size(writes), writes, 0, nullptr);
         }
 
         auto *opaqueDrawCmds = static_cast<VkDrawIndexedIndirectCommand *>(
@@ -337,8 +337,11 @@ namespace Atlas {
 
     void GeometryPass::createDescriptors() {
         environmentSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
-                .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // irradiance
+                .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // prefilter
+                .addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // ltcMat
+                .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // ltcAmp
+                .addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // BRDF LUT
                 .build();
 
         textureSetLayout = DescriptorSetLayout::Builder(device)
@@ -382,6 +385,37 @@ namespace Atlas {
         if (!pool->allocateDescriptor(skyboxSetLayout->getDescriptorSetLayout(), skyboxDescriptorSet)) {
             throw std::runtime_error("GeometryPass: failed to allocate skybox descriptor set");
         }
+
+        auto ltcMatHandle = AssetManager::get().loadTexture("engine/ltc_mat.bin", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        auto ltcAmpHandle = AssetManager::get().loadTexture("engine/ltc_amp.bin", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        auto brdfHandle = AssetManager::get().loadTexture("engine/brdf_lut.hdr", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+
+        auto ltcMatTexture = AssetManager::get().getTexture(ltcMatHandle);
+        auto ltcAmpTexture = AssetManager::get().getTexture(ltcAmpHandle);
+        auto brdfTexture = AssetManager::get().getTexture(brdfHandle);
+
+        VkDescriptorImageInfo matDesc{ltcMatTexture->getSampler(), ltcMatTexture->getImageView(), ltcMatTexture->getImageLayout()};
+        VkDescriptorImageInfo ampDesc{ltcAmpTexture->getSampler(), ltcAmpTexture->getImageView(), ltcAmpTexture->getImageLayout()};
+        VkDescriptorImageInfo brdfDesc{brdfTexture->getSampler(), brdfTexture->getImageView(), brdfTexture->getImageLayout()};
+
+        VkWriteDescriptorSet wMat{};
+        wMat.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        wMat.dstSet = environmentSet;
+        wMat.dstBinding = 2;
+        wMat.descriptorCount = 1;
+        wMat.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        wMat.pImageInfo = &matDesc;
+
+        VkWriteDescriptorSet wAmp = wMat;
+        wAmp.dstBinding = 3;
+        wAmp.pImageInfo = &ampDesc;
+
+        VkWriteDescriptorSet wBRDF = wMat;
+        wAmp.dstBinding = 4;
+        wAmp.pImageInfo = &brdfDesc;
+
+        VkWriteDescriptorSet wArray[] = {wMat, wAmp, wBRDF};
+        vkUpdateDescriptorSets(device.device(), std::size(wArray), wArray, 0, nullptr);
     }
 
     void GeometryPass::createPipelineLayout() {
@@ -418,8 +452,8 @@ namespace Atlas {
 
         opaquePipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/RenderSystemV2.studio.vert.spv",
-            "shaders/RenderSystemV2.real_time.frag.spv",
+            "shaders/Geometry.vert.spv",
+            "shaders/Geometry.frag.spv",
             cfg
         );
 
@@ -524,7 +558,9 @@ namespace Atlas {
     }
 
     void GeometryPass::registerMesh(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE || meshAllocations.contains(handle)) { return; }
+        if (handle == INVALID_ASSET_HANDLE || meshAllocations.contains(handle)) {
+            return;
+        }
 
         const auto mesh = AssetManager::get().getMesh(handle);
         if (!mesh) { return; }

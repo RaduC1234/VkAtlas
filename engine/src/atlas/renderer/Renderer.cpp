@@ -76,12 +76,17 @@ namespace Atlas {
         assert(isFrameStarted && "Can't call endFrame while not in progress");
         auto commandBuffer = getCurrentGraphicsCommandBuffer();
 
+        VkClearValue clear{};
+        clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+
         VkRenderPassBeginInfo rpInfo{};
         rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         rpInfo.renderPass = swapChain->getImGuiRenderPass();
         rpInfo.framebuffer = swapChain->getImGuiFrameBuffer(currentImageIndex);
         rpInfo.renderArea.offset = {0, 0};
         rpInfo.renderArea.extent = swapChain->getSwapChainExtent();
+        rpInfo.clearValueCount = 1;
+        rpInfo.pClearValues = &clear;
 
         vkCmdBeginRenderPass(commandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
         imGuiLayer->endFrame(commandBuffer);

@@ -29,10 +29,10 @@ namespace Atlas {
         const GPUImage &getColorTarget() const { return *colorTarget; }
         const GPUImage &getDepthTarget() const { return *depthTarget; }
 
-        void getDeclaredOutputs(std::vector<Resource> &out) const override;
+        void getDeclaredOutputs(std::vector<Resource::Description> &out) const override;
         void getDeclaredInputs(std::vector<std::string> &out) const override;
 
-        void onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<GPUImage>> &resources) override;
+        void onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource>> &resources) override;
         void onSceneChanged(entt::registry &registry) override;
 
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;

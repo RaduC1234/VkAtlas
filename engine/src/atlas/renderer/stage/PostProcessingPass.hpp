@@ -15,17 +15,9 @@ namespace Atlas {
         PostProcessPass(const PostProcessPass &) = delete;
         PostProcessPass &operator=(const PostProcessPass &) = delete;
 
-        void getDeclaredOutputs(std::vector<Resource> &out) const override {
-            out.push_back(Resource::color("post_color", VK_FORMAT_R8G8B8A8_UNORM));
-        }
-
-        void getDeclaredInputs(std::vector<std::string> &out) const override {
-            out.push_back("geometry_color");
-            out.push_back("geometry_depth");
-        }
-
-        void onResourcesCreated(
-            const std::unordered_map<std::string, std::reference_wrapper<GPUImage>> &resources) override;
+        void getDeclaredOutputs(std::vector<Resource::Description> &out) const override;
+        void getDeclaredInputs(std::vector<std::string> &out) const override;
+        void onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource>> &resources) override;
 
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 
@@ -34,20 +26,18 @@ namespace Atlas {
         const DescriptorSetLayout &globalSetLayout;
 
         // Owned render pass + framebuffer targeting post_color.
-        VkRenderPass  renderPass  = VK_NULL_HANDLE;
+        VkRenderPass renderPass = VK_NULL_HANDLE;
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
-        VkExtent2D    extent      = {};
-
-        // Non-owning pointer; lifetime managed by RenderGraph.
+        VkExtent2D extent = {};
         const GPUImage *postColorTarget = nullptr;
 
-        std::unique_ptr<Pipeline>           pipeline;
-        VkPipelineLayout                    pipelineLayout = VK_NULL_HANDLE;
-        std::unique_ptr<DescriptorPool>     pool;
+        std::unique_ptr<Pipeline> pipeline;
+        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+        std::unique_ptr<DescriptorPool> pool;
         std::unique_ptr<DescriptorSetLayout> inputSetLayout;
-        VkDescriptorSet                     inputSet       = VK_NULL_HANDLE;
-        VkSampler                           colorSampler   = VK_NULL_HANDLE;
-        VkSampler                           stencilSampler = VK_NULL_HANDLE;
+        VkDescriptorSet inputSet = VK_NULL_HANDLE;
+        VkSampler colorSampler = VK_NULL_HANDLE;
+        VkSampler stencilSampler = VK_NULL_HANDLE;
 
         void createSampler();
         void createRenderPass(VkFormat colorFmt);

@@ -2,20 +2,25 @@
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <entt/entity/registry.hpp>
 
-#include "asset/AssetManager.hpp"
-#include "entity/Object.hpp"
-#include "renderer/Device.hpp"
+#include "renderer/Camera.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/RenderGraph.hpp"
+#include "renderer/abstraction/Buffer.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
-#include "renderer/stage/GeometryPass.hpp"
-#include "renderer/stage/PostProcessingPass.hpp"
+
 
 namespace Atlas {
+    struct alignas(16) DebugData {
+        float irradianceMultiplier{1.0f};
+        float exposureMultiplier{1.0f};
+        float _padding[2]{};
+    };
+
     struct alignas(16) GlobalUbo {
         Camera::Data cameraData;
-        glm::vec4 ambientColor{1.0f, 1.0f, 1.0f, 0.002f};
+        DebugData debugData{};
     };
 
     class RenderSystemV2 {
@@ -23,7 +28,7 @@ namespace Atlas {
         static constexpr uint32_t G_BUFFER_HEIGHT = 1920;
         static constexpr uint32_t G_BUFFER_WIDTH = 1080;
 
-        RenderSystemV2(Device& device, Renderer &renderer);
+        RenderSystemV2(Device &device, Renderer &renderer);
         ~RenderSystemV2() = default;
 
         RenderSystemV2(const RenderSystemV2 &) = delete;
@@ -35,7 +40,7 @@ namespace Atlas {
     private:
         void createGlobalUbo();
 
-        Device& device;
+        Device &device;
         std::unique_ptr<RenderGraph> renderGraph;
 
         // Set 0 - Global descriptors (UBO)

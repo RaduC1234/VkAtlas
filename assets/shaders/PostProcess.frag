@@ -1,11 +1,32 @@
 #version 460
 
+struct DebugData {
+    float irradianceMultiplier;
+    float exposureMultiplier;
+};
+
+struct CameraData {
+    mat4 projection;
+    mat4 view;
+    mat4 viewProjection;
+    vec4 frustumPlanes[6];
+    vec3 position;
+    float nearPlane;
+    vec3 direction;
+    float farPlane;
+};
+
 layout(location = 0) in vec2 inUV;
 layout(location = 0) out vec4 outColor;
 
+layout(set = 0, binding = 0) uniform GlobalUbo {
+    CameraData cameraData;
+    DebugData debugData;
+} ubo;
+
 layout(set = 1, binding = 0) uniform sampler2D hdrInput;
-layout(set = 1, binding = 1) uniform sampler2D BRDF_LUT;
-layout(set = 1, binding = 2) uniform usampler2D stencil;
+//layout(set = 1, binding = 1) uniform sampler2D BRDF_LUT;
+layout(set = 1, binding = 1) uniform usampler2D stencil;
 
 // ---- Tone mapping ----
 
@@ -44,7 +65,7 @@ void main() {
         return;
     }
 
-    //hdr *= /*ubo.exposure;*/ 0.3;
+    hdr *= ubo.debugData.exposureMultiplier;
     hdr = ACESFitted(hdr);
     hdr = linearToSRGB(hdr);
 

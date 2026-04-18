@@ -24,8 +24,9 @@ namespace Atlas {
         VkRenderPass getSwapChainRenderPass() const { return swapChain->getRenderPass(); }
         float getAspectRatio() const { return swapChain->extentAspectRatio(); }
         size_t getImageCount() const { return swapChain->imageCount(); }
-        VkImage    getCurrentSwapchainImage() const { return swapChain->getImage(currentImageIndex); }
-        VkExtent2D getSwapchainExtent()       const { return swapChain->getSwapChainExtent(); }
+        VkImage getCurrentSwapchainImage() const { return swapChain->getImage(currentImageIndex); }
+        VkExtent2D getSwapchainExtent() const { return swapChain->getSwapChainExtent(); }
+        ImGuiLayer &getImGuiLayer() { return *imGuiLayer; }
 
         // Frame state
         bool isFrameInProgress() const { return isFrameStarted; }

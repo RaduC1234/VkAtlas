@@ -94,6 +94,23 @@ namespace Atlas {
             if (format == VK_FORMAT_R8G8B8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB) {
                 format = VK_FORMAT_R32G32B32A32_SFLOAT;
             }
+        } else if (ext == ".bin") {
+            std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
+            if (!file) {
+                AT_ERROR("Failed tp open {}", fullPath.generic_string())
+                return INVALID_ASSET_HANDLE;
+            }
+
+            auto size = file.tellg();
+            file.seekg(0, std::ios::beg);
+
+            int texels = size / (4 * sizeof(float)); // RGBA32F
+            width = 64;
+            height = texels / 64;
+            channels = 4;
+
+            pixels = malloc(size);
+            file.read(static_cast<char*>(pixels), size);
         } else {
             pixels = stbi_load(fullPath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
         }

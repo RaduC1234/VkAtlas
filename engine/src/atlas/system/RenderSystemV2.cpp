@@ -1,7 +1,9 @@
 #include "RenderSystemV2.hpp"
 
 #include "core/Log.hpp"
+#include "renderer/stage/GeometryPass.hpp"
 #include "renderer/stage/OutputPass.hpp"
+#include "renderer/stage/PostProcessingPass.hpp"
 
 namespace Atlas {
     RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer) : device(device) {
@@ -12,7 +14,7 @@ namespace Atlas {
                 .addStage<PostProcessPass>(device, *globalSetLayout)
                 .addStage<OutputPass>(device, renderer)
                 .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
-                .build();
+                .build(RenderGraph::Mode::MultiPass);
     }
 
     void RenderSystemV2::build(entt::registry &registry) {

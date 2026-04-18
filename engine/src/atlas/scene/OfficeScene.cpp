@@ -41,15 +41,19 @@ namespace Atlas {
     }
 
     void OfficeScene::onRender(VkCommandBuffer graphicsCmdBuffer) {
+        static float irlMultiplier = 1.0f;
+        static float exposureMultiplier = 1.0f;
 #ifdef ATLAS_PLATFORM_DESKTOP
         ImGui::Begin("Debug Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+        ImGui::SliderFloat("IRL Multiplier", &irlMultiplier, 0.01f, 10.0f);
+        ImGui::SliderFloat("Exposure Multiplier", &exposureMultiplier, 0.0f, 5.0f);
         ImGui::End();
 #endif
 
         const GlobalUbo ubo{
             camera.getData(),
-            glm::vec4(0.02, 0.02, 0.03, 1.0)
+            {irlMultiplier, exposureMultiplier}
         };
 
         renderSystem->render(graphicsCmdBuffer, renderer.getFrameIndex(), ubo);

@@ -16,11 +16,20 @@ namespace Atlas {
         vkDestroySampler(device.device(), colorSampler, nullptr);
     }
 
+    void PostProcessPass::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
+        out.push_back(Resource::Description::color("post_color", VK_FORMAT_R8G8B8A8_UNORM));
+    }
+
+    void PostProcessPass::getDeclaredInputs(std::vector<std::string> &out) const {
+        out.push_back("geometry_color");
+        out.push_back("geometry_depth");
+    }
+
     void PostProcessPass::onResourcesCreated(
-        const std::unordered_map<std::string, std::reference_wrapper<GPUImage> > &resources) {
-        const GPUImage &colorImage = resources.at("geometry_color").get();
-        const GPUImage &depthImage = resources.at("geometry_depth").get();
-        const GPUImage &outImage = resources.at("post_color").get();
+        const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) {
+        const GPUImage &colorImage = resources.at("geometry_color").get().asImage();
+        const GPUImage &depthImage = resources.at("geometry_depth").get().asImage();
+        const GPUImage &outImage = resources.at("post_color").get().asImage();
 
         postColorTarget = &outImage;
         extent = outImage.extent();
@@ -66,7 +75,7 @@ namespace Atlas {
     // -------------------------------------------------------------------------
     // Render pass — single LDR colour attachment, no depth.
     // finalLayout = SHADER_READ_ONLY so RenderGraph layout tracking matches
-    // writeLayoutFor(COLOR_ATTACHMENT) and no extra barrier is inserted before
+    // writeLayoutFor(ATTACHMENT_COLOR) and no extra barrier is inserted before
     // OutputPass reads it.
     // -------------------------------------------------------------------------
 
@@ -129,30 +138,20 @@ namespace Atlas {
         fbInfo.height = extent.height;
         fbInfo.layers = 1;
 
-        if (vkCreateFramebuffer(device.device(), &fbInfo, nullptr, &framebuffer) != VK_SUCCESS)
+        if (vkCreateFramebuffer(device.device(), &fbInfo, nullptr, &framebuffer) != VK_SUCCESS) {
             throw std::runtime_error("PostProcessPass: failed to create framebuffer");
+        }
     }
 
     void PostProcessPass::createDescriptors(const GPUImage &colorImage, const GPUImage &depthImage) {
-        AssetHandle brdfHandle = AssetManager::get().loadTexture(
-            "engine/brdf_lut.hdr",
-            VK_FORMAT_R32G32B32A32_SFLOAT,
-            VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
-        );
-
-        auto brdfTex = AssetManager::get().getTexture(brdfHandle);
-        if (!brdfTex)
-            throw std::runtime_error("PostProcessPass: failed to load BRDF LUT");
-
         inputSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // hdrInput
-                .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // BRDF LUT
-                .addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // stencil
+                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // hdrInput {z
+                .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // stencil
                 .build();
 
         pool = DescriptorPool::Builder(device)
                 .setMaxSets(1)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2)
                 .build();
 
         if (!pool->allocateDescriptor(inputSetLayout->getDescriptorSetLayout(), inputSet))
@@ -162,11 +161,6 @@ namespace Atlas {
         hdrInfo.sampler = colorSampler;
         hdrInfo.imageView = colorImage.view(0);
         hdrInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        VkDescriptorImageInfo brdfInfo{};
-        brdfInfo.sampler = brdfTex->getSampler();
-        brdfInfo.imageView = brdfTex->getImageView();
-        brdfInfo.imageLayout = brdfTex->getImageLayout();
 
         VkDescriptorImageInfo stencilInfo{};
         stencilInfo.sampler = stencilSampler;
@@ -183,12 +177,9 @@ namespace Atlas {
 
         VkWriteDescriptorSet w1 = w0;
         w1.dstBinding = 1;
-        w1.pImageInfo = &brdfInfo;
-        VkWriteDescriptorSet w2 = w0;
-        w2.dstBinding = 2;
-        w2.pImageInfo = &stencilInfo;
+        w1.pImageInfo = &stencilInfo;
 
-        const VkWriteDescriptorSet writes[] = {w0, w1, w2};
+        const VkWriteDescriptorSet writes[] = {w0, w1};
         vkUpdateDescriptorSets(device.device(), std::size(writes), writes, 0, nullptr);
     }
 

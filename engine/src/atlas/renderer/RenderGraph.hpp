@@ -1,21 +1,18 @@
 #pragma once
-#include <queue>
-#include <unordered_map>
-#include <stdexcept>
-#include <vector>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include <entt/entity/registry.hpp>
 
 #include "Device.hpp"
-#include "abstraction/GPUImage.hpp"
 #include "stage/IRenderStage.hpp"
 
 namespace Atlas {
     class RenderGraph {
     public:
-        enum class Mode { MultiPass, MultiSubpass, Auto };
+        enum class Mode { MultiPass, MultiSubPass }; // TODO: implement MultiSubpass mode
 
         class Builder {
         public:
@@ -39,7 +36,7 @@ namespace Atlas {
                 return *this;
             }
 
-            [[nodiscard]] std::unique_ptr<RenderGraph> build(Mode mode = Mode::Auto);
+            std::unique_ptr<RenderGraph> build(Mode mode);
 
         private:
             Device &device;
@@ -51,7 +48,7 @@ namespace Atlas {
         RenderGraph(const RenderGraph &) = delete;
         RenderGraph &operator=(const RenderGraph &) = delete;
         RenderGraph(RenderGraph &&) = default;
-        RenderGraph &operator=(RenderGraph &&) = default;
+        RenderGraph &operator=(RenderGraph &&) = delete;
 
         void build(entt::registry &registry);
         void render(VkCommandBuffer cmd, VkDescriptorSet globalSet);
@@ -61,6 +58,7 @@ namespace Atlas {
 
         struct Barrier {
             std::string resourceName;
+            bool isBuffer = false;
             VkImageLayout oldLayout;
             VkImageLayout newLayout;
             VkAccessFlags srcAccess;
@@ -78,8 +76,7 @@ namespace Atlas {
             std::vector<Barrier> barriersBeforeExec;
         };
 
-        RenderGraph(Device &device, Mode mode, uint32_t width, uint32_t height)
-            : device(device), mode(mode), width(width), height(height) {
+        RenderGraph(Device &device, Mode mode, uint32_t width, uint32_t height): device(device), mode(mode), width(width), height(height) {
         }
 
         void bake();
@@ -102,7 +99,6 @@ namespace Atlas {
 
         std::vector<std::unique_ptr<IRenderStage> > stages_;
         std::vector<Node> nodes_;
-        std::unordered_map<std::string, GPUImage> ownedResources_;
-        std::unordered_map<std::string, IRenderStage::Resource::Type> resourceTypes_;
+        std::unordered_map<std::string, IRenderStage::Resource> ownedResources_;
     };
 } // namespace Atlas

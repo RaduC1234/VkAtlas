@@ -10,20 +10,20 @@
 #endif
 
 namespace Atlas {
-
-
 #ifdef __ANDROID__
     ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(VK_NULL_HANDLE) {}
     ImGuiLayer::~ImGuiLayer() {}
     void ImGuiLayer::beginFrame() {}
     void ImGuiLayer::endFrame(VkCommandBuffer commandBuffer) {}
+    VkDescriptorSet addTexture(VkSampler, VkImageView imageView, VkImageLayout imageLayout) { return VK_NULL_HANDLE; }
 #else
-    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()){
+    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()) {
         createDescriptorPool(device);
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO &io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         ImGui::StyleColorsDark();
 
         ImGui_ImplGlfw_InitForVulkan(static_cast<GLFWwindow *>(window.getNativeHandle()), true);
@@ -69,11 +69,15 @@ namespace Atlas {
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
     }
 
+    VkDescriptorSet ImGuiLayer::addTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout) {
+        return ImGui_ImplVulkan_AddTexture(sampler, imageView, imageLayout);
+    }
+
     void ImGuiLayer::createDescriptorPool(Device &device) {
         VkDescriptorPoolSize poolSizes[] = {
-            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
-            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,         1000 },
-            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,         1000 },
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+            {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
         };
 
         VkDescriptorPoolCreateInfo poolInfo{};

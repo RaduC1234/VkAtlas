@@ -1,6 +1,11 @@
 #version 460
 #extension GL_EXT_nonuniform_qualifier : require
 
+struct DebugData {
+    float iblMultiplier;
+    float exposureMultiplier;
+};
+
 struct CameraData {
     mat4 projection;
     mat4 view;
@@ -43,11 +48,14 @@ layout(location = 0) out vec4 outColor;
 
 layout(set = 0, binding = 0) uniform GlobalUbo {
     CameraData cameraData;
-    vec4 ambientLightColor;
+    DebugData debugData;
 } ubo;
 
 layout(set = 1, binding = 0) uniform samplerCube irradianceMap;
 layout(set = 1, binding = 1) uniform samplerCube prefilterMap;
+layout(set = 1, binding = 2) uniform sampler2D x1;
+layout(set = 1, binding = 3) uniform sampler2D x2;
+layout(set = 1, binding = 4) uniform sampler2D brdfLUT;
 
 layout(set = 2, binding = 0) uniform sampler2D textures[];
 
@@ -119,8 +127,7 @@ float spotAttenuation(vec3 L, vec3 dir, float innerAngle, float outerAngle) {
 
 // ---- Direct light evaluation ----
 
-vec3 evaluateLight(Light light, vec3 N, vec3 V, vec3 worldPos,
-vec3 albedo, float metallic, float roughness, vec3 F0)
+vec3 evaluateLight(Light light, vec3 N, vec3 V, vec3 worldPos, vec3 albedo, float metallic, float roughness, vec3 F0)
 {
     if (light.intensity <= 0.0) return vec3(0.0);
 
@@ -167,23 +174,23 @@ vec3 albedo, float metallic, float roughness, vec3 F0)
 
 // ---- IBL — diffuse + prefiltered specular, no BRDF LUT ----
 
-vec3 evaluateIBL(vec3 N, vec3 V, vec3 albedo, float metallic,
-float roughness, vec3 F0, float ao)
+vec3 evaluateIBL(vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, vec3 F0, float ao)
 {
     float NdotV = max(dot(N, V), 0.0);
 
     // diffuse
     vec3 irradiance  = texture(irradianceMap, N).rgb;
-    irradiance       = irradiance / (irradiance + vec3(1.0));
+    //irradiance       = irradiance / (irradiance + vec3(1.0));
     vec3 kS_ibl      = F_SchlickRoughness(NdotV, F0, roughness);
     vec3 kD_ibl      = (1.0 - kS_ibl) * (1.0 - metallic);
-    vec3 diffuse_ibl = kD_ibl * irradiance * albedo * ao;
+    vec3 diffuse_ibl = kD_ibl * irradiance * albedo * ao * ubo.debugData.iblMultiplier * 0.01;
 
     // specular — prefilter sample only, BRDF LUT correction done in post process
     vec3  R              = reflect(-V, N);
     float lod            = roughness * MAX_REFLECTION_LOD;
     vec3  prefilteredColor = textureLod(prefilterMap, R, lod).rgb;
-    vec3  specular_ibl   = prefilteredColor * kS_ibl;
+    vec2 brdf = texture(brdfLUT, vec2(NdotV, roughness)).rg;
+    vec3 specular_ibl = prefilteredColor * (F0 * brdf.x + brdf.y) * ubo.debugData.iblMultiplier * 0.01;
 
     return diffuse_ibl + specular_ibl;
 }
@@ -233,7 +240,7 @@ void main() {
     vec3 V  = normalize(ubo.cameraData.position - fragWorldPos);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao) * 0.03;
+    vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao);
 
     vec3 Lo = vec3(0.0);
     for (uint i = 0u; i < MAX_LIGHTS; i++)

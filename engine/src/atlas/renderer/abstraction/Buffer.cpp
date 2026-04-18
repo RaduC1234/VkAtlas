@@ -189,4 +189,8 @@ namespace Atlas {
 
         device.endSingleTimeCommands(commandBuffer);
     }
+
+    void Buffer::copy(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {
+        copyToImage(device, src, dst, layout, regions);
+    }
 } // namespace Atlas
