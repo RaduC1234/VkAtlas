@@ -3,6 +3,7 @@
 struct DebugData {
     float irradianceMultiplier;
     float exposureMultiplier;
+    uint viewMode; // 0 LIT, 1 UNLIT, 2 CLAY
 };
 
 struct CameraData {
@@ -28,6 +29,9 @@ layout(set = 1, binding = 0) uniform sampler2D hdrInput;
 //layout(set = 1, binding = 1) uniform sampler2D BRDF_LUT;
 layout(set = 1, binding = 1) uniform usampler2D stencil;
 
+const uint VIEWMODE_CLAY  = 2u;
+const uint VIEWMODE_UNLIT = 1u;
+
 // ---- Tone mapping ----
 
 vec3 ACESFitted(vec3 color) {
@@ -47,18 +51,28 @@ vec3 ACESFitted(vec3 color) {
     return clamp(output_mat * (a / b), 0.0, 1.0);
 }
 
-vec3 linearToSRGB(vec3 c) {
-    return mix(
-    1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055,
-    c * 12.92,
-    lessThanEqual(c, vec3(0.0031308))
-    );
-}
+/*vec3 linearToSRGB(vec3 color) {
+    vec3 a = 1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055;
+    vec3 b = color * 12.92;
+    return mix(a, b, lessThanEqual(color, vec3(0.0031308)));
+}*/
 
 
 void main() {
     vec3 hdr = texture(hdrInput, inUV).rgb;
     uint layer = texture(stencil, inUV).r;
+
+    // Debug: clay mode = raw output (no exposure / no tonemapping / no sRGB)
+    if (ubo.debugData.viewMode == VIEWMODE_CLAY) {
+        outColor = vec4(hdr, 1.0);
+        return;
+    }
+
+    // Debug: unlit mode should still convert to display space, but skip exposure/tonemapping
+    if (ubo.debugData.viewMode == VIEWMODE_UNLIT) {
+        outColor = vec4(hdr, 1.0);
+        return;
+    }
 
     if(layer == 0u) {
         outColor = vec4(hdr, 1.0);
@@ -66,8 +80,7 @@ void main() {
     }
 
     hdr *= ubo.debugData.exposureMultiplier;
-    hdr = ACESFitted(hdr);
-    hdr = linearToSRGB(hdr);
+    //hdr = ACESFitted(hdr);
 
     outColor = vec4(hdr, 1.0);
 }

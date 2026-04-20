@@ -222,13 +222,22 @@ namespace Atlas {
             }
         }
 
-        if (!imageBarriers.empty() || bufferBarriers.empty()) {
-            vkCmdPipelineBarrier(cmd,
-                                 srcStages, dstStages, 0,
-                                 0, nullptr,
-                                 static_cast<uint32_t>(bufferBarriers.size()), bufferBarriers.data(),
-                                 static_cast<uint32_t>(imageBarriers.size()), imageBarriers.data());
+        if (imageBarriers.empty() && bufferBarriers.empty()) {
+            return;
         }
+
+        if (srcStages == 0) {
+            srcStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        }
+        if (dstStages == 0) {
+            dstStages = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+        }
+
+        vkCmdPipelineBarrier(cmd,
+                             srcStages, dstStages, 0,
+                             0, nullptr,
+                             static_cast<uint32_t>(bufferBarriers.size()), bufferBarriers.data(),
+                             static_cast<uint32_t>(imageBarriers.size()), imageBarriers.data());
     }
 
 

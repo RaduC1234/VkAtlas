@@ -411,8 +411,8 @@ namespace Atlas {
         wAmp.pImageInfo = &ampDesc;
 
         VkWriteDescriptorSet wBRDF = wMat;
-        wAmp.dstBinding = 4;
-        wAmp.pImageInfo = &brdfDesc;
+        wBRDF.dstBinding = 4;
+        wBRDF.pImageInfo = &brdfDesc;
 
         VkWriteDescriptorSet wArray[] = {wMat, wAmp, wBRDF};
         vkUpdateDescriptorSets(device.device(), std::size(wArray), wArray, 0, nullptr);

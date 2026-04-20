@@ -4,6 +4,7 @@
 struct DebugData {
     float iblMultiplier;
     float exposureMultiplier;
+    uint viewMode; // 0 LIT, 1 UNLIT, 2 CLAY
 };
 
 struct CameraData {
@@ -72,6 +73,11 @@ const float INV_PI         = 0.31830988618;
 const float EPSILON        = 1e-5;
 const uint  MAX_LIGHTS     = 5u;
 const float MAX_REFLECTION_LOD = 5.0;
+
+// Debug view modes (debugData.viewMode)
+const uint VIEWMODE_LIT   = 0u;
+const uint VIEWMODE_UNLIT = 1u;
+const uint VIEWMODE_CLAY  = 2u;
 
 
 // ---- BRDF ----
@@ -215,8 +221,14 @@ void main() {
 
     // albedo
     vec4 albedoSample = texture(textures[nonuniformEXT(obj.textureIndices.x)], fragTexCoord);
-    vec3 albedo       = pow(albedoSample.rgb, vec3(2.2)) * obj.baseColor.rgb;
+    vec3 albedo       = albedoSample.rgb * obj.baseColor.rgb;
     float alpha       = albedoSample.a * obj.baseColor.a;
+
+    // Debug: unlit mode outputs base color only (no lighting/IBL)
+    if (ubo.debugData.viewMode == VIEWMODE_UNLIT) {
+        outColor = vec4(albedo.rgb, 1.0);
+        return;
+    }
 
     // normal
     vec3 N = perturbNormal(normalize(fragNormal), fragTangent,
@@ -238,6 +250,26 @@ void main() {
     ao = texture(textures[nonuniformEXT(obj.textureIndices.w)], fragTexCoord).r;
 
     vec3 V  = normalize(ubo.cameraData.position - fragWorldPos);
+
+    // Debug: clay mode overrides material to a neutral, readable look
+    if (ubo.debugData.viewMode == VIEWMODE_CLAY) {
+        const vec3  clayAlbedo    = vec3(0.8);
+        const float clayMetallic  = 0.0;
+        const float clayRoughness = 0.7;
+
+        vec3 clayF0 = vec3(0.04);
+
+        vec3 ambientClay = evaluateIBL(N, V, clayAlbedo, clayMetallic, clayRoughness, clayF0, ao);
+
+        vec3 LoClay = vec3(0.0);
+        for (uint i = 0u; i < MAX_LIGHTS; i++)
+        LoClay += evaluateLight(lightData.lights[i], N, V, fragWorldPos,
+        clayAlbedo, clayMetallic, clayRoughness, clayF0);
+
+        outColor = vec4(ambientClay + LoClay, alpha);
+        return;
+    }
+
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
     vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao);

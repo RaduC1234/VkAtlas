@@ -64,7 +64,12 @@ namespace Atlas {
                         .name = std::move(name),
                         .type = Type::ATTACHMENT_COLOR,
                         .format = fmt,
-                        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                        // Color attachments are frequently post-processed or resolved via blits/copies.
+                        // Include transfer usage so stages like OutputPass can vkCmdBlitImage from them.
+                        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                                     VK_IMAGE_USAGE_SAMPLED_BIT |
+                                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                     VK_IMAGE_USAGE_TRANSFER_DST_BIT
                     };
                 }
 
@@ -73,7 +78,10 @@ namespace Atlas {
                         .name = std::move(name),
                         .type = Type::ATTACHMENT_DEPTH,
                         .format = fmt,
-                        .imageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                        .imageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+                                     VK_IMAGE_USAGE_SAMPLED_BIT |
+                                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                     VK_IMAGE_USAGE_TRANSFER_DST_BIT
                     };
                 }
 

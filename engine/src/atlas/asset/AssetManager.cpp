@@ -781,18 +781,33 @@ namespace Atlas {
                         }
                     }
 
-                    // Determine if this is likely a normal map based on name
-                    bool isNormalMap = false;
+                    // Determine correct format based on texture role inferred from name.
+                    // Albedo/emissive are perceptual (sRGB). Normal, metallic-roughness,
+                    // and occlusion are linear data (UNORM). Loading linear maps as SRGB
+                    // causes the GPU to gamma-correct them, making roughness/metallic values
+                    // wrong (sofa looks white, floor has no reflections, etc.).
                     std::string imgName = image.name;
                     std::transform(imgName.begin(), imgName.end(), imgName.begin(), ::tolower);
-                    if (imgName.find("normal") != std::string::npos ||
-                        imgName.find("nrm") != std::string::npos ||
-                        imgName.find("_n") != std::string::npos ||
-                        imgName.find("norm") != std::string::npos) {
-                        isNormalMap = true;
-                    }
 
-                    VkFormat format = isNormalMap ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R8G8B8A8_SRGB;
+                    const bool isNormalMap =
+                        imgName.find("normal")  != std::string::npos ||
+                        imgName.find("nrm")     != std::string::npos ||
+                        imgName.find("norm")    != std::string::npos ||
+                        imgName.find("_n.")     != std::string::npos ||
+                        imgName.find("_n_")     != std::string::npos;
+
+                    const bool isLinearData =
+                        isNormalMap ||
+                        imgName.find("metallic")          != std::string::npos ||
+                        imgName.find("roughness")         != std::string::npos ||
+                        imgName.find("metallicroughness") != std::string::npos ||
+                        imgName.find("_mr")               != std::string::npos ||
+                        imgName.find("_orm")              != std::string::npos ||
+                        imgName.find("occlusion")         != std::string::npos ||
+                        imgName.find("_ao")               != std::string::npos ||
+                        imgName.find("ambientocclusion")  != std::string::npos;
+
+                    VkFormat format = isLinearData ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R8G8B8A8_SRGB;
 
                     std::string texturePath = virtualPath + "#image" + std::to_string(imgIdx);
                     if (!image.name.empty()) {
@@ -819,7 +834,7 @@ namespace Atlas {
 
                     AT_TRACE("Loaded image[{}]: {} (handle: {}, {}x{}, {})",
                              imgIdx, texturePath, imageHandles[imgIdx], width, height,
-                             isNormalMap ? "normal" : "albedo");
+                             isNormalMap ? "normal" : (isLinearData ? "linear" : "albedo"));
                 }));
         }
 
@@ -1198,8 +1213,7 @@ namespace Atlas {
                 transform.rotation = glm::eulerAngles(rotation);
                 transform.scale = scale;
 
-                std::string meshPath = virtualPath + "#mesh" + std::to_string(node.mesh) +
-                                       "_prim" + std::to_string(primIdx);
+                std::string meshPath = virtualPath + "#mesh" + std::to_string(node.mesh) + "_prim" + std::to_string(primIdx);
                 auto it = pathToHandle.find(meshPath);
                 if (it != pathToHandle.end()) {
                     auto &modelComp = registry.emplace<ModelComponent>(entity);
@@ -1212,6 +1226,7 @@ namespace Atlas {
                         const tinygltf::Material &mat = model.materials[prim.material];
                         const auto &pbr = mat.pbrMetallicRoughness;
 
+                        // Base color factor
                         if (pbr.baseColorFactor.size() == 4) {
                             material.baseColor = glm::vec4(
                                 pbr.baseColorFactor[0],
@@ -1223,6 +1238,7 @@ namespace Atlas {
                             material.baseColor = glm::vec4(1.0f);
                         }
 
+                        // Albedo texture
                         if (pbr.baseColorTexture.index >= 0) {
                             int texIdx = pbr.baseColorTexture.index;
                             if (texIdx >= 0 && texIdx < static_cast<int>(model.textures.size())) {
@@ -1246,6 +1262,7 @@ namespace Atlas {
                             }
                         }
 
+                        // Normal map
                         if (mat.normalTexture.index >= 0) {
                             int texIdx = mat.normalTexture.index;
                             if (texIdx >= 0 && texIdx < static_cast<int>(model.textures.size())) {
@@ -1265,6 +1282,40 @@ namespace Atlas {
                                     if (normIt != pathToHandle.end()) {
                                         material.normalMap = normIt->second;
                                     }
+                                }
+                            }
+                        }
+
+                        // Metallic-Roughness
+                        if (pbr.metallicRoughnessTexture.index >= 0) {
+                            int texIdx = pbr.metallicRoughnessTexture.index;
+                            if (texIdx < static_cast<int>(model.textures.size())) {
+                                int imgIdx = model.textures[texIdx].source;
+                                if (imgIdx >= 0 && imgIdx < static_cast<int>(model.images.size())) {
+                                    const tinygltf::Image &image = model.images[imgIdx];
+                                    std::string imagePath = !image.name.empty()
+                                        ? virtualPath + "#" + image.name
+                                        : virtualPath + "#image" + std::to_string(imgIdx);
+                                    auto it = pathToHandle.find(imagePath);
+                                    if (it != pathToHandle.end())
+                                        material.metallicRoughnessMap = it->second;
+                                }
+                            }
+                        }
+
+                        // Occlusion
+                        if (mat.occlusionTexture.index >= 0) {
+                            int texIdx = mat.occlusionTexture.index;
+                            if (texIdx < static_cast<int>(model.textures.size())) {
+                                int imgIdx = model.textures[texIdx].source;
+                                if (imgIdx >= 0 && imgIdx < static_cast<int>(model.images.size())) {
+                                    const tinygltf::Image &image = model.images[imgIdx];
+                                    std::string imagePath = !image.name.empty()
+                                        ? virtualPath + "#" + image.name
+                                        : virtualPath + "#image" + std::to_string(imgIdx);
+                                    auto it = pathToHandle.find(imagePath);
+                                    if (it != pathToHandle.end())
+                                        material.ambientOcclusion = it->second;
                                 }
                             }
                         }
@@ -1318,6 +1369,7 @@ namespace Atlas {
 
             constexpr glm::vec3 defaultDir = glm::vec3{0.0f, 0.0f, -1.0f};
             light.direction = glm::normalize(rotation * defaultDir);
+            light.direction = -light.direction;
 
             outEntities.push_back(entity);
 
@@ -1371,6 +1423,7 @@ namespace Atlas {
 
                                 constexpr glm::vec3 defaultDir = glm::vec3{0.0f, 0.0f, -1.0f};
                                 light.direction = glm::normalize(rotation * defaultDir);
+                                light.direction.y = -light.direction.y;
 
                                 // color
                                 light.color = glm::vec3(1.0f);

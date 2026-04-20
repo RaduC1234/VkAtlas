@@ -12,10 +12,16 @@
 
 
 namespace Atlas {
+    enum class ViewMode : uint32_t {
+        LIT,
+        UNLIT,
+        LIGHTING_ONLY
+    };
     struct alignas(16) DebugData {
         float irradianceMultiplier{1.0f};
         float exposureMultiplier{1.0f};
-        float _padding[2]{};
+        uint32_t viewMode{static_cast<uint32_t>(ViewMode::LIT)};
+        float _padding{};
     };
 
     struct alignas(16) GlobalUbo {

@@ -17,7 +17,7 @@ namespace Atlas {
     }
 
     void PostProcessPass::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
-        out.push_back(Resource::Description::color("post_color", VK_FORMAT_R8G8B8A8_UNORM));
+        out.push_back(Resource::Description::color("post_color", VK_FORMAT_R8G8B8A8_SRGB));
     }
 
     void PostProcessPass::getDeclaredInputs(std::vector<std::string> &out) const {
