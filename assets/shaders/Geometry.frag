@@ -71,7 +71,7 @@ layout(std430, set = 4, binding = 0) readonly buffer LightBuffer {
 const float PI             = 3.14159265359;
 const float INV_PI         = 0.31830988618;
 const float EPSILON        = 1e-5;
-const uint  MAX_LIGHTS     = 5u;
+const uint  MAX_LIGHTS     = 16u;
 const float MAX_REFLECTION_LOD = 5.0;
 
 // Debug view modes (debugData.viewMode)

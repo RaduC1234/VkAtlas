@@ -3,6 +3,7 @@
 #include <entt/entity/registry.hpp>
 
 #include "IRenderStage.hpp"
+#include "CullingPass.hpp"
 #include "entity/Object.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
@@ -14,10 +15,7 @@ namespace Atlas {
     class GeometryPass : public IRenderStage {
     public:
         static constexpr uint32_t MAX_TEXTURES = 1024;
-        static constexpr uint32_t MAX_OBJECTS = 10000;
-        static constexpr uint32_t MAX_LIGHTS = 32;
-        static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 1'000'000;
-        static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
+        static constexpr uint32_t MAX_LIGHTS   = 32;
 
         GeometryPass(Device &device, const DescriptorSetLayout &globalSetLayout);
         ~GeometryPass() override;
@@ -38,20 +36,6 @@ namespace Atlas {
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 
     private:
-        struct GPUObjectData {
-            glm::mat4 modelMatrix;
-            glm::mat4 normalMatrix;
-            glm::uvec4 textureIndices;
-            glm::vec4 baseColor;
-        };
-
-        struct MeshAllocation {
-            uint32_t firstVertex = 0;
-            uint32_t vertexCount = 0;
-            uint32_t firstIndex = 0;
-            uint32_t indexCount = 0;
-        };
-
         struct Light {
             uint32_t type{static_cast<uint32_t>(LightType::SPOT)};
             float intensity{1.0f};
@@ -71,7 +55,7 @@ namespace Atlas {
         const GPUImage *colorTarget = nullptr;
         const GPUImage *depthTarget = nullptr;
 
-        VkRenderPass renderPass = VK_NULL_HANDLE;
+        VkRenderPass renderPass   = VK_NULL_HANDLE;
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
         VkExtent2D extent = {};
 
@@ -91,10 +75,7 @@ namespace Atlas {
         AssetHandle defaultWhiteHandle = INVALID_ASSET_HANDLE;
 
         std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
-        Storage<GPUObjectData> opaqueObjectData;
-        std::unique_ptr<Buffer> objectDataBuffer;
         VkDescriptorSet objectDataSet = VK_NULL_HANDLE;
-        std::unique_ptr<Buffer> opaqueIndirectCommandBuffer;
 
         Storage<Light> lights;
         std::unique_ptr<Buffer> lightsBuffer;
@@ -105,11 +86,14 @@ namespace Atlas {
         VkDescriptorSet skyboxDescriptorSet = VK_NULL_HANDLE;
         AssetHandle boundSkyboxHandle = INVALID_ASSET_HANDLE;
 
-        std::unique_ptr<Buffer> mergedVertexBuffer;
-        std::unique_ptr<Buffer> mergedIndexBuffer;
-        uint32_t nextVertex = 0;
-        uint32_t nextIndex = 0;
-        std::unordered_map<AssetHandle, MeshAllocation> meshAllocations;
+        // graph-owned, consumed from CullingPass outputs
+        const Buffer *sceneVertexBuffer  = nullptr;
+        const Buffer *sceneIndexBuffer   = nullptr;
+        const Buffer *opaqueIndirectCmds = nullptr;
+        // transparent_indirect_cmds — reserved for a future transparent pass
+        // const Buffer *transparentIndirectCmds = nullptr;
+
+        uint32_t opaqueDrawCount = 0;
 
         void begin(VkCommandBuffer cmd);
         void end(VkCommandBuffer cmd);
@@ -123,7 +107,6 @@ namespace Atlas {
         void createGPUBuffers();
 
         uint32_t registerTexture(AssetHandle handle);
-        void registerMesh(AssetHandle handle);
         uint32_t resolveTextureIndex(AssetHandle handle) const;
         VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
     };

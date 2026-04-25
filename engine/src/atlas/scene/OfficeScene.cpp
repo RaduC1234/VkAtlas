@@ -19,6 +19,7 @@ namespace Atlas {
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
         this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet_with_light3.glb");
+        //this->registry = AssetManager::get().loadGltfAsScene("models/Workspace.glb");
 
         auto cameraEntity = registry.create();
         registry.emplace<TransformComponent>(cameraEntity);
@@ -44,6 +45,7 @@ namespace Atlas {
         static float irlMultiplier = 1.0f;
         static float exposureMultiplier = 1.0f;
         static auto viewMode = ViewMode::LIT;
+
 #ifdef ATLAS_PLATFORM_DESKTOP
         ImGui::Begin("Debug Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);

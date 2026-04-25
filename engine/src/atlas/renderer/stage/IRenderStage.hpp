@@ -42,6 +42,7 @@ namespace Atlas {
 
                 VkBufferUsageFlags bufferUsage = 0;
                 VkDeviceSize size = 0;
+                bool hostVisible = false;
 
                 Kind kind() const {
                     switch (type) {
@@ -89,7 +90,7 @@ namespace Atlas {
                     return {
                         .name = std::move(name),
                         .type = Type::BUFFER_VERTEX,
-                        .bufferUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                        .bufferUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                         .size = size
                     };
                 }
@@ -98,7 +99,7 @@ namespace Atlas {
                     return {
                         .name = std::move(name),
                         .type = Type::BUFFER_INDEX,
-                        .bufferUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                        .bufferUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                         .size = size
                     };
                 }

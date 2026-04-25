@@ -242,6 +242,11 @@ namespace Atlas {
         Buffer &operator=(Buffer &&other) noexcept;
 
         /**
+         * @brief Returns the total size of the buffer in bytes. For instanced buffers, this is instanceCount * alignedInstanceSize.
+         */
+        VkDeviceSize getSize() const { return totalSize_; }
+
+        /**
          * @brief Maps the buffer to CPU-visible memory. No-op if already mapped.
          */
         void map();

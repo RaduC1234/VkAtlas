@@ -1,6 +1,7 @@
 #include "RenderSystemV2.hpp"
 
 #include "core/Log.hpp"
+#include "renderer/stage/CullingPass.hpp"
 #include "renderer/stage/GeometryPass.hpp"
 #include "renderer/stage/OutputPass.hpp"
 #include "renderer/stage/PostProcessingPass.hpp"
@@ -10,6 +11,7 @@ namespace Atlas {
         createGlobalUbo();
 
         this->renderGraph = RenderGraph::Builder(device)
+                .addStage<CullingPass>(device)
                 .addStage<GeometryPass>(device, *globalSetLayout)
                 .addStage<PostProcessPass>(device, *globalSetLayout)
                 .addStage<OutputPass>(device, renderer)

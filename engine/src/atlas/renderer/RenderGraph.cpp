@@ -82,7 +82,7 @@ namespace Atlas {
                     auto buffer = Buffer::Builder(device)
                             .setSize(output.size)
                             .setUsage(output.bufferUsage)
-                            .setAllocationFlags(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+                            .setAllocationFlags(output.hostVisible ? VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT : VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
                     ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buffer.build())});
                 }
