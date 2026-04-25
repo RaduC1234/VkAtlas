@@ -5,18 +5,19 @@
 #include "IRenderStage.hpp"
 #include "entity/Object.hpp"
 #include "renderer/Device.hpp"
-#include "renderer/abstraction/Buffer.hpp"
+#include "renderer/abstraction/GPUBuffer.hpp"
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
 namespace Atlas {
-    class CullingPass final : public IRenderStage {
+    class CullingPass : public IRenderStage {
     public:
         static constexpr uint32_t MAX_OBJECTS = 10000;
         static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 1'000'000;
         static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
+        static constexpr uint32_t MAX_TEXTURES = 1024;
 
         struct GPUObjectData {
             glm::mat4 modelMatrix;
@@ -54,18 +55,19 @@ namespace Atlas {
         uint32_t nextIndex  = 0;
         std::unordered_map<AssetHandle, MeshAllocation> meshAllocations;
 
-        Buffer *vertexBuffer            = nullptr;
-        Buffer *indexBuffer             = nullptr;
-        Buffer *opaqueIndirectCmds      = nullptr;
-        Buffer *transparentIndirectCmds = nullptr;
-        Buffer *objectDataBuffer        = nullptr;
+        GPUBuffer *vertexBuffer            = nullptr;
+        GPUBuffer *indexBuffer             = nullptr;
+        GPUBuffer *opaqueIndirectCmds      = nullptr;
+        GPUBuffer *objectDataBuffer        = nullptr;
+        std::vector<AssetHandle>* textureHandles = nullptr;
 
         std::vector<VkDrawIndexedIndirectCommand> opaqueIndirectCommands;
         std::vector<VkDrawIndexedIndirectCommand> transparentIndirectCommands;
 
-        // cluster_buffer — clustered/forward+ light assignment, filled by a future split pass
-        // Buffer *clusterBuffer = nullptr;
+        AssetHandle defaultWhiteHandle = INVALID_ASSET_HANDLE;
+        std::unordered_map<AssetHandle, uint32_t> textureSlots;
 
         void registerMesh(AssetHandle handle);
+        uint32_t registerTexture(AssetHandle handle);
     };
 } // namespace Atlas

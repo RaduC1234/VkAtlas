@@ -3,7 +3,7 @@
 #include <stb_image.h>
 
 #include "renderer/Device.hpp"
-#include "renderer/abstraction/Buffer.hpp"
+#include "renderer/abstraction/GPUBuffer.hpp"
 #include "utils/Hash.hpp"
 
 namespace std {
@@ -70,7 +70,7 @@ namespace Atlas {
         // Calculate full mip chain depth
         mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
 
-        Buffer stagingBuffer(
+        GPUBuffer stagingBuffer(
             device,
             imageSize,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,

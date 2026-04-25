@@ -12,13 +12,13 @@ namespace Atlas {
      *
      * @code
      * // Simple buffer (vertex / index / static UBO):
-     * Buffer vbo = Buffer::simple(device)
+     * GPUBuffer vbo = GPUBuffer::simple(device)
      *     .setSize(sizeof(vertices))
      *     .setUsage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT)
      *     .build();
      *
      * // Instanced buffer (dynamic UBO):
-     * Buffer ubo = Buffer::instanced(device)
+     * GPUBuffer ubo = GPUBuffer::instanced(device)
      *     .setInstanceSize(sizeof(MyUBO))
      *     .setInstanceCount(MAX_FRAMES_IN_FLIGHT)
      *     .setMinOffsetAlignment(device.properties().limits.minUniformBufferOffsetAlignment)
@@ -27,7 +27,7 @@ namespace Atlas {
      *     .build();
      * @endcode
      */
-    class Buffer {
+    class GPUBuffer {
     public:
         enum BuilderFlags : uint32_t {
             FLAG_MODE_SIMPLE = 1 << 0,
@@ -146,16 +146,16 @@ namespace Atlas {
              * Simple mode requires:    setSize() + setUsage()
              * Instanced mode requires: setInstanceSize() + setInstanceCount() + setUsage()
              */
-            Buffer build() const
+            GPUBuffer build() const
                 requires (((Flags & REQUIRED_SIMPLE) == REQUIRED_SIMPLE) || ((Flags & REQUIRED_INSTANCED) == REQUIRED_INSTANCED)) {
                 if constexpr (Flags & FLAG_MODE_SIMPLE) {
-                    Buffer buf(device_, size_, usage_, memoryUsage_, allocFlags_);
+                    GPUBuffer buf(device_, size_, usage_, memoryUsage_, allocFlags_);
                     if (mapped_) {
                         buf.map();
                     }
                     return buf;
                 } else {
-                    Buffer buf(device_, instanceSize_, instanceCount_, usage_, memoryUsage_, minOffsetAlignment_, allocFlags_);
+                    GPUBuffer buf(device_, instanceSize_, instanceCount_, usage_, memoryUsage_, minOffsetAlignment_, allocFlags_);
                     if (mapped_) {
                         buf.map();
                     }
@@ -211,7 +211,7 @@ namespace Atlas {
          * @param minOffsetAlignment Required alignment (usually from device.limits.minUniformBufferOffsetAlignment).
          * @param flags Optional VMA allocation flags.
          */
-        Buffer(Device &device,
+        GPUBuffer(Device &device,
                VkDeviceSize instanceSize,
                uint32_t instanceCount,
                VkBufferUsageFlags usage,
@@ -228,18 +228,18 @@ namespace Atlas {
          * @param memoryUsage VMA memory usage policy.
          * @param flags Optional VMA allocation flags.
          */
-        Buffer(Device &device,
+        GPUBuffer(Device &device,
                VkDeviceSize size,
                VkBufferUsageFlags usage,
                VmaMemoryUsage memoryUsage,
                VmaAllocationCreateFlags flags = 0);
 
-        ~Buffer();
+        ~GPUBuffer();
 
-        Buffer(const Buffer &) = delete;
-        Buffer &operator=(const Buffer &) = delete;
-        Buffer(Buffer &&other) noexcept;
-        Buffer &operator=(Buffer &&other) noexcept;
+        GPUBuffer(const GPUBuffer &) = delete;
+        GPUBuffer &operator=(const GPUBuffer &) = delete;
+        GPUBuffer(GPUBuffer &&other) noexcept;
+        GPUBuffer &operator=(GPUBuffer &&other) noexcept;
 
         /**
          * @brief Returns the total size of the buffer in bytes. For instanced buffers, this is instanceCount * alignedInstanceSize.

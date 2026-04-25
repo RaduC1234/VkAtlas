@@ -3,7 +3,6 @@
 #include <entt/entity/registry.hpp>
 
 #include "IRenderStage.hpp"
-#include "CullingPass.hpp"
 #include "entity/Object.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
@@ -14,8 +13,8 @@
 namespace Atlas {
     class GeometryPass : public IRenderStage {
     public:
+        static constexpr uint32_t MAX_LIGHTS = 32;
         static constexpr uint32_t MAX_TEXTURES = 1024;
-        static constexpr uint32_t MAX_LIGHTS   = 32;
 
         GeometryPass(Device &device, const DescriptorSetLayout &globalSetLayout);
         ~GeometryPass() override;
@@ -30,7 +29,7 @@ namespace Atlas {
         void getDeclaredOutputs(std::vector<Resource::Description> &out) const override;
         void getDeclaredInputs(std::vector<std::string> &out) const override;
 
-        void onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource>> &resources) override;
+        void onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) override;
         void onSceneChanged(entt::registry &registry) override;
 
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
@@ -52,10 +51,11 @@ namespace Atlas {
         Device &device;
         const DescriptorSetLayout &globalSetLayout;
 
+        // render targets (graph-owned)
         const GPUImage *colorTarget = nullptr;
         const GPUImage *depthTarget = nullptr;
 
-        VkRenderPass renderPass   = VK_NULL_HANDLE;
+        VkRenderPass renderPass = VK_NULL_HANDLE;
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
         VkExtent2D extent = {};
 
@@ -65,39 +65,40 @@ namespace Atlas {
 
         std::unique_ptr<DescriptorPool> pool;
 
+        // environment / IBL
         std::unique_ptr<DescriptorSetLayout> environmentSetLayout;
         VkDescriptorSet environmentSet = VK_NULL_HANDLE;
 
+        // bindless textures — slots filled from texture_handles (CullingPass output)
         std::unique_ptr<DescriptorSetLayout> textureSetLayout;
         VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
-        uint32_t nextTextureSlot = 1;
-        std::unordered_map<AssetHandle, uint32_t> handleToTextureSlot;
-        AssetHandle defaultWhiteHandle = INVALID_ASSET_HANDLE;
 
+        // object data
         std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
         VkDescriptorSet objectDataSet = VK_NULL_HANDLE;
 
+        // lights — GeometryPass still owns these
         Storage<Light> lights;
-        std::unique_ptr<Buffer> lightsBuffer;
+        std::unique_ptr<GPUBuffer> lightsBuffer;
         VkDescriptorSet lightSet = VK_NULL_HANDLE;
         std::unique_ptr<DescriptorSetLayout> lightSetLayout;
 
+        // skybox
         std::unique_ptr<DescriptorSetLayout> skyboxSetLayout;
         VkDescriptorSet skyboxDescriptorSet = VK_NULL_HANDLE;
         AssetHandle boundSkyboxHandle = INVALID_ASSET_HANDLE;
 
-        // graph-owned, consumed from CullingPass outputs
-        const Buffer *sceneVertexBuffer  = nullptr;
-        const Buffer *sceneIndexBuffer   = nullptr;
-        const Buffer *opaqueIndirectCmds = nullptr;
-        // transparent_indirect_cmds — reserved for a future transparent pass
-        // const Buffer *transparentIndirectCmds = nullptr;
+        // graph-owned buffers from CullingPass
+        const GPUBuffer *sceneVertexBuffer = nullptr;
+        const GPUBuffer *sceneIndexBuffer = nullptr;
+        const GPUBuffer *opaqueIndirectCmds = nullptr;
+        std::vector<AssetHandle> *textureHandles = nullptr; // CPU buffer from CullingPass
+        // const GPUBuffer           *transparentIndirectCmds = nullptr; // future
 
         uint32_t opaqueDrawCount = 0;
 
         void begin(VkCommandBuffer cmd);
         void end(VkCommandBuffer cmd);
-        void barrier(VkCommandBuffer cmd);
 
         void createRenderPass();
         void createFramebuffer();
@@ -106,8 +107,6 @@ namespace Atlas {
         void createDescriptors();
         void createGPUBuffers();
 
-        uint32_t registerTexture(AssetHandle handle);
-        uint32_t resolveTextureIndex(AssetHandle handle) const;
         VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
     };
 } // namespace Atlas

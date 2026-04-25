@@ -2,16 +2,19 @@
 
 #include <glm/gtc/matrix_inverse.hpp>
 
+#include "IRenderStage.hpp"
 #include "asset/AssetManager.hpp"
 
 namespace Atlas {
-    CullingPass::CullingPass(Device &device) : device(device) {
+    CullingPass::CullingPass(Device &device) : IRenderStage(Queue::COMPUTE), device(device) {
         opaqueIndirectCommands.reserve(MAX_OBJECTS);
+        defaultWhiteHandle = AssetManager::get().createDefaultWhiteTexture();
     }
 
     void CullingPass::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
         out.push_back(Resource::Description::vertexBuffer("scene_vertex_buffer", VERTEX_BUDGET));
         out.push_back(Resource::Description::indexBuffer("scene_index_buffer", INDEX_BUDGET));
+        out.push_back(Resource::Description::cpuBuffer<std::vector<AssetHandle>>("texture_handles"));
 
         out.push_back({
             .name = "opaque_indirect_cmds",
@@ -21,13 +24,13 @@ namespace Atlas {
             .hostVisible = true,
         });
 
-        out.push_back({
+        /*out.push_back({
             .name = "transparent_indirect_cmds",
             .type = Resource::Type::BUFFER_STORAGE,
             .bufferUsage = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             .size = sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
             .hostVisible = true,
-        });
+        });*/
 
         out.push_back({
             .name = "object_data_buffer",
@@ -50,29 +53,36 @@ namespace Atlas {
     void CullingPass::getDeclaredInputs(std::vector<std::string> & /*out*/) const {
     }
 
-    void CullingPass::onResourcesCreated(
-        const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) {
-        vertexBuffer = &resources.at("scene_vertex_buffer").get().asBuffer();
-        indexBuffer = &resources.at("scene_index_buffer").get().asBuffer();
+    void CullingPass::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) {
+        vertexBuffer = &resources.at("scene_vertex_buffer").get().asGPUBuffer();
+        indexBuffer = &resources.at("scene_index_buffer").get().asGPUBuffer();
 
-        opaqueIndirectCmds = &resources.at("opaque_indirect_cmds").get().asBuffer();
+        textureHandles = &resources.at("texture_handles").get().asCPUBuffer().as<std::vector<AssetHandle>>();
+
+        opaqueIndirectCmds = &resources.at("opaque_indirect_cmds").get().asGPUBuffer();
         opaqueIndirectCmds->map();
         std::memset(opaqueIndirectCmds->getMapped(), 0, sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS);
 
-        transparentIndirectCmds = &resources.at("transparent_indirect_cmds").get().asBuffer();
+        /*transparentIndirectCmds = &resources.at("transparent_indirect_cmds").get().asGPUBuffer();
         transparentIndirectCmds->map();
-        std::memset(transparentIndirectCmds->getMapped(), 0, sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS);
+        std::memset(transparentIndirectCmds->getMapped(), 0, sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS);*/
 
-        objectDataBuffer = &resources.at("object_data_buffer").get().asBuffer();
+        objectDataBuffer = &resources.at("object_data_buffer").get().asGPUBuffer();
         objectDataBuffer->map();
         std::memset(objectDataBuffer->getMapped(), 0, sizeof(GPUObjectData) * MAX_OBJECTS);
 
-        // clusterBuffer = &resources.at("cluster_buffer").get().asBuffer();
+        // clusterBuffer = &resources.at("cluster_buffer").get().asGPUBuffer();
     }
 
     void CullingPass::onSceneChanged(entt::registry &registry) {
         opaqueIndirectCommands.clear();
         transparentIndirectCommands.clear();
+
+        textureHandles->clear();
+        textureSlots.clear();
+
+        textureHandles->push_back(defaultWhiteHandle);
+        textureSlots[defaultWhiteHandle] = 0;
 
         std::vector<GPUObjectData> opaqueObjectData;
         opaqueObjectData.reserve(MAX_OBJECTS);
@@ -94,20 +104,20 @@ namespace Atlas {
             const bool isTransparent = material.baseColor.w < 1.0f;
 
             if (isTransparent) {
-                transparentIndirectCommands.push_back({
-                    alloc.indexCount,
-                    1,
-                    alloc.firstIndex,
-                    static_cast<int32_t>(alloc.firstVertex),
-                    transparentIndex++
-                });
+               continue;
             } else {
                 const glm::mat4 model4 = transform.mat4();
+
+                // register textures and get their indices
+                const uint32_t albedoIdx    = registerTexture(material.albedoTexture);
+                const uint32_t normalIdx    = registerTexture(material.normalMap);
+                const uint32_t mrIdx        = registerTexture(material.metallicRoughnessMap);
+                const uint32_t aoIdx        = registerTexture(material.ambientOcclusion);
 
                 opaqueObjectData.push_back({
                     .modelMatrix = model4,
                     .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(model4))),
-                    .textureIndices = glm::uvec4(0),
+                    .textureIndices = glm::uvec4(albedoIdx, normalIdx, mrIdx, aoIdx),
                     .baseColor = material.baseColor,
                 });
 
@@ -164,26 +174,38 @@ namespace Atlas {
         meshAllocations[handle] = alloc;
 
         const VkDeviceSize vSize = vertices.size() * sizeof(Mesh::Vertex);
-        auto vStaging = Buffer::Builder(device)
+        auto vStaging = GPUBuffer::Builder(device)
                 .setSize(vSize)
                 .setUsage(VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
                 .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
                 .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT)
                 .build();
         vStaging.uploadData(vertices.data(), vSize);
-        Buffer::copy(device, vStaging.get(), vertexBuffer->get(), vSize, 0, nextVertex * sizeof(Mesh::Vertex));
+        GPUBuffer::copy(device, vStaging.get(), vertexBuffer->get(), vSize, 0, nextVertex * sizeof(Mesh::Vertex));
 
         const VkDeviceSize iSize = indices.size() * sizeof(uint32_t);
-        auto iStaging = Buffer::Builder(device)
+        auto iStaging = GPUBuffer::Builder(device)
                 .setSize(iSize)
                 .setUsage(VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
                 .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
                 .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT)
                 .build();
         iStaging.uploadData(indices.data(), iSize);
-        Buffer::copy(device, iStaging.get(), indexBuffer->get(), iSize, 0, nextIndex * sizeof(uint32_t));
+        GPUBuffer::copy(device, iStaging.get(), indexBuffer->get(), iSize, 0, nextIndex * sizeof(uint32_t));
 
         nextVertex += alloc.vertexCount;
         nextIndex += alloc.indexCount;
+    }
+
+    uint32_t CullingPass::registerTexture(AssetHandle handle) {
+        if (handle == INVALID_ASSET_HANDLE)
+            handle = defaultWhiteHandle;
+
+        auto [it, inserted] = textureSlots.emplace(handle, static_cast<uint32_t>(textureHandles->size()));
+        if (!inserted)
+            return it->second; // already registered this frame
+
+        textureHandles->push_back(handle);
+        return it->second;
     }
 } // namespace Atlas

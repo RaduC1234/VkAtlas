@@ -2,7 +2,7 @@
 #include "renderer/abstraction/GPUImage.hpp"
 
 namespace Atlas {
-    OutputPass::OutputPass(Device &device, Renderer &renderer) : device(device), renderer(renderer) {
+    OutputPass::OutputPass(Device &device, Renderer &renderer) : IRenderStage(Queue::GRAPHICS), device(device), renderer(renderer) {
     }
 
     void OutputPass::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
@@ -14,7 +14,7 @@ namespace Atlas {
     }
 
     void OutputPass::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) {
-        postColorSource = &resources.at("post_color").get().asImage();
+        postColorSource = &resources.at("post_color").get().asGPUImage();
     }
 
     void OutputPass::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {

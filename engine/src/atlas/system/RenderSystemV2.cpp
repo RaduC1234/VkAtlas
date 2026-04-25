@@ -43,7 +43,7 @@ namespace Atlas {
         globalDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
 
         for (int i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
-            globalUboBuffers[i] = std::make_unique<Buffer>(
+            globalUboBuffers[i] = std::make_unique<GPUBuffer>(
                 device,
                 sizeof(GlobalUbo),
                 1,

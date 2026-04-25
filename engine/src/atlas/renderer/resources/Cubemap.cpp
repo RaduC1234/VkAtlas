@@ -7,7 +7,7 @@
 #include <glm/ext/scalar_constants.hpp>
 
 #include "core/Log.hpp"
-#include "renderer/abstraction/Buffer.hpp"
+#include "renderer/abstraction/GPUBuffer.hpp"
 
 namespace Atlas {
     Cubemap::~Cubemap() {
@@ -49,7 +49,7 @@ namespace Atlas {
         VkDeviceSize totalSize = faceSize * 6;
 
         // Create staging buffer using your Buffer class
-        Buffer stagingBuffer(
+        GPUBuffer stagingBuffer(
             device,
             totalSize,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -138,7 +138,7 @@ namespace Atlas {
             VkDeviceSize totalSize = faceSizeBytes * 6;
 
             // Create staging buffer
-            Buffer stagingBuffer(
+            GPUBuffer stagingBuffer(
                 device,
                 totalSize,
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -291,7 +291,7 @@ namespace Atlas {
 
             VkDeviceSize totalSize = ktxTexture_GetDataSize(ktxTexture(ktxTex));
 
-            Buffer stagingBuffer(
+            GPUBuffer stagingBuffer(
                 device,
                 totalSize,
                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -355,7 +355,7 @@ namespace Atlas {
 
             // Upload
             cubemap->transitionImageLayout(VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-            Buffer::copyToImage(device, stagingBuffer.get(), cubemap->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions);
+            GPUBuffer::copyToImage(device, stagingBuffer.get(), cubemap->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regions);
             cubemap->transitionImageLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
             cubemap->createImageView(format);
             cubemap->createSampler();

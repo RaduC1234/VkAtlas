@@ -59,7 +59,16 @@ namespace Atlas {
                     continue;
                 }
 
-                if (output.kind() == IRenderStage::Resource::Kind::IMAGE) {
+                if (output.kind() == IRenderStage::Resource::Kind::CPU_BUFFER) {
+                    auto buffer = CPUBuffer::Builder()
+                            .setSize(output.size)
+                            .setInitialData(output.cpuInitial);
+
+                    ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buffer.build())});
+                    continue;
+                }
+
+                if (output.kind() == IRenderStage::Resource::Kind::GPU_IMAGE) {
                     const uint32_t w = output.width ? output.width : width;
                     const uint32_t h = output.height ? output.height : height;
 
@@ -76,15 +85,17 @@ namespace Atlas {
                         builder.addView(VK_IMAGE_ASPECT_COLOR_BIT);
                     }
                     ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(builder.build())});
+                    continue;
                 }
 
-                if (output.kind() == IRenderStage::Resource::Kind::BUFFER) {
-                    auto buffer = Buffer::Builder(device)
+                if (output.kind() == IRenderStage::Resource::Kind::GPU_BUFFER) {
+                    auto buffer = GPUBuffer::Builder(device)
                             .setSize(output.size)
                             .setUsage(output.bufferUsage)
                             .setAllocationFlags(output.hostVisible ? VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT : VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
 
                     ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buffer.build())});
+                    continue;
                 }
             }
         }
@@ -120,7 +131,11 @@ namespace Atlas {
                     continue;
                 }
 
-                if (resIt->second.kind() == IRenderStage::Resource::Kind::BUFFER) {
+                if (resIt->second.kind() == IRenderStage::Resource::Kind::CPU_BUFFER) {
+                    continue;
+                }
+
+                if (resIt->second.kind() == IRenderStage::Resource::Kind::GPU_BUFFER) {
                     if (resIt->second.type() == IRenderStage::Resource::Type::BUFFER_VERTEX || resIt->second.type() == IRenderStage::Resource::Type::BUFFER_INDEX) {
                         continue; // Vertex and index buffers are only read by the GPU
                     }
@@ -201,7 +216,7 @@ namespace Atlas {
                 vkb.dstAccessMask = b.dstAccess;
                 vkb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 vkb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                vkb.buffer = it->second.asBuffer().get();
+                vkb.buffer = it->second.asGPUBuffer().get();
                 vkb.offset = 0;
                 vkb.size = VK_WHOLE_SIZE;
 
@@ -215,7 +230,7 @@ namespace Atlas {
                 vkb.dstAccessMask = b.dstAccess;
                 vkb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 vkb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                vkb.image = it->second.asImage().image();
+                vkb.image = it->second.asGPUImage().image();
                 vkb.subresourceRange = {b.aspect, 0, 1, 0, 1};
 
                 imageBarriers.push_back(vkb);

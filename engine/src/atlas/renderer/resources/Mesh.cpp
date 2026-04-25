@@ -55,7 +55,7 @@ namespace Atlas {
         assert(vertexCount >= 3 && "Vertex count must be at least 3");
         VkDeviceSize bufferSize = sizeof(vertices[0]) * vertexCount;
 
-        Buffer stagingBuffer(
+        GPUBuffer stagingBuffer(
             device,
             bufferSize,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -65,14 +65,14 @@ namespace Atlas {
 
         stagingBuffer.uploadData(vertices.data(), bufferSize);
 
-        vertexBuffer = std::make_unique<Buffer>(
+        vertexBuffer = std::make_unique<GPUBuffer>(
             device,
             bufferSize,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
         );
 
-        Buffer::copy(device, stagingBuffer.get(), vertexBuffer->get(), bufferSize);
+        GPUBuffer::copy(device, stagingBuffer.get(), vertexBuffer->get(), bufferSize);
     }
 
     void Mesh::createIndexBuffers(const std::vector<uint32_t> &indices) {
@@ -82,7 +82,7 @@ namespace Atlas {
 
         VkDeviceSize bufferSize = sizeof(uint32_t) * indexCount;
 
-        Buffer stagingBuffer(
+        GPUBuffer stagingBuffer(
             device,
             bufferSize,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -93,14 +93,14 @@ namespace Atlas {
 
         stagingBuffer.uploadData(indices.data(), bufferSize);
 
-        indexBuffer = std::make_unique<Buffer>(
+        indexBuffer = std::make_unique<GPUBuffer>(
             device,
             bufferSize,
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
         );
 
-        Buffer::copy(device, stagingBuffer.get(), indexBuffer->get(), bufferSize);
+        GPUBuffer::copy(device, stagingBuffer.get(), indexBuffer->get(), bufferSize);
     }
 
     // vertex

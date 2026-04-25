@@ -6,7 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "renderer/Device.hpp"
-#include "renderer/abstraction/Buffer.hpp"
+#include "renderer/abstraction/GPUBuffer.hpp"
 #include "asset/Asset.hpp"
 
 namespace Atlas {
@@ -60,10 +60,10 @@ namespace Atlas {
         std::vector<Vertex> vertices_;
         std::vector<uint32_t> indices_;
 
-        std::unique_ptr<Buffer> vertexBuffer;
+        std::unique_ptr<GPUBuffer> vertexBuffer;
         uint32_t vertexCount;
 
-        std::unique_ptr<Buffer> indexBuffer;
+        std::unique_ptr<GPUBuffer> indexBuffer;
         uint32_t indexCount;
         bool hasIndexBuffer = false;
     };

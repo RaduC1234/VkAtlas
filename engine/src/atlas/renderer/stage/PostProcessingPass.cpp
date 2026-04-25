@@ -4,7 +4,7 @@
 #include "asset/AssetManager.hpp"
 
 namespace Atlas {
-    PostProcessPass::PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout) : device(device), globalSetLayout(globalSetLayout) {
+    PostProcessPass::PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout) : IRenderStage(Queue::GRAPHICS), device(device), globalSetLayout(globalSetLayout) {
         createSampler();
     }
 
@@ -27,9 +27,9 @@ namespace Atlas {
 
     void PostProcessPass::onResourcesCreated(
         const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) {
-        const GPUImage &colorImage = resources.at("geometry_color").get().asImage();
-        const GPUImage &depthImage = resources.at("geometry_depth").get().asImage();
-        const GPUImage &outImage = resources.at("post_color").get().asImage();
+        const GPUImage &colorImage = resources.at("geometry_color").get().asGPUImage();
+        const GPUImage &depthImage = resources.at("geometry_depth").get().asGPUImage();
+        const GPUImage &outImage = resources.at("post_color").get().asGPUImage();
 
         postColorTarget = &outImage;
         extent = outImage.extent();
