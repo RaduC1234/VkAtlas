@@ -113,7 +113,6 @@ namespace Atlas {
 
         void begin(VkCommandBuffer cmd);
         void end(VkCommandBuffer cmd);
-        void barrier(VkCommandBuffer cmd);
 
         void createRenderPass();
         void createFramebuffer();
