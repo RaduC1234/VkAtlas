@@ -3,14 +3,17 @@
 #include "Renderer.hpp"
 
 namespace Atlas {
-    std::unique_ptr<RenderGraph> RenderGraph::Builder::build(Mode mode) {
+    RenderGraph RenderGraph::Builder::build(Mode mode) {
         assert(width_ > 0 && height_ > 0);
         assert(!stages_.empty());
 
-        auto graph = std::unique_ptr<RenderGraph>(new RenderGraph(device, mode, width_, height_));
-        graph->stages_ = std::move(stages_);
-        graph->bake();
+        RenderGraph graph(device, mode, width_, height_);
+        graph.stages_ = std::move(stages_);
+        graph.bake();
         return graph;
+    }
+
+    RenderGraph::RenderGraph(Device &device, Mode mode, uint32_t width, uint32_t height) : device(device), mode(mode), width(width), height(height) {
     }
 
     void RenderGraph::bake() {
@@ -96,8 +99,21 @@ namespace Atlas {
             refs.emplace(name, std::ref(img));
         }
 
+        // Compute finalLayouts and lastWrittenBy by simulating the barrier pass
+        std::unordered_map<std::string, VkImageLayout> finalLayouts;
+        std::unordered_map<std::string, IRenderStage::Queue> lastWrittenBy;
+        for (auto &node: nodes_) {
+            std::vector<IRenderStage::Resource::Description> stageOutputs;
+            node.stage->getDeclaredOutputs(stageOutputs);
+            for (auto &output: stageOutputs) {
+                finalLayouts[output.name] = writeLayoutFor(output.type);
+                lastWrittenBy[output.name] = node.stage->queue();
+            }
+        }
+
+        IRenderStage::Context ctx{refs, finalLayouts, lastWrittenBy};
         for (auto &stage: stages_) {
-            stage->onResourcesCreated(refs);
+            stage->onResourcesCreated(ctx);
         }
     }
 
@@ -109,12 +125,15 @@ namespace Atlas {
 
     void RenderGraph::bakeBarriers() {
         std::unordered_map<std::string, VkImageLayout> currentLayouts;
+        std::unordered_map<std::string, IRenderStage::Queue> lastWrittenBy;
 
         for (auto &node: nodes_) {
             std::vector<IRenderStage::Resource::Description> outputs;
             std::vector<std::string> inputs;
             node.stage->getDeclaredOutputs(outputs);
             node.stage->getDeclaredInputs(inputs);
+
+            const bool isCompute = node.stage->queue() == IRenderStage::Queue::COMPUTE;
 
             for (auto &input: inputs) {
                 auto resIt = ownedResources_.find(input);
@@ -133,8 +152,9 @@ namespace Atlas {
                         barrier.isBuffer = true;
                         barrier.srcAccess = VK_ACCESS_SHADER_WRITE_BIT; // Assume the worst case: previous stage wrote to it.
                         barrier.dstAccess = VK_ACCESS_SHADER_READ_BIT;
-                        barrier.srcStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT; // Assume worst case: previous stage was compute. TODO: track this more accurately.
-                        barrier.dstStage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                        barrier.srcStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                        barrier.dstStage = isCompute ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                                               : VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
                         node.barriersBeforeExec.push_back(barrier);
                         continue;
@@ -161,7 +181,7 @@ namespace Atlas {
                 barrier.srcAccess = writeAccessFor(srcLayout);
                 barrier.dstAccess = VK_ACCESS_SHADER_READ_BIT;
                 barrier.srcStage = writeStageFor(srcLayout);
-                barrier.dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                barrier.dstStage = isCompute ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
                 barrier.aspect = aspectFor(resType);
 
                 node.barriersBeforeExec.push_back(barrier);
@@ -170,14 +190,21 @@ namespace Atlas {
 
             for (auto &output: outputs) {
                 currentLayouts[output.name] = writeLayoutFor(output.type);
+                lastWrittenBy[output.name] = node.stage->queue();
             }
         }
     }
 
     void RenderGraph::render(const FrameContext frameContext, VkDescriptorSet globalSet) {
         for (auto &node: nodes_) {
-            emitBarriers(frameContext.graphicsCommandBuffer, node);
-            node.stage->record(frameContext.graphicsCommandBuffer, globalSet);
+            // Everything runs on the graphics command buffer.
+            // The graphics queue family supports compute operations, so compute
+            // stages record vkCmdDispatch into the same command buffer without
+            // any queue ownership transfers.
+            VkCommandBuffer cmd = frameContext.graphicsCommandBuffer;
+
+            emitBarriers(cmd, node);
+            node.stage->record(cmd, globalSet);
         }
     }
 
@@ -201,8 +228,8 @@ namespace Atlas {
                 vkb.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
                 vkb.srcAccessMask = b.srcAccess;
                 vkb.dstAccessMask = b.dstAccess;
-                vkb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                vkb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                vkb.srcQueueFamilyIndex = b.requiresOwnershipAcquire ? device.queueFamilyIndices().computeFamily.value() : VK_QUEUE_FAMILY_IGNORED;
+                vkb.dstQueueFamilyIndex = b.requiresOwnershipAcquire ? device.queueFamilyIndices().graphicsFamily.value() : VK_QUEUE_FAMILY_IGNORED;
                 vkb.buffer = it->second.asBuffer().get();
                 vkb.offset = 0;
                 vkb.size = VK_WHOLE_SIZE;
@@ -318,6 +345,10 @@ namespace Atlas {
             case IRenderStage::Resource::Type::ATTACHMENT_DEPTH:
             case IRenderStage::Resource::Type::SHADER_READ:
                 return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            case IRenderStage::Resource::Type::SHADER_WRITE:
+                // Storage images written by compute stay in GENERAL.
+                // Consumers (e.g. OutputStage) transition from GENERAL themselves.
+                return VK_IMAGE_LAYOUT_GENERAL;
             default:
                 return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         }

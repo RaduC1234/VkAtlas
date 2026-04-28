@@ -17,7 +17,7 @@
 #pragma comment(lib, "dwmapi.lib")
 
 namespace Atlas {
-    DesktopWindow::DesktopWindow(const WindowSpecification &properties) {
+    DesktopWindow::DesktopWindow(const Settings &properties) {
         this->width = properties.width;
         this->height = properties.height;
 

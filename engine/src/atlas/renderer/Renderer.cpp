@@ -8,7 +8,11 @@
 #include "entity/Object.hpp"
 
 namespace Atlas {
-    Renderer::Renderer(Window &window, Device &device) : window(window), device(device) {
+    Renderer::Renderer(const Settings &settings) {
+        this->window_ = Window::create(settings.windowSettings);
+        this->device_ = std::make_unique<Device>(*window_);
+        //this->sameFamily = device_->queueFamilyIndices().graphicsFamily.value() == device_->queueFamilyIndices().computeFamily.value();
+
         recreateSwapChain();
         createCommandBuffers();
         createComputeSyncObjects();
@@ -17,37 +21,17 @@ namespace Atlas {
 
     Renderer::~Renderer() {
         for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
-            vkDestroyFence(device.device(), computeInFlightFences[i], nullptr);
-            vkDestroySemaphore(device.device(), computeFinishedSemaphores[i], nullptr); // missing
+            vkDestroyFence(device_->device(), computeInFlightFences[i], nullptr);
+            vkDestroySemaphore(device_->device(), computeFinishedSemaphores[i], nullptr); // missing
         }
 
         freeCommandBuffers();
     }
 
-    void Renderer::recreateSwapChain() {
-        auto extent = window.getExtent();
-        while (extent.width == 0 || extent.height == 0) {
-            extent = window.getExtent();
-            //window->waitEvents();
-        }
-        vkDeviceWaitIdle(device.device());
-
-        if (swapChain == nullptr) {
-            swapChain = std::make_unique<SwapChain>(device, extent);
-        } else {
-            std::shared_ptr oldOldSwapChain = std::move(swapChain);
-            swapChain = std::make_unique<SwapChain>(device, extent, oldOldSwapChain);
-
-            if (!oldOldSwapChain->compareSwapFormats(*swapChain)) {
-                throw std::runtime_error("Swap chain image(or depth) format has changed!");
-            }
-        }
-    }
-
     FrameContext Renderer::beginFrame() {
         assert(!isFrameStarted && "Can't call beginFrame while already in progress");
 
-        auto result = swapChain->acquireNextImage(&currentImageIndex);
+        auto result = swapChain_->acquireNextImage(&currentImageIndex);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             recreateSwapChain();
@@ -60,15 +44,13 @@ namespace Atlas {
 
         isFrameStarted = true;
 
-        auto graphicsCommandBuffer = getCurrentGraphicsCommandBuffer();
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+        auto graphicsCommandBuffer = getCurrentGraphicsCommandBuffer();
         if (vkBeginCommandBuffer(graphicsCommandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
-
-        vkWaitForFences(device.device(), 1, &computeInFlightFences[currentFrameIndex], VK_TRUE, UINT64_MAX);
-        vkResetFences(device.device(), 1, &computeInFlightFences[currentFrameIndex]);
 
         auto computeCommandBuffer = getCurrentComputeCommandBuffer();
         vkResetCommandBuffer(computeCommandBuffer, 0);
@@ -76,7 +58,7 @@ namespace Atlas {
             throw std::runtime_error("failed to begin recording compute command buffer!");
         }
 
-        this->imGuiLayer->beginFrame();
+        this->imGuiLayer_->beginFrame();
 
         return {
             .graphicsCommandBuffer = graphicsCommandBuffer,
@@ -87,53 +69,38 @@ namespace Atlas {
 
     void Renderer::endFrame() {
         assert(isFrameStarted && "Can't call endFrame while not in progress");
+
         auto graphicsCommandBuffer = getCurrentGraphicsCommandBuffer();
         auto computeCommandBuffer = getCurrentComputeCommandBuffer();
-        const bool sameFamily = device.graphicsQueue() == device.computeQueue();
 
         VkClearValue clear{};
         clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
 
         VkRenderPassBeginInfo rpInfo{};
         rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpInfo.renderPass = swapChain->getImGuiRenderPass();
-        rpInfo.framebuffer = swapChain->getImGuiFrameBuffer(currentImageIndex);
+        rpInfo.renderPass = swapChain_->getImGuiRenderPass();
+        rpInfo.framebuffer = swapChain_->getImGuiFrameBuffer(currentImageIndex);
         rpInfo.renderArea.offset = {0, 0};
-        rpInfo.renderArea.extent = swapChain->getSwapChainExtent();
+        rpInfo.renderArea.extent = swapChain_->getSwapChainExtent();
         rpInfo.clearValueCount = 1;
         rpInfo.pClearValues = &clear;
 
         vkCmdBeginRenderPass(graphicsCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-        imGuiLayer->endFrame(graphicsCommandBuffer);
+        imGuiLayer_->endFrame(graphicsCommandBuffer);
         vkCmdEndRenderPass(graphicsCommandBuffer);
 
         if (vkEndCommandBuffer(graphicsCommandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
         }
 
-        std::optional<VkSemaphore> computeFinishedSemaphore;
-        if (!sameFamily) {
-            if (vkEndCommandBuffer(computeCommandBuffer) != VK_SUCCESS) {
-                throw std::runtime_error("failed to record compute command buffer!");
-            }
-
-            VkSubmitInfo computeSubmit{};
-            computeSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            computeSubmit.commandBufferCount = 1;
-            computeSubmit.pCommandBuffers = &computeCommandBuffer;
-            computeSubmit.signalSemaphoreCount = 1;
-            computeSubmit.pSignalSemaphores = &computeFinishedSemaphores[currentFrameIndex];
-
-            if (vkQueueSubmit(device.computeQueue(), 1, &computeSubmit, computeInFlightFences[currentFrameIndex]) != VK_SUCCESS) {
-                throw std::runtime_error("failed to submit compute command buffer!");
-            }
-
-            computeFinishedSemaphore = computeFinishedSemaphores[currentFrameIndex];
+        // Always end compute — it was always begun in beginFrame()
+        if (vkEndCommandBuffer(computeCommandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record compute command buffer!");
         }
 
-        auto result = swapChain->submitCommandBuffers(graphicsCommandBuffer, computeFinishedSemaphore, &currentImageIndex);
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window.wasWindowResized()) {
-            window.resetWindowResizedFlag();
+        auto result = swapChain_->submitCommandBuffers(graphicsCommandBuffer, {}, &currentImageIndex);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_->wasWindowResized()) {
+            window_->resetWindowResizedFlag();
             recreateSwapChain();
         } else if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to present swap chain image!");
@@ -149,11 +116,11 @@ namespace Atlas {
 
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassInfo.renderPass = swapChain->getRenderPass();
-        renderPassInfo.framebuffer = swapChain->getFrameBuffer(static_cast<int32_t>(currentImageIndex));
+        renderPassInfo.renderPass = swapChain_->getRenderPass();
+        renderPassInfo.framebuffer = swapChain_->getFrameBuffer(static_cast<int32_t>(currentImageIndex));
 
         renderPassInfo.renderArea.offset = {0, 0};
-        renderPassInfo.renderArea.extent = swapChain->getSwapChainExtent();
+        renderPassInfo.renderArea.extent = swapChain_->getSwapChainExtent();
 
         std::array<VkClearValue, 2> clearValues{};
         clearValues[0].color = {0.0151f, 0.0151f, 0.0151f, 1.0f};
@@ -166,11 +133,11 @@ namespace Atlas {
         VkViewport viewport{};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = static_cast<float>(swapChain->getSwapChainExtent().width);
-        viewport.height = static_cast<float>(swapChain->getSwapChainExtent().height);
+        viewport.width = static_cast<float>(swapChain_->getSwapChainExtent().width);
+        viewport.height = static_cast<float>(swapChain_->getSwapChainExtent().height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
-        VkRect2D scissor{{0, 0}, swapChain->getSwapChainExtent()};
+        VkRect2D scissor{{0, 0}, swapChain_->getSwapChainExtent()};
         vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
     }
@@ -181,6 +148,65 @@ namespace Atlas {
 
         // imGuiLayer->endFrame(commandBuffer);
         vkCmdEndRenderPass(commandBuffer);
+    }
+
+    void Renderer::createCommandBuffers() {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+
+        graphicsCommandBuffers_.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = device_->getGraphicsCommandPool();
+        allocInfo.commandBufferCount = static_cast<uint32_t>(graphicsCommandBuffers_.size());
+
+        if (vkAllocateCommandBuffers(device_->device(), &allocInfo, graphicsCommandBuffers_.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate command buffers!");
+        }
+
+        computeCommandBuffers.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = device_->getComputeCommandPool();
+        allocInfo.commandBufferCount = static_cast<uint32_t>(computeCommandBuffers.size());
+
+        if (vkAllocateCommandBuffers(device_->device(), &allocInfo, computeCommandBuffers.data()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate compute command buffers!");
+        }
+    }
+
+    void Renderer::freeCommandBuffers() {
+        vkFreeCommandBuffers(
+            device_->device(),
+            device_->getGraphicsCommandPool(),
+            static_cast<uint32_t>(graphicsCommandBuffers_.size()),
+            graphicsCommandBuffers_.data());
+        graphicsCommandBuffers_.clear();
+
+        vkFreeCommandBuffers(
+            device_->device(),
+            device_->getComputeCommandPool(),
+            static_cast<uint32_t>(computeCommandBuffers.size()),
+            computeCommandBuffers.data());
+        computeCommandBuffers.clear();
+    }
+
+    void Renderer::recreateSwapChain() {
+        auto extent = window_->getExtent();
+        while (extent.width == 0 || extent.height == 0) {
+            extent = window_->getExtent();
+            //window_->waitEvents();
+        }
+        vkDeviceWaitIdle(device_->device());
+
+        if (swapChain_ == nullptr) {
+            swapChain_ = std::make_shared<SwapChain>(*device_, extent);
+        } else {
+            auto oldSwapChain = std::move(swapChain_);
+            swapChain_ = std::make_shared<SwapChain>(*device_, extent, oldSwapChain);
+
+            if (!oldSwapChain->compareSwapFormats(*swapChain_)) {
+                throw std::runtime_error("Swap chain image(or depth) format has changed!");
+            }
+        }
     }
 
     void Renderer::createComputeSyncObjects() {
@@ -195,61 +221,22 @@ namespace Atlas {
         semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
         for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
-            if (vkCreateFence(device.device(), &fenceInfo, nullptr, &computeInFlightFences[i]) != VK_SUCCESS) {
+            if (vkCreateFence(device_->device(), &fenceInfo, nullptr, &computeInFlightFences[i]) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create compute fence!");
             }
 
-            if (vkCreateSemaphore(device.device(), &semInfo, nullptr, &computeFinishedSemaphores[i]) != VK_SUCCESS) {
+            if (vkCreateSemaphore(device_->device(), &semInfo, nullptr, &computeFinishedSemaphores[i]) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create compute semaphore!");
             }
         }
     }
 
     void Renderer::createImGuiLayer() {
-        this->imGuiLayer = std::make_unique<ImGuiLayer>(
-            device,
-            window,
-            swapChain->getImGuiRenderPass(),
+        this->imGuiLayer_ = std::make_unique<ImGuiLayer>(
+            *device_,
+            *window_,
+            swapChain_->getImGuiRenderPass(),
             static_cast<uint32_t>(getImageCount())
         );
-    }
-
-    void Renderer::createCommandBuffers() {
-        VkCommandBufferAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-
-        graphicsCommandBuffers_.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = device.getGraphicsCommandPool();
-        allocInfo.commandBufferCount = static_cast<uint32_t>(graphicsCommandBuffers_.size());
-
-        if (vkAllocateCommandBuffers(device.device(), &allocInfo, graphicsCommandBuffers_.data()) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate command buffers!");
-        }
-
-        computeCommandBuffers.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
-        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = device.getComputeCommandPool();
-        allocInfo.commandBufferCount = static_cast<uint32_t>(computeCommandBuffers.size());
-
-        if (vkAllocateCommandBuffers(device.device(), &allocInfo, computeCommandBuffers.data()) != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate compute command buffers!");
-        }
-    }
-
-    void Renderer::freeCommandBuffers() {
-        vkFreeCommandBuffers(
-            device.device(),
-            device.getGraphicsCommandPool(),
-            static_cast<uint32_t>(graphicsCommandBuffers_.size()),
-            graphicsCommandBuffers_.data());
-        graphicsCommandBuffers_.clear();
-
-        vkFreeCommandBuffers(
-            device.device(),
-            device.getComputeCommandPool(),
-            static_cast<uint32_t>(computeCommandBuffers.size()),
-            computeCommandBuffers.data());
-        computeCommandBuffers.clear();
     }
 }

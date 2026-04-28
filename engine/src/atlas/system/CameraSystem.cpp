@@ -19,13 +19,13 @@ namespace Atlas {
 
         if (Mouse::isButtonPressed(keyMappings.lockCamera)) {
             if (!locked) {
-                window.setCursorMode(WINDOW_CURSOR_DISABLED);
+                window.setCursorMode(Window::WINDOW_CURSOR_DISABLED);
                 lastMousePosition = curPos;
                 locked = true;
             }
         } else {
             if (locked) {
-                window.setCursorMode(WINDOW_CURSOR_NORMAL);
+                window.setCursorMode(Window::WINDOW_CURSOR_NORMAL);
                 locked = false;
             }
 

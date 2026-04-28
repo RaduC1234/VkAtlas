@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include "Scene.hpp"
+#include "IScene.hpp"
 #include "renderer/Renderer.hpp"
 #include "system/CameraSystem.hpp"
 #include "system/RenderSystemV2.hpp"
@@ -12,8 +12,7 @@
 
 namespace Atlas {
 
-
-    class OfficeScene : public Scene {
+    class OfficeScene : public IScene {
     public:
         explicit OfficeScene(Renderer &renderer);
         ~OfficeScene() override = default;

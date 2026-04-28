@@ -17,7 +17,7 @@ namespace Atlas {
 
         void getDeclaredOutputs(std::vector<Resource::Description> &out) const override;
         void getDeclaredInputs(std::vector<std::string> &out) const override;
-        void onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource>> &resources) override;
+        void onResourcesCreated(const Context &ctx) override;
 
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 

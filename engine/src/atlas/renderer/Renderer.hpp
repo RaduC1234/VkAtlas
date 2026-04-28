@@ -15,21 +15,25 @@ namespace Atlas {
 
     class Renderer {
     public:
-        Renderer(Window &window, Device &device);
+        struct Settings {
+            Window::Settings windowSettings;
+        };
+
+        Renderer(const Settings &settings);
         ~Renderer();
 
         Renderer(const Renderer &) = delete;
         Renderer &operator=(const Renderer &) = delete;
 
-        Window &getWindow() const { return window; }
-        Device &getDevice() const { return device; }
+        Window &window() const { return *window_; }
+        Device &device() const { return *device_; }
 
-        VkRenderPass getSwapChainRenderPass() const { return swapChain->getRenderPass(); }
-        float getAspectRatio() const { return swapChain->extentAspectRatio(); }
-        size_t getImageCount() const { return swapChain->imageCount(); }
-        VkImage getCurrentSwapchainImage() const { return swapChain->getImage(currentImageIndex); }
-        VkExtent2D getSwapchainExtent() const { return swapChain->getSwapChainExtent(); }
-        ImGuiLayer &getImGuiLayer() { return *imGuiLayer; }
+        VkRenderPass getSwapChainRenderPass() const { return swapChain_->getRenderPass(); }
+        float getAspectRatio() const { return swapChain_->extentAspectRatio(); }
+        size_t getImageCount() const { return swapChain_->imageCount(); }
+        VkImage getCurrentSwapchainImage() const { return swapChain_->getImage(currentImageIndex); }
+        VkExtent2D getSwapchainExtent() const { return swapChain_->getSwapChainExtent(); }
+        ImGuiLayer &getImGuiLayer() { return *imGuiLayer_; }
 
         FrameContext beginFrame();
         void endFrame();
@@ -54,13 +58,13 @@ namespace Atlas {
             return computeCommandBuffers[currentFrameIndex];
         }
 
-        Window &window;
-        Device &device;
-        std::unique_ptr<ImGuiLayer> imGuiLayer;
-        std::unique_ptr<SwapChain> swapChain;
+        std::unique_ptr<Window> window_;
+        std::unique_ptr<Device> device_;
+        std::unique_ptr<ImGuiLayer> imGuiLayer_;
+        std::shared_ptr<SwapChain> swapChain_;
         std::vector<VkCommandBuffer> graphicsCommandBuffers_;
 
-        uint32_t currentImageIndex;
+        uint32_t currentImageIndex{};
         int currentFrameIndex{0};
         bool isFrameStarted{false};
 

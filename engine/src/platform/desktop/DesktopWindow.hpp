@@ -9,7 +9,7 @@
 namespace Atlas {
     class DesktopWindow : public Window {
     public:
-        DesktopWindow(const WindowSpecification& properties);
+        DesktopWindow(const Settings& properties);
 
         bool shouldClose() override;
         void createWindowSurface(VkInstance instance, VkSurfaceKHR*surface) const override;

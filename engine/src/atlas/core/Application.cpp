@@ -11,10 +11,10 @@
 #include "scene/OfficeScene.hpp"
 
 namespace Atlas {
-    Application::Application(const ApplicationSpecification &specification) : specification(specification) {
-        AssetManager::create(this->device, specification.pNativeApp);
-        this->window->setWindowIcon("assets/icons/android_robot.png");
-        this->window->setTheme(Theme::DARK);
+    Application::Application(const ApplicationSpecification &specification) : specification(specification), renderer(Renderer::Settings{.windowSettings = Window::Settings{.title = specification.name}}) {
+        AssetManager::create(renderer.device(), specification.pNativeApp);
+        this->renderer.window().setWindowIcon("assets/icons/android_robot.png");
+        this->renderer.window().setTheme(Window::Theme::DARK);
 
         currentScene = std::make_unique<OfficeScene>(renderer);
 
@@ -33,8 +33,8 @@ namespace Atlas {
     void Application::run() {
         auto currentTime = std::chrono::high_resolution_clock::now();
 
-        while (!window->shouldClose()) {
-            window->pollEvents();
+        while (!renderer.window().shouldClose()) {
+            renderer.window().pollEvents();
 
             auto newTime = std::chrono::high_resolution_clock::now();
             float deltaTime = std::chrono::duration_cast<std::chrono::duration<float> >(newTime - currentTime).count();
@@ -52,6 +52,6 @@ namespace Atlas {
             renderer.endFrame();
         }
 
-        vkDeviceWaitIdle(device.device());
+        vkDeviceWaitIdle(renderer.device().device());
     }
 } // namespace

@@ -37,7 +37,7 @@ namespace Atlas {
                 return *this;
             }
 
-            std::unique_ptr<RenderGraph> build(Mode mode);
+            RenderGraph build(Mode mode);
 
         private:
             Device &device;
@@ -67,6 +67,7 @@ namespace Atlas {
             VkPipelineStageFlags srcStage;
             VkPipelineStageFlags dstStage;
             VkImageAspectFlags aspect;
+            const bool requiresOwnershipAcquire = false; // keep this false for now until multiqueue support is added
         };
 
         struct Node {
@@ -77,8 +78,7 @@ namespace Atlas {
             std::vector<Barrier> barriersBeforeExec;
         };
 
-        RenderGraph(Device &device, Mode mode, uint32_t width, uint32_t height): device(device), mode(mode), width(width), height(height) {
-        }
+        RenderGraph(Device &device, Mode mode, uint32_t width, uint32_t height);
 
         void bake();
         void bakeResources();

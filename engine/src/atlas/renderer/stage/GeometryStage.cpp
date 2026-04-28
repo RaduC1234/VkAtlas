@@ -34,9 +34,9 @@ namespace Atlas {
         out.push_back(Resource::Description::depth("geometry_depth"));
     }
 
-    void GeometryStage::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource>> &resources) {
-        colorTarget = &resources.at("geometry_color").get().asImage();
-        depthTarget = &resources.at("geometry_depth").get().asImage();
+    void GeometryStage::onResourcesCreated(const Context &ctx) {
+        colorTarget = &ctx.resources.at("geometry_color").get().asImage();
+        depthTarget = &ctx.resources.at("geometry_depth").get().asImage();
         extent = {colorTarget->extent().width, colorTarget->extent().height};
 
         createRenderPass();

@@ -4,7 +4,7 @@
 #include "android/AndroidWindow.hpp"
 
 namespace Atlas {
-    std::unique_ptr<Window> Window::create(const WindowSpecification &specification) {
+    std::unique_ptr<Window> Window::create(const Settings &specification) {
 #if defined(__ANDROID__)
         return std::make_unique<AndroidWindow>(specification);
 #elif defined(_WIN32) || defined(__linux__)

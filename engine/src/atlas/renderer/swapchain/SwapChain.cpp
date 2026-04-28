@@ -76,7 +76,7 @@ namespace Atlas {
         return result;
     }
 
-    VkResult SwapChain::submitCommandBuffers(VkCommandBuffer graphicsCommandBuffer, std::optional<VkSemaphore> computeFinishedSemaphore, uint32_t *imageIndex) {
+    VkResult SwapChain::submitCommandBuffers(VkCommandBuffer graphicsCommandBuffer, std::optional<VkSemaphore> computeFinishedSemaphore /* ignoreForNow */, uint32_t *imageIndex) {
         if (imagesInFlight[*imageIndex] != VK_NULL_HANDLE) {
             vkWaitForFences(device.device(), 1, &imagesInFlight[*imageIndex], VK_TRUE, UINT64_MAX);
         }

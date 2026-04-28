@@ -12,9 +12,9 @@
 #include "renderer/Renderer.hpp"
 
 namespace Atlas {
-    OfficeScene::OfficeScene(Renderer &renderer) : Scene(renderer) {
-        cameraSystem = std::make_unique<CameraSystem>(renderer.getWindow());
-        renderSystem = std::make_unique<RenderSystemV2>(renderer.getDevice(), renderer);
+    OfficeScene::OfficeScene(Renderer &renderer) : IScene(renderer) {
+        cameraSystem = std::make_unique<CameraSystem>(renderer.window());
+        renderSystem = std::make_unique<RenderSystemV2>(renderer.device(), renderer);
     }
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
@@ -62,6 +62,6 @@ namespace Atlas {
     }
 
     void OfficeScene::onDelete() {
-        Scene::onDelete();
+        IScene::onDelete();
     }
 }

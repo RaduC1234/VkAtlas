@@ -185,13 +185,13 @@ namespace Atlas {
     }
 
     void Device::createLogicalDevice() {
-        const QueueFamilyIndices indices = findQueueFamilies(physicalDevice_);
+        queueFamilyIndices_ = findQueueFamilies(physicalDevice_);
 
         const std::set<uint32_t> uniqueFamilies = {
-            indices.graphicsFamily.value(),
-            indices.presentFamily.value(),
-            indices.computeFamily.value(),
-            indices.transferFamily.value()
+            queueFamilyIndices_.graphicsFamily.value(),
+            queueFamilyIndices_.presentFamily.value(),
+            queueFamilyIndices_.computeFamily.value(),
+            queueFamilyIndices_.transferFamily.value()
         };
 
         constexpr float queuePriority = 1.0f;
@@ -254,10 +254,10 @@ namespace Atlas {
             throw std::runtime_error("Failed to create logical device");
         }
 
-        vkGetDeviceQueue(device_, indices.graphicsFamily.value(), 0, &graphicsQueue_);
-        vkGetDeviceQueue(device_, indices.presentFamily.value(), 0, &presentQueue_);
-        vkGetDeviceQueue(device_, indices.computeFamily.value(), 0, &computeQueue_);
-        vkGetDeviceQueue(device_, indices.transferFamily.value(), 0, &transferQueue_);
+        vkGetDeviceQueue(device_, queueFamilyIndices_.graphicsFamily.value(), 0, &graphicsQueue_);
+        vkGetDeviceQueue(device_, queueFamilyIndices_.presentFamily.value(), 0, &presentQueue_);
+        vkGetDeviceQueue(device_, queueFamilyIndices_.computeFamily.value(), 0, &computeQueue_);
+        vkGetDeviceQueue(device_, queueFamilyIndices_.transferFamily.value(), 0, &transferQueue_);
 
         AT_INFO("Logical device created. Max push constant size: {} bytes", properties.limits.maxPushConstantsSize);
     }

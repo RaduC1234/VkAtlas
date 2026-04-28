@@ -58,6 +58,7 @@ namespace Atlas {
 
         SwapChainSupportDetails getSwapChainSupport() { return querySwapChainSupport(physicalDevice_); }
         QueueFamilyIndices findPhysicalQueueFamilies() { return findQueueFamilies(physicalDevice_); }
+        const QueueFamilyIndices &queueFamilyIndices() const { return queueFamilyIndices_; }
 
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
@@ -95,6 +96,7 @@ namespace Atlas {
         VkQueue presentQueue_ = VK_NULL_HANDLE;
         VkQueue computeQueue_ = VK_NULL_HANDLE;
         VkQueue transferQueue_ = VK_NULL_HANDLE;
+        QueueFamilyIndices queueFamilyIndices_;
         VkCommandPool graphicsCommandPool_ = VK_NULL_HANDLE;
         VkCommandPool computeCommandPool_ = VK_NULL_HANDLE;
         VmaAllocator allocator_ = VK_NULL_HANDLE;
@@ -108,6 +110,10 @@ namespace Atlas {
         const std::vector<const char *> deviceExtensions_ = {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME,
             VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
+#ifdef DEBUG
+            ,VK_EXT_DEVICE_FAULT_EXTENSION_NAME,
+            VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME
+#endif
         };
     };
 } // namespace Atlas

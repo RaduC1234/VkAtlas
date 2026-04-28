@@ -1,7 +1,6 @@
 #include "RenderSystemV2.hpp"
 
 #include "core/Log.hpp"
-#include "renderer/stage/CullingStage.hpp"
 #include "renderer/stage/GeometryStage.hpp"
 #include "renderer/stage/OutputStage.hpp"
 #include "renderer/stage/PostProcessingStage.hpp"
@@ -10,13 +9,12 @@ namespace Atlas {
     RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer) : device(device) {
         createGlobalUbo();
 
-        this->renderGraph = RenderGraph::Builder(device)
-                .addStage<CullingStage>(device, *globalSetLayout)
+        this->renderGraph = std::make_unique<RenderGraph>(RenderGraph::Builder(device)
                 .addStage<GeometryStage>(device, *globalSetLayout)
                 .addStage<PostProcessPass>(device, *globalSetLayout)
                 .addStage<OutputStage>(device, renderer)
                 .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
-                .build(RenderGraph::Mode::MultiPass);
+                .build(RenderGraph::Mode::MultiPass));
     }
 
     void RenderSystemV2::build(entt::registry &registry) {

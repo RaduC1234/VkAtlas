@@ -6,7 +6,7 @@
 
 #include <memory>
 
-#include "scene/Scene.hpp"
+#include "scene/IScene.hpp"
 
 
 namespace Atlas {
@@ -27,11 +27,8 @@ namespace Atlas {
 
     private:
         ApplicationSpecification specification;
+        Renderer renderer;
 
-        std::unique_ptr<Window> window = Window::create({specification.pNativeApp, 1200, 800});
-        Device device{*window};
-        Renderer renderer{*window, device};
-
-        std::unique_ptr<Scene> currentScene;
+        std::unique_ptr<IScene> currentScene;
     };
 }

@@ -6,18 +6,19 @@
 #include "renderer/Renderer.hpp"
 
 namespace Atlas {
-    class Scene {
+    class IScene {
     public:
-        explicit Scene(Renderer &renderer);
-        virtual ~Scene() = default;
+        explicit IScene(Renderer &renderer);
+        virtual ~IScene() = default;
 
-        virtual void onLoad(entt::registry&& registry);
+        virtual void onLoad(entt::registry &&registry);
         virtual void onUpdate(float deltaTime);
         virtual void onRender(FrameContext frameContext);
-        virtual void onDelete();
+        virtual void onDelete() { registry.clear(); }
+
     protected:
         entt::registry registry;
-        Renderer& renderer;
+        Renderer &renderer;
         Camera camera{};
     };
 }

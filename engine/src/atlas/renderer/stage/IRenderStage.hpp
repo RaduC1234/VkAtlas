@@ -76,9 +76,9 @@ namespace Atlas {
                         // Color attachments are frequently post-processed or resolved via blits/copies.
                         // Include transfer usage so stages like OutputStage can vkCmdBlitImage from them.
                         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-                                     VK_IMAGE_USAGE_SAMPLED_BIT |
-                                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                     VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                                      VK_IMAGE_USAGE_SAMPLED_BIT |
+                                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                      VK_IMAGE_USAGE_TRANSFER_DST_BIT
                     };
                 }
 
@@ -88,9 +88,9 @@ namespace Atlas {
                         .type = Type::ATTACHMENT_DEPTH,
                         .format = fmt,
                         .imageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                                     VK_IMAGE_USAGE_SAMPLED_BIT |
-                                     VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-                                     VK_IMAGE_USAGE_TRANSFER_DST_BIT
+                                      VK_IMAGE_USAGE_SAMPLED_BIT |
+                                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                                      VK_IMAGE_USAGE_TRANSFER_DST_BIT
                     };
                 }
 
@@ -121,23 +121,29 @@ namespace Atlas {
                     };
                 }
 
-                template <typename T>
+                template<typename T>
                 static Description cpuBuffer(std::string name) {
                     return {
                         .name = std::move(name),
-                            .type = Type::BUFFER_CPU,
-                            .cpuInitial = std::any(T{})
-                        };
+                        .type = Type::BUFFER_CPU,
+                        .cpuInitial = std::any(T{})
+                    };
                 }
             };
 
-            explicit Resource(const Type type, GPUImage &&image) : type_(type), data_(std::move(image)) {}
-            explicit Resource(const Type type, GPUBuffer &&buffer) : type_(type), data_(std::move(buffer)) {}
-            explicit Resource(const Type type, CPUBuffer &&buffer) : type_(type), data_(std::move(buffer)) {}
+            explicit Resource(const Type type, GPUImage &&image) : type_(type), data_(std::move(image)) {
+            }
 
-            Type type() const {return type_;}
+            explicit Resource(const Type type, GPUBuffer &&buffer) : type_(type), data_(std::move(buffer)) {
+            }
+
+            explicit Resource(const Type type, CPUBuffer &&buffer) : type_(type), data_(std::move(buffer)) {
+            }
+
+            Type type() const { return type_; }
+
             Kind kind() const {
-                if (std::holds_alternative<GPUImage>(data_))  return Kind::GPU_IMAGE;
+                if (std::holds_alternative<GPUImage>(data_)) return Kind::GPU_IMAGE;
                 if (std::holds_alternative<GPUBuffer>(data_)) return Kind::GPU_BUFFER;
                 return Kind::CPU_BUFFER;
             }
@@ -158,20 +164,28 @@ namespace Atlas {
 
         enum class Queue { GRAPHICS, COMPUTE };
 
+        struct Context {
+            const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources;
+            const std::unordered_map<std::string, VkImageLayout> &finalLayouts;
+            const std::unordered_map<std::string, Queue> &lastWrittenBy;
+        };
+
         virtual ~IRenderStage() = default;
 
         virtual void getDeclaredOutputs(std::vector<Resource::Description> &out) const = 0;
         virtual void getDeclaredInputs(std::vector<std::string> &out) const = 0;
 
-        virtual void onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) = 0;
+        virtual void onResourcesCreated(const Context &ctx) = 0;
 
         virtual void onSceneChanged(entt::registry &registry) {
         }
 
         virtual void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) = 0;
+        Queue queue() const { return queue_; }
 
     protected:
-        IRenderStage(Queue queue) : queue_(queue) {}
+        IRenderStage(Queue queue) : queue_(queue) {
+        }
 
         const Queue queue_;
     };

@@ -14,6 +14,7 @@ namespace Atlas {
         VkDescriptorSet addTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout);
     private:
         void createDescriptorPool(Device& device);
+        void setStyle(bool dark = true, float alpha = 0.5);
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkDevice device = VK_NULL_HANDLE;

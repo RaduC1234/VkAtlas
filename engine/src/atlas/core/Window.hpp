@@ -12,35 +12,35 @@
 #include "Mouse.hpp"
 
 namespace Atlas {
-    enum : uint32_t {
-        WINDOW_PROPERTIES_UNDECORATED = BIT(0),
-        WINDOW_PROPERTIES_DECORATED = BIT(1),
-        WINDOW_PROPERTIES_RESIZEABLE = BIT(2),
-        WINDOW_PROPERTIES_NON_RESIZEABLE = BIT(3),
-    };
-
-    enum CursorMode : uint32_t {
-        WINDOW_CURSOR_DISABLED, // Hides and grabs the cursor, providing virtual and unlimited cursor movement. This is useful for implementing for example 3D camera controls.
-        WINDOW_CURSOR_NORMAL, // Makes the cursor visible and behaving normally
-        ATLAS_WINDOW_CURSOR_HIDDEN, // Makes the cursor invisible when it is over the content area of the window but does not restrict the cursor from leaving.
-    };
-
-    enum Theme : uint32_t {
-        LIGHT = 0,
-        DARK = 1,
-    };
-
-    struct WindowSpecification {
-        void *pNativeApp = nullptr;
-        uint32_t width = 1080;
-        uint32_t height = 720;
-        std::string title = "Atlas Window";
-        std::string iconPath;
-        uint32_t properties = WINDOW_PROPERTIES_DECORATED | WINDOW_PROPERTIES_RESIZEABLE;
-    };
-
     class Window {
     public:
+        enum : uint32_t {
+            WINDOW_PROPERTIES_UNDECORATED = BIT(0),
+            WINDOW_PROPERTIES_DECORATED = BIT(1),
+            WINDOW_PROPERTIES_RESIZEABLE = BIT(2),
+            WINDOW_PROPERTIES_NON_RESIZEABLE = BIT(3),
+        };
+
+        enum CursorMode : uint32_t {
+            WINDOW_CURSOR_DISABLED, // Hides and grabs the cursor, providing virtual and unlimited cursor movement. This is useful for implementing for example 3D camera controls.
+            WINDOW_CURSOR_NORMAL, // Makes the cursor visible and behaving normally
+            ATLAS_WINDOW_CURSOR_HIDDEN, // Makes the cursor invisible when it is over the content area of the window_ but does not restrict the cursor from leaving.
+        };
+
+        enum Theme : uint32_t {
+            LIGHT = 0,
+            DARK = 1,
+        };
+
+        struct Settings {
+            void *pNativeApp = nullptr;
+            uint32_t width = 1080;
+            uint32_t height = 720;
+            std::string title = "Atlas Window";
+            std::string iconPath;
+            uint32_t properties = WINDOW_PROPERTIES_DECORATED | WINDOW_PROPERTIES_RESIZEABLE;
+        };
+
         virtual ~Window() = default;
         Window &operator=(const Window &) = delete;
 
@@ -65,7 +65,7 @@ namespace Atlas {
 
         virtual void *getNativeHandle() const = 0;
 
-        static std::unique_ptr<Window> create(const WindowSpecification &specification);
+        static std::unique_ptr<Window> create(const Settings &specification);
 
     protected:
         uint32_t width{}, height{};

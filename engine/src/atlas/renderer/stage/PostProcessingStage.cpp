@@ -27,10 +27,10 @@ namespace Atlas {
     }
 
     void PostProcessPass::onResourcesCreated(
-        const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) {
-        const GPUImage &colorImage = resources.at("geometry_color").get().asImage();
-        const GPUImage &depthImage = resources.at("geometry_depth").get().asImage();
-        const GPUImage &outImage = resources.at("post_color").get().asImage();
+        const Context &ctx) {
+        const GPUImage &colorImage = ctx.resources.at("geometry_color").get().asImage();
+        const GPUImage &depthImage = ctx.resources.at("geometry_depth").get().asImage();
+        const GPUImage &outImage = ctx.resources.at("post_color").get().asImage();
 
         postColorTarget = &outImage;
         extent = outImage.extent();
