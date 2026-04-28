@@ -11,7 +11,7 @@
 #include "utils/Storage.hpp"
 
 namespace Atlas {
-    class GeometryPass : public IRenderStage {
+    class GeometryStage : public IRenderStage {
     public:
         static constexpr uint32_t MAX_TEXTURES = 1024;
         static constexpr uint32_t MAX_OBJECTS = 10000;
@@ -19,11 +19,11 @@ namespace Atlas {
         static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 1'000'000;
         static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
 
-        GeometryPass(Device &device, const DescriptorSetLayout &globalSetLayout);
-        ~GeometryPass() override;
+        GeometryStage(Device &device, const DescriptorSetLayout &globalSetLayout);
+        ~GeometryStage() override;
 
-        GeometryPass(const GeometryPass &) = delete;
-        GeometryPass &operator=(const GeometryPass &) = delete;
+        GeometryStage(const GeometryStage &) = delete;
+        GeometryStage &operator=(const GeometryStage &) = delete;
 
         VkRenderPass getRenderPass() const { return renderPass; }
         const GPUImage &getColorTarget() const { return *colorTarget; }
@@ -124,6 +124,7 @@ namespace Atlas {
         uint32_t registerTexture(AssetHandle handle);
         void registerMesh(AssetHandle handle);
         uint32_t resolveTextureIndex(AssetHandle handle) const;
-        VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
+
+        static VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
     };
 } // namespace Atlas

@@ -1,18 +1,20 @@
 #include "RenderSystemV2.hpp"
 
 #include "core/Log.hpp"
-#include "renderer/stage/GeometryPass.hpp"
-#include "renderer/stage/OutputPass.hpp"
-#include "renderer/stage/PostProcessingPass.hpp"
+#include "renderer/stage/CullingStage.hpp"
+#include "renderer/stage/GeometryStage.hpp"
+#include "renderer/stage/OutputStage.hpp"
+#include "renderer/stage/PostProcessingStage.hpp"
 
 namespace Atlas {
     RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer) : device(device) {
         createGlobalUbo();
 
         this->renderGraph = RenderGraph::Builder(device)
-                .addStage<GeometryPass>(device, *globalSetLayout)
+                .addStage<CullingStage>(device, *globalSetLayout)
+                .addStage<GeometryStage>(device, *globalSetLayout)
                 .addStage<PostProcessPass>(device, *globalSetLayout)
-                .addStage<OutputPass>(device, renderer)
+                .addStage<OutputStage>(device, renderer)
                 .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
                 .build(RenderGraph::Mode::MultiPass);
     }
@@ -21,10 +23,10 @@ namespace Atlas {
         renderGraph->build(registry);
     }
 
-    void RenderSystemV2::render(VkCommandBuffer graphicsCmdBuffer, uint32_t frameIndex, const GlobalUbo &globalUbo) {
-        globalUboBuffers[frameIndex]->uploadData(&globalUbo, sizeof(GlobalUbo));
+    void RenderSystemV2::render(const FrameContext frameContext, const GlobalUbo &globalUbo) {
+        globalUboBuffers[frameContext.index]->uploadData(&globalUbo, sizeof(GlobalUbo));
 
-        renderGraph->render(graphicsCmdBuffer, globalDescriptorSets[frameIndex]);
+        renderGraph->render(frameContext, globalDescriptorSets[frameContext.index]);
     }
 
     void RenderSystemV2::createGlobalUbo() {

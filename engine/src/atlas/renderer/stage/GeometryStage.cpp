@@ -1,4 +1,4 @@
-#include "GeometryPass.hpp"
+#include "GeometryStage.hpp"
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -11,8 +11,7 @@
 #include "renderer/abstraction/GPUBuffer.hpp"
 
 namespace Atlas {
-    GeometryPass::GeometryPass(Device &device, const DescriptorSetLayout &globalSetLayout)
-        : device(device), globalSetLayout(globalSetLayout) {
+    GeometryStage::GeometryStage(Device &device, const DescriptorSetLayout &globalSetLayout) : IRenderStage(Queue::GRAPHICS), device(device), globalSetLayout(globalSetLayout) {
         createDescriptors();
         createGPUBuffers();
 
@@ -20,22 +19,22 @@ namespace Atlas {
         registerTexture(defaultWhiteHandle);
     }
 
-    GeometryPass::~GeometryPass() {
+    GeometryStage::~GeometryStage() {
         vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
         vkDestroyRenderPass(device.device(), renderPass, nullptr);
         vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
     }
 
-    void GeometryPass::getDeclaredInputs(std::vector<std::string> &out) const {
+    void GeometryStage::getDeclaredInputs(std::vector<std::string> &out) const {
         // No inputs
     }
 
-    void GeometryPass::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
+    void GeometryStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
         out.push_back(Resource::Description::color("geometry_color"));
         out.push_back(Resource::Description::depth("geometry_depth"));
     }
 
-    void GeometryPass::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource>> &resources) {
+    void GeometryStage::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource>> &resources) {
         colorTarget = &resources.at("geometry_color").get().asImage();
         depthTarget = &resources.at("geometry_depth").get().asImage();
         extent = {colorTarget->extent().width, colorTarget->extent().height};
@@ -46,16 +45,16 @@ namespace Atlas {
         createPipelines();
     }
 
-    void GeometryPass::onSceneChanged(entt::registry &registry) {
+    void GeometryStage::onSceneChanged(entt::registry &registry) {
         opaqueObjectData.clear();
         lights.clear();
 
         auto skyboxView = registry.view<SkyboxComponent>();
         if (skyboxView.empty()) {
-            AT_WARN("GeometryPass: no skybox entity found, IBL and skybox will be unavailable");
+            AT_WARN("GeometryStage: no skybox entity found, IBL and skybox will be unavailable");
         } else {
             if (skyboxView.size() > 1) {
-                AT_WARN("GeometryPass: multiple skyboxes detected, using the first one");
+                AT_WARN("GeometryStage: multiple skyboxes detected, using the first one");
             }
 
             const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
@@ -163,7 +162,7 @@ namespace Atlas {
         }
     }
 
-    void GeometryPass::begin(VkCommandBuffer cmd) {
+    void GeometryStage::begin(VkCommandBuffer cmd) {
         std::array<VkClearValue, 2> clears{};
         clears[0].color = {0.0151f, 0.0151f, 0.0151f, 1.0f};
         clears[1].depthStencil = {1.0f, 0};
@@ -190,11 +189,11 @@ namespace Atlas {
         vkCmdSetScissor(cmd, 0, 1, &scissor);
     }
 
-    void GeometryPass::end(VkCommandBuffer cmd) {
+    void GeometryStage::end(VkCommandBuffer cmd) {
         vkCmdEndRenderPass(cmd);
     }
 
-    void GeometryPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
+    void GeometryStage::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
         begin(cmd);
 
         if (!opaqueObjectData.empty()) {
@@ -233,7 +232,7 @@ namespace Atlas {
         end(cmd);
     }
 
-    void GeometryPass::createRenderPass() {
+    void GeometryStage::createRenderPass() {
         VkAttachmentDescription color{};
         color.format = colorTarget->format();
         color.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -283,11 +282,11 @@ namespace Atlas {
         info.pDependencies = &dep;
 
         if (vkCreateRenderPass(device.device(), &info, nullptr, &renderPass) != VK_SUCCESS) {
-            throw std::runtime_error("GeometryPass: failed to create render pass");
+            throw std::runtime_error("GeometryStage: failed to create render pass");
         }
     }
 
-    void GeometryPass::createFramebuffer() {
+    void GeometryStage::createFramebuffer() {
         const std::array views = {colorTarget->view(0), depthTarget->view(0)};
 
         VkFramebufferCreateInfo info{};
@@ -300,11 +299,11 @@ namespace Atlas {
         info.layers = 1;
 
         if (vkCreateFramebuffer(device.device(), &info, nullptr, &framebuffer) != VK_SUCCESS) {
-            throw std::runtime_error("GeometryPass: failed to create framebuffer");
+            throw std::runtime_error("GeometryStage: failed to create framebuffer");
         }
     }
 
-    void GeometryPass::createDescriptors() {
+    void GeometryStage::createDescriptors() {
         environmentSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // irradiance
                 .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // prefilter
@@ -340,19 +339,19 @@ namespace Atlas {
                 .build();
 
         if (!pool->allocateDescriptor(environmentSetLayout->getDescriptorSetLayout(), environmentSet)) {
-            throw std::runtime_error("GeometryPass: failed to allocate environment set");
+            throw std::runtime_error("GeometryStage: failed to allocate environment set");
         }
         if (!pool->allocateDescriptor(textureSetLayout->getDescriptorSetLayout(), bindlessTextureSet)) {
-            throw std::runtime_error("GeometryPass: failed to allocate bindless texture set");
+            throw std::runtime_error("GeometryStage: failed to allocate bindless texture set");
         }
         if (!pool->allocateDescriptor(objectDataSetLayout->getDescriptorSetLayout(), objectDataSet)) {
-            throw std::runtime_error("GeometryPass: failed to allocate object data set");
+            throw std::runtime_error("GeometryStage: failed to allocate object data set");
         }
         if (!pool->allocateDescriptor(lightSetLayout->getDescriptorSetLayout(), lightSet)) {
-            throw std::runtime_error("GeometryPass: failed to allocate light set");
+            throw std::runtime_error("GeometryStage: failed to allocate light set");
         }
         if (!pool->allocateDescriptor(skyboxSetLayout->getDescriptorSetLayout(), skyboxDescriptorSet)) {
-            throw std::runtime_error("GeometryPass: failed to allocate skybox descriptor set");
+            throw std::runtime_error("GeometryStage: failed to allocate skybox descriptor set");
         }
 
         auto ltcMatHandle = AssetManager::get().loadTexture("engine/ltc_mat.bin", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
@@ -387,7 +386,7 @@ namespace Atlas {
         vkUpdateDescriptorSets(device.device(), std::size(wArray), wArray, 0, nullptr);
     }
 
-    void GeometryPass::createPipelineLayout() {
+    void GeometryStage::createPipelineLayout() {
         const std::vector layouts = {
             globalSetLayout.getDescriptorSetLayout(),
             environmentSetLayout->getDescriptorSetLayout(),
@@ -403,11 +402,11 @@ namespace Atlas {
         info.pSetLayouts = layouts.data();
 
         if (vkCreatePipelineLayout(device.device(), &info, nullptr, &pipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("GeometryPass: failed to create pipeline layout");
+            throw std::runtime_error("GeometryStage: failed to create pipeline layout");
         }
     }
 
-    void GeometryPass::createPipelines() {
+    void GeometryStage::createPipelines() {
         assert(pipelineLayout != VK_NULL_HANDLE);
         assert(renderPass != VK_NULL_HANDLE);
 
@@ -443,7 +442,7 @@ namespace Atlas {
         );
     }
 
-    void GeometryPass::createGPUBuffers() {
+    void GeometryStage::createGPUBuffers() {
         mergedVertexBuffer = std::make_unique<GPUBuffer>(
             device, VERTEX_BUDGET,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -491,14 +490,14 @@ namespace Atlas {
                 .overwrite(lightSet);
     }
 
-    uint32_t GeometryPass::registerTexture(AssetHandle handle) {
+    uint32_t GeometryStage::registerTexture(AssetHandle handle) {
         if (handle == INVALID_ASSET_HANDLE) { return 0; }
 
         auto [it, inserted] = handleToTextureSlot.emplace(handle, nextTextureSlot);
         if (!inserted) { return it->second; }
 
         if (nextTextureSlot >= MAX_TEXTURES) {
-            throw std::runtime_error("GeometryPass: exceeded maximum bindless texture count");
+            throw std::runtime_error("GeometryStage: exceeded maximum bindless texture count");
         }
 
         const auto texture = AssetManager::get().getTexture(handle);
@@ -526,7 +525,7 @@ namespace Atlas {
         return slot;
     }
 
-    void GeometryPass::registerMesh(AssetHandle handle) {
+    void GeometryStage::registerMesh(AssetHandle handle) {
         if (handle == INVALID_ASSET_HANDLE || meshAllocations.contains(handle)) {
             return;
         }
@@ -538,10 +537,10 @@ namespace Atlas {
         const auto &indices = mesh->getIndices();
 
         if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(Mesh::Vertex)) {
-            throw std::runtime_error("GeometryPass: merged vertex buffer out of space");
+            throw std::runtime_error("GeometryStage: merged vertex buffer out of space");
         }
         if (nextIndex + indices.size() > INDEX_BUDGET / sizeof(uint32_t)) {
-            throw std::runtime_error("GeometryPass: merged index buffer out of space");
+            throw std::runtime_error("GeometryStage: merged index buffer out of space");
         }
 
         const MeshAllocation alloc{
@@ -564,13 +563,13 @@ namespace Atlas {
         nextIndex += alloc.indexCount;
     }
 
-    uint32_t GeometryPass::resolveTextureIndex(AssetHandle handle) const {
+    uint32_t GeometryStage::resolveTextureIndex(AssetHandle handle) const {
         if (handle == INVALID_ASSET_HANDLE) { return 0; }
         const auto it = handleToTextureSlot.find(handle);
         return it != handleToTextureSlot.end() ? it->second : 0;
     }
 
-    VkPipelineDepthStencilStateCreateInfo GeometryPass::makeStencilWrite(uint8_t ref) {
+    VkPipelineDepthStencilStateCreateInfo GeometryStage::makeStencilWrite(uint8_t ref) {
         VkStencilOpState stencilOp{};
         stencilOp.failOp = VK_STENCIL_OP_KEEP;
         stencilOp.passOp = VK_STENCIL_OP_REPLACE;

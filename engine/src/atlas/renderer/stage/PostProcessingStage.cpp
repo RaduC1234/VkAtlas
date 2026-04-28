@@ -1,10 +1,11 @@
-#include "PostProcessingPass.hpp"
+#include "PostProcessingStage.hpp"
 #include <stdexcept>
 
+#include "IRenderStage.hpp"
 #include "asset/AssetManager.hpp"
 
 namespace Atlas {
-    PostProcessPass::PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout) : device(device), globalSetLayout(globalSetLayout) {
+    PostProcessPass::PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout) : IRenderStage(Queue::GRAPHICS), device(device), globalSetLayout(globalSetLayout) {
         createSampler();
     }
 

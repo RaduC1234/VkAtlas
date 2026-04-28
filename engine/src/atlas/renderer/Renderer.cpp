@@ -16,9 +16,11 @@ namespace Atlas {
     }
 
     Renderer::~Renderer() {
-        for (auto fence: computeInFlightFences) {
-            vkDestroyFence(device.device(), fence, nullptr);
+        for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
+            vkDestroyFence(device.device(), computeInFlightFences[i], nullptr);
+            vkDestroySemaphore(device.device(), computeFinishedSemaphores[i], nullptr); // missing
         }
+
         freeCommandBuffers();
     }
 
@@ -42,14 +44,14 @@ namespace Atlas {
         }
     }
 
-    VkCommandBuffer Renderer::beginFrame() {
+    FrameContext Renderer::beginFrame() {
         assert(!isFrameStarted && "Can't call beginFrame while already in progress");
 
         auto result = swapChain->acquireNextImage(&currentImageIndex);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             recreateSwapChain();
-            return VK_NULL_HANDLE;
+            return {};
         }
 
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
@@ -58,23 +60,36 @@ namespace Atlas {
 
         isFrameStarted = true;
 
-        auto commandBuffer = getCurrentGraphicsCommandBuffer();
-
+        auto graphicsCommandBuffer = getCurrentGraphicsCommandBuffer();
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
-        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+        if (vkBeginCommandBuffer(graphicsCommandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
+        }
+
+        vkWaitForFences(device.device(), 1, &computeInFlightFences[currentFrameIndex], VK_TRUE, UINT64_MAX);
+        vkResetFences(device.device(), 1, &computeInFlightFences[currentFrameIndex]);
+
+        auto computeCommandBuffer = getCurrentComputeCommandBuffer();
+        vkResetCommandBuffer(computeCommandBuffer, 0);
+        if (vkBeginCommandBuffer(computeCommandBuffer, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording compute command buffer!");
         }
 
         this->imGuiLayer->beginFrame();
 
-        return commandBuffer;
+        return {
+            .graphicsCommandBuffer = graphicsCommandBuffer,
+            .computeCommandBuffer = computeCommandBuffer,
+            .index = static_cast<uint32_t>(currentFrameIndex)
+        };
     }
 
     void Renderer::endFrame() {
         assert(isFrameStarted && "Can't call endFrame while not in progress");
-        auto commandBuffer = getCurrentGraphicsCommandBuffer();
+        auto graphicsCommandBuffer = getCurrentGraphicsCommandBuffer();
+        auto computeCommandBuffer = getCurrentComputeCommandBuffer();
+        const bool sameFamily = device.graphicsQueue() == device.computeQueue();
 
         VkClearValue clear{};
         clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
@@ -88,15 +103,35 @@ namespace Atlas {
         rpInfo.clearValueCount = 1;
         rpInfo.pClearValues = &clear;
 
-        vkCmdBeginRenderPass(commandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-        imGuiLayer->endFrame(commandBuffer);
-        vkCmdEndRenderPass(commandBuffer);
+        vkCmdBeginRenderPass(graphicsCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+        imGuiLayer->endFrame(graphicsCommandBuffer);
+        vkCmdEndRenderPass(graphicsCommandBuffer);
 
-        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+        if (vkEndCommandBuffer(graphicsCommandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
         }
 
-        auto result = swapChain->submitCommandBuffers(&commandBuffer, &currentImageIndex);
+        std::optional<VkSemaphore> computeFinishedSemaphore;
+        if (!sameFamily) {
+            if (vkEndCommandBuffer(computeCommandBuffer) != VK_SUCCESS) {
+                throw std::runtime_error("failed to record compute command buffer!");
+            }
+
+            VkSubmitInfo computeSubmit{};
+            computeSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            computeSubmit.commandBufferCount = 1;
+            computeSubmit.pCommandBuffers = &computeCommandBuffer;
+            computeSubmit.signalSemaphoreCount = 1;
+            computeSubmit.pSignalSemaphores = &computeFinishedSemaphores[currentFrameIndex];
+
+            if (vkQueueSubmit(device.computeQueue(), 1, &computeSubmit, computeInFlightFences[currentFrameIndex]) != VK_SUCCESS) {
+                throw std::runtime_error("failed to submit compute command buffer!");
+            }
+
+            computeFinishedSemaphore = computeFinishedSemaphores[currentFrameIndex];
+        }
+
+        auto result = swapChain->submitCommandBuffers(graphicsCommandBuffer, computeFinishedSemaphore, &currentImageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window.wasWindowResized()) {
             window.resetWindowResizedFlag();
             recreateSwapChain();
@@ -148,63 +183,24 @@ namespace Atlas {
         vkCmdEndRenderPass(commandBuffer);
     }
 
-    VkCommandBuffer Renderer::beginCompute() {
-        assert(!isComputeStarted && "Can't call beginCompute while already in progress");
-
-        // Wait for previous compute work on this frame to complete
-        vkWaitForFences(device.device(), 1, &computeInFlightFences[currentFrameIndex], VK_TRUE, UINT64_MAX);
-        vkResetFences(device.device(), 1, &computeInFlightFences[currentFrameIndex]);
-
-        isComputeStarted = true;
-
-        auto commandBuffer = getCurrentComputeCommandBuffer();
-
-        // Reset the command buffer before recording
-        vkResetCommandBuffer(commandBuffer, 0);
-
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-            throw std::runtime_error("failed to begin recording compute command buffer!");
-        }
-
-        return commandBuffer;
-    }
-
-    void Renderer::endCompute() {
-        assert(isComputeStarted && "Can't call endCompute while not in progress");
-
-        auto commandBuffer = getCurrentComputeCommandBuffer();
-
-        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-            throw std::runtime_error("failed to record compute command buffer!");
-        }
-
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = &commandBuffer;
-
-        // Submit with fence - non-blocking, fence will be signaled when GPU completes
-        if (vkQueueSubmit(device.computeQueue(), 1, &submitInfo, computeInFlightFences[currentFrameIndex]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to submit compute command buffer!");
-        }
-
-        isComputeStarted = false;
-    }
-
     void Renderer::createComputeSyncObjects() {
         computeInFlightFences.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+        computeFinishedSemaphores.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
 
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // Start signaled so first frame doesn't block
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+        VkSemaphoreCreateInfo semInfo{};
+        semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
         for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
             if (vkCreateFence(device.device(), &fenceInfo, nullptr, &computeInFlightFences[i]) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create compute fence!");
+            }
+
+            if (vkCreateSemaphore(device.device(), &semInfo, nullptr, &computeFinishedSemaphores[i]) != VK_SUCCESS) {
+                throw std::runtime_error("failed to create compute semaphore!");
             }
         }
     }

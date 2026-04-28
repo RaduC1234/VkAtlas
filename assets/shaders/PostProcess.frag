@@ -26,8 +26,7 @@ layout(set = 0, binding = 0) uniform GlobalUbo {
 } ubo;
 
 layout(set = 1, binding = 0) uniform sampler2D hdrInput;
-//layout(set = 1, binding = 1) uniform sampler2D BRDF_LUT;
-layout(set = 1, binding = 1) uniform usampler2D stencil;
+layout(set = 1, binding = 1) uniform usampler2D layers;
 
 const uint VIEWMODE_CLAY  = 2u;
 const uint VIEWMODE_UNLIT = 1u;
@@ -60,15 +59,13 @@ vec3 ACESFitted(vec3 color) {
 
 void main() {
     vec3 hdr = texture(hdrInput, inUV).rgb;
-    uint layer = texture(stencil, inUV).r;
+    uint layer = texture(layers, inUV).r;
 
-    // Debug: clay mode = raw output (no exposure / no tonemapping / no sRGB)
     if (ubo.debugData.viewMode == VIEWMODE_CLAY) {
         outColor = vec4(hdr, 1.0);
         return;
     }
 
-    // Debug: unlit mode should still convert to display space, but skip exposure/tonemapping
     if (ubo.debugData.viewMode == VIEWMODE_UNLIT) {
         outColor = vec4(hdr, 1.0);
         return;

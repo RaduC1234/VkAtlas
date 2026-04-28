@@ -40,19 +40,16 @@ namespace Atlas {
             float deltaTime = std::chrono::duration_cast<std::chrono::duration<float> >(newTime - currentTime).count();
             currentTime = newTime;
 
-            renderer.beginCompute();
+            FrameContext frame = renderer.beginFrame();
+            if (frame.graphicsCommandBuffer == VK_NULL_HANDLE)
+                continue;
+
             if (currentScene) {
                 currentScene->onUpdate(deltaTime);
+                currentScene->onRender(frame);
             }
-            renderer.endCompute();
 
-            if (auto commandBuffer = renderer.beginFrame()) {
-                if (currentScene) {
-                    currentScene->onRender(commandBuffer);
-                }
-
-                renderer.endFrame();
-            }
+            renderer.endFrame();
         }
 
         vkDeviceWaitIdle(device.device());

@@ -5,13 +5,13 @@
 #include "renderer/Renderer.hpp"
 
 namespace Atlas {
-    class OutputPass : public IRenderStage {
+    class OutputStage : public IRenderStage {
     public:
-        OutputPass(Device &device, Renderer &renderer);
-        ~OutputPass() override = default;
+        OutputStage(Device &device, Renderer &renderer);
+        ~OutputStage() override = default;
 
-        OutputPass(const OutputPass &) = delete;
-        OutputPass &operator=(const OutputPass &) = delete;
+        OutputStage(const OutputStage &) = delete;
+        OutputStage &operator=(const OutputStage &) = delete;
 
         void getDeclaredOutputs(std::vector<Resource::Description> &out) const override;
         void getDeclaredInputs(std::vector<std::string> &out) const override;

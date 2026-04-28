@@ -1,23 +1,23 @@
-#include "OutputPass.hpp"
+#include "OutputStage.hpp"
 #include "renderer/abstraction/GPUImage.hpp"
 
 namespace Atlas {
-    OutputPass::OutputPass(Device &device, Renderer &renderer) : device(device), renderer(renderer) {
+    OutputStage::OutputStage(Device &device, Renderer &renderer) : IRenderStage(Queue::GRAPHICS), device(device), renderer(renderer) {
     }
 
-    void OutputPass::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
+    void OutputStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
         // Writes directly to the swapchain — no owned resource declared.
     }
 
-    void OutputPass::getDeclaredInputs(std::vector<std::string> &out) const {
+    void OutputStage::getDeclaredInputs(std::vector<std::string> &out) const {
         out.push_back("post_color");
     }
 
-    void OutputPass::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) {
+    void OutputStage::onResourcesCreated(const std::unordered_map<std::string, std::reference_wrapper<Resource> > &resources) {
         postColorSource = &resources.at("post_color").get().asImage();
     }
 
-    void OutputPass::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {
+    void OutputStage::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {
         VkImageMemoryBarrier barriers[2]{};
 
         // 1. post_color: SHADER_READ_ONLY → TRANSFER_SRC

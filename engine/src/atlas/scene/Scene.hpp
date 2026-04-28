@@ -13,7 +13,7 @@ namespace Atlas {
 
         virtual void onLoad(entt::registry&& registry);
         virtual void onUpdate(float deltaTime);
-        virtual void onRender(VkCommandBuffer graphicsCmdBuffer);
+        virtual void onRender(FrameContext frameContext);
         virtual void onDelete();
     protected:
         entt::registry registry;

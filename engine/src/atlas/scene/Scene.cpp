@@ -11,7 +11,7 @@ namespace Atlas {
     void Scene::onUpdate(float deltaTime) {
     }
 
-    void Scene::onRender(VkCommandBuffer graphicsCmdBuffer) {
+    void Scene::onRender(FrameContext frameContext) {
     }
 
     void Scene::onDelete() {

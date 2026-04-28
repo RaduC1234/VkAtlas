@@ -40,7 +40,7 @@ namespace Atlas {
         camera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 200.f);
     }
 
-    void OfficeScene::onRender(VkCommandBuffer graphicsCmdBuffer) {
+    void OfficeScene::onRender(FrameContext frameContext) {
         static float irlMultiplier = 1.0f;
         static float exposureMultiplier = 1.0f;
         static auto viewMode = ViewMode::LIT;
@@ -58,7 +58,7 @@ namespace Atlas {
             {irlMultiplier, exposureMultiplier, static_cast<uint32_t>(viewMode), 0.0f}
         };
 
-        renderSystem->render(graphicsCmdBuffer, renderer.getFrameIndex(), ubo);
+        renderSystem->render(frameContext, ubo);
     }
 
     void OfficeScene::onDelete() {

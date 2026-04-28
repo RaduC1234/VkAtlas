@@ -7,6 +7,7 @@
 #include <entt/entity/registry.hpp>
 
 #include "Device.hpp"
+#include "Renderer.hpp"
 #include "stage/IRenderStage.hpp"
 
 namespace Atlas {
@@ -51,7 +52,7 @@ namespace Atlas {
         RenderGraph &operator=(RenderGraph &&) = delete;
 
         void build(entt::registry &registry);
-        void render(VkCommandBuffer cmd, VkDescriptorSet globalSet);
+        void render(FrameContext frameContext, VkDescriptorSet globalSet);
 
     private:
         friend class Builder;

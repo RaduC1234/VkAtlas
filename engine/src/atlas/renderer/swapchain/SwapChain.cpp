@@ -76,27 +76,31 @@ namespace Atlas {
         return result;
     }
 
-    VkResult SwapChain::submitCommandBuffers(const VkCommandBuffer *buffers, uint32_t *imageIndex) {
+    VkResult SwapChain::submitCommandBuffers(VkCommandBuffer graphicsCommandBuffer, std::optional<VkSemaphore> computeFinishedSemaphore, uint32_t *imageIndex) {
         if (imagesInFlight[*imageIndex] != VK_NULL_HANDLE) {
             vkWaitForFences(device.device(), 1, &imagesInFlight[*imageIndex], VK_TRUE, UINT64_MAX);
         }
         imagesInFlight[*imageIndex] = inFlightFences[currentFrame];
 
-        VkSubmitInfo submitInfo = {};
+        std::vector<VkSemaphore> waitSemaphores = {imageAvailableSemaphores[currentFrame]};
+        std::vector<VkPipelineStageFlags> waitStages = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+
+        if (computeFinishedSemaphore.has_value()) {
+            waitSemaphores.push_back(computeFinishedSemaphore.value());
+            waitStages.push_back(VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+        }
+
+        VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-        VkSemaphore waitSemaphores[] = {imageAvailableSemaphores[currentFrame]};
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = waitSemaphores;
-        submitInfo.pWaitDstStageMask = waitStages;
-
+        submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
+        submitInfo.pWaitSemaphores = waitSemaphores.data();
+        submitInfo.pWaitDstStageMask = waitStages.data();
         submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = buffers;
+        submitInfo.pCommandBuffers = &graphicsCommandBuffer;
 
-        VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[currentFrame]};
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = signalSemaphores;
+        VkSemaphore signal[] = {renderFinishedSemaphores[currentFrame]};
+        submitInfo.signalSemaphoreCount = std::size(signal);
+        submitInfo.pSignalSemaphores = signal;
 
         vkResetFences(device.device(), 1, &inFlightFences[currentFrame]);
         if (vkQueueSubmit(device.graphicsQueue(), 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
@@ -106,11 +110,11 @@ namespace Atlas {
         VkPresentInfoKHR presentInfo = {};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
-        presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = signalSemaphores;
+        presentInfo.waitSemaphoreCount = std::size(signal);
+        presentInfo.pWaitSemaphores = signal; // where do i get this?
 
         VkSwapchainKHR swapChains[] = {swapChain};
-        presentInfo.swapchainCount = 1;
+        presentInfo.swapchainCount = std::size(swapChains);
         presentInfo.pSwapchains = swapChains;
 
         presentInfo.pImageIndices = imageIndex;
@@ -417,13 +421,13 @@ namespace Atlas {
             if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
                 availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                 return availableFormat;
-                }
+            }
         }
         for (const auto &availableFormat: availableFormats) {
             if (availableFormat.format == VK_FORMAT_R8G8B8A8_SRGB &&
                 availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                 return availableFormat;
-                }
+            }
         }
 
         return availableFormats[0];

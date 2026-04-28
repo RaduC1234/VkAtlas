@@ -74,7 +74,7 @@ namespace Atlas {
                         .type = Type::ATTACHMENT_COLOR,
                         .format = fmt,
                         // Color attachments are frequently post-processed or resolved via blits/copies.
-                        // Include transfer usage so stages like OutputPass can vkCmdBlitImage from them.
+                        // Include transfer usage so stages like OutputStage can vkCmdBlitImage from them.
                         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
                                      VK_IMAGE_USAGE_SAMPLED_BIT |
                                      VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
@@ -156,6 +156,8 @@ namespace Atlas {
             std::variant<GPUImage, GPUBuffer, CPUBuffer> data_;
         };
 
+        enum class Queue { GRAPHICS, COMPUTE };
+
         virtual ~IRenderStage() = default;
 
         virtual void getDeclaredOutputs(std::vector<Resource::Description> &out) const = 0;
@@ -167,5 +169,10 @@ namespace Atlas {
         }
 
         virtual void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) = 0;
+
+    protected:
+        IRenderStage(Queue queue) : queue_(queue) {}
+
+        const Queue queue_;
     };
 } // Atlas

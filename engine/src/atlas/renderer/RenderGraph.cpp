@@ -1,5 +1,7 @@
 #include "RenderGraph.hpp"
 
+#include "Renderer.hpp"
+
 namespace Atlas {
     std::unique_ptr<RenderGraph> RenderGraph::Builder::build(Mode mode) {
         assert(width_ > 0 && height_ > 0);
@@ -172,10 +174,10 @@ namespace Atlas {
         }
     }
 
-    void RenderGraph::render(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
+    void RenderGraph::render(const FrameContext frameContext, VkDescriptorSet globalSet) {
         for (auto &node: nodes_) {
-            emitBarriers(cmd, node);
-            node.stage->record(cmd, globalSet);
+            emitBarriers(frameContext.graphicsCommandBuffer, node);
+            node.stage->record(frameContext.graphicsCommandBuffer, globalSet);
         }
     }
 

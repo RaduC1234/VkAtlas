@@ -41,7 +41,7 @@ namespace Atlas {
         RenderSystemV2 &operator=(const RenderSystemV2 &) = delete;
 
         void build(entt::registry &registry);
-        void render(VkCommandBuffer graphicsCmdBuffer, uint32_t frameIndex, const GlobalUbo &globalUbo);
+        void render(FrameContext frameContext, const GlobalUbo &globalUbo);
 
     private:
         void createGlobalUbo();
