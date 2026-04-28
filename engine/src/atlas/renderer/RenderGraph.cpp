@@ -59,7 +59,7 @@ namespace Atlas {
                     continue;
                 }
 
-                if (output.kind() == IRenderStage::Resource::Kind::IMAGE) {
+                if (output.kind() == IRenderStage::Resource::Kind::GPU_IMAGE) {
                     const uint32_t w = output.width ? output.width : width;
                     const uint32_t h = output.height ? output.height : height;
 
@@ -78,8 +78,8 @@ namespace Atlas {
                     ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(builder.build())});
                 }
 
-                if (output.kind() == IRenderStage::Resource::Kind::BUFFER) {
-                    auto buffer = Buffer::Builder(device)
+                if (output.kind() == IRenderStage::Resource::Kind::GPU_BUFFER) {
+                    auto buffer = GPUBuffer::Builder(device)
                             .setSize(output.size)
                             .setUsage(output.bufferUsage)
                             .setAllocationFlags(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
@@ -120,7 +120,7 @@ namespace Atlas {
                     continue;
                 }
 
-                if (resIt->second.kind() == IRenderStage::Resource::Kind::BUFFER) {
+                if (resIt->second.kind() == IRenderStage::Resource::Kind::GPU_BUFFER) {
                     if (resIt->second.type() == IRenderStage::Resource::Type::BUFFER_VERTEX || resIt->second.type() == IRenderStage::Resource::Type::BUFFER_INDEX) {
                         continue; // Vertex and index buffers are only read by the GPU
                     }

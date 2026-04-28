@@ -1,11 +1,10 @@
-#include "Buffer.hpp"
+#include "GPUBuffer.hpp"
 #include "../Device.hpp"
 #include <stdexcept>
-#include <cstring>
 #include <cassert>
 
 namespace Atlas {
-    Buffer::Buffer(Device &device,
+    GPUBuffer::GPUBuffer(Device &device,
                    VkDeviceSize instanceSize,
                    uint32_t instanceCount,
                    VkBufferUsageFlags usage,
@@ -31,7 +30,7 @@ namespace Atlas {
         }
     }
 
-    Buffer::Buffer(Device &device,
+    GPUBuffer::GPUBuffer(Device &device,
                    VkDeviceSize size,
                    VkBufferUsageFlags usage,
                    VmaMemoryUsage memoryUsage,
@@ -50,11 +49,11 @@ namespace Atlas {
         }
     }
 
-    Buffer::~Buffer() {
+    GPUBuffer::~GPUBuffer() {
         destroy();
     }
 
-    Buffer::Buffer(Buffer &&other) noexcept
+    GPUBuffer::GPUBuffer(GPUBuffer &&other) noexcept
         : device_(other.device_),
           buffer_(other.buffer_),
           allocation_(other.allocation_),
@@ -71,7 +70,7 @@ namespace Atlas {
         other.mapped_ = nullptr;
     }
 
-    Buffer &Buffer::operator=(Buffer &&other) noexcept {
+    GPUBuffer &GPUBuffer::operator=(GPUBuffer &&other) noexcept {
         if (this != &other) {
             destroy();
 
@@ -93,7 +92,7 @@ namespace Atlas {
         return *this;
     }
 
-    void Buffer::destroy() {
+    void GPUBuffer::destroy() {
         if (mapped_) {
             unmap();
         }
@@ -104,14 +103,14 @@ namespace Atlas {
         }
     }
 
-    VkDeviceSize Buffer::getAlignment(VkDeviceSize instanceSize, VkDeviceSize minOffsetAlignment) {
+    VkDeviceSize GPUBuffer::getAlignment(VkDeviceSize instanceSize, VkDeviceSize minOffsetAlignment) {
         if (minOffsetAlignment > 0) {
             return (instanceSize + minOffsetAlignment - 1) & ~(minOffsetAlignment - 1);
         }
         return instanceSize;
     }
 
-    void Buffer::map() {
+    void GPUBuffer::map() {
         if (!mapped_) {
             if (vmaMapMemory(device_.allocator(), allocation_, &mapped_) != VK_SUCCESS) {
                 throw std::runtime_error("Failed to map buffer memory!");
@@ -119,26 +118,26 @@ namespace Atlas {
         }
     }
 
-    void Buffer::unmap() {
+    void GPUBuffer::unmap() {
         if (mapped_) {
             vmaUnmapMemory(device_.allocator(), allocation_);
             mapped_ = nullptr;
         }
     }
 
-    void Buffer::uploadData(const void *data, VkDeviceSize size, VkDeviceSize offset) {
+    void GPUBuffer::uploadData(const void *data, VkDeviceSize size, VkDeviceSize offset) {
         map();
         std::memcpy(static_cast<int8_t *>(mapped_) + offset, data, size);
         // Optional: flush if needed for non-coherent memory
     }
 
-    void Buffer::writeToIndex(const void *data, int index) {
+    void GPUBuffer::writeToIndex(const void *data, int index) {
         assert(mapped_ && "Buffer must be mapped before writing");
         assert(index >= 0 && static_cast<uint32_t>(index) < instanceCount_);
         std::memcpy(static_cast<char *>(mapped_) + index * alignmentSize_, data, instanceSize_);
     }
 
-    void Buffer::flushIndex(int index) {
+    void GPUBuffer::flushIndex(int index) {
         VkMappedMemoryRange range{};
         range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
         range.memory = allocInfo_.deviceMemory;
@@ -147,7 +146,7 @@ namespace Atlas {
         vkFlushMappedMemoryRanges(device_.device(), 1, &range);
     }
 
-    VkDescriptorBufferInfo Buffer::descriptorInfoForIndex(int index) const {
+    VkDescriptorBufferInfo GPUBuffer::descriptorInfoForIndex(int index) const {
         VkDescriptorBufferInfo info{};
         info.buffer = buffer_;
         info.offset = index * alignmentSize_;
@@ -155,7 +154,7 @@ namespace Atlas {
         return info;
     }
 
-    VkDescriptorBufferInfo Buffer::descriptorInfo() const {
+    VkDescriptorBufferInfo GPUBuffer::descriptorInfo() const {
         VkDescriptorBufferInfo info{};
         info.buffer = buffer_;
         info.offset = 0;
@@ -163,7 +162,7 @@ namespace Atlas {
         return info;
     }
 
-    void Buffer::copy(Device &device, VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
+    void GPUBuffer::copy(Device &device, VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
         VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
         VkBufferCopy copyRegion{};
@@ -175,7 +174,7 @@ namespace Atlas {
         device.endSingleTimeCommands(commandBuffer);
     }
 
-    void Buffer::copyToImage(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {
+    void GPUBuffer::copyToImage(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {
         VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
 
         vkCmdCopyBufferToImage(
@@ -190,7 +189,7 @@ namespace Atlas {
         device.endSingleTimeCommands(commandBuffer);
     }
 
-    void Buffer::copy(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {
+    void GPUBuffer::copy(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {
         copyToImage(device, src, dst, layout, regions);
     }
 } // namespace Atlas

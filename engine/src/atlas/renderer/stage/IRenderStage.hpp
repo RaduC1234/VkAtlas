@@ -1,4 +1,5 @@
 #pragma once
+#include <any>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -7,7 +8,8 @@
 #include <entt/entity/registry.hpp>
 #include <vulkan/vulkan.h>
 
-#include "renderer/abstraction/Buffer.hpp"
+#include "renderer/abstraction/CPUBuffer.hpp"
+#include "renderer/abstraction/GPUBuffer.hpp"
 #include "renderer/abstraction/GPUImage.hpp"
 
 namespace Atlas {
@@ -16,8 +18,9 @@ namespace Atlas {
         class Resource {
         public:
             enum class Kind {
-                IMAGE,
-                BUFFER
+                GPU_IMAGE,
+                GPU_BUFFER,
+                CPU_BUFFER
             };
 
             enum class Type {
@@ -28,7 +31,8 @@ namespace Atlas {
                 SHADER_WRITE,
                 BUFFER_VERTEX,
                 BUFFER_INDEX,
-                BUFFER_STORAGE
+                BUFFER_STORAGE,
+                BUFFER_CPU
             };
 
             struct Description {
@@ -42,6 +46,9 @@ namespace Atlas {
 
                 VkBufferUsageFlags bufferUsage = 0;
                 VkDeviceSize size = 0;
+                bool hostVisible = false;
+
+                std::any cpuInitial;
 
                 Kind kind() const {
                     switch (type) {
@@ -49,11 +56,13 @@ namespace Atlas {
                         case Type::ATTACHMENT_DEPTH:
                         case Type::SHADER_READ:
                         case Type::SHADER_WRITE:
-                            return Kind::IMAGE;
+                            return Kind::GPU_IMAGE;
                         case Type::BUFFER_VERTEX:
                         case Type::BUFFER_INDEX:
                         case Type::BUFFER_STORAGE:
-                            return Kind::BUFFER;
+                            return Kind::GPU_BUFFER;
+                        case Type::BUFFER_CPU:
+                            return Kind::CPU_BUFFER;
                         default:
                             throw std::runtime_error("Invalid resource type");
                     }
@@ -103,7 +112,7 @@ namespace Atlas {
                     };
                 }
 
-                constexpr static Description storageBuffer(std::string name, VkDeviceSize size) {
+                static Description storageBuffer(std::string name, VkDeviceSize size) {
                     return {
                         .name = std::move(name),
                         .type = Type::BUFFER_STORAGE,
@@ -111,23 +120,40 @@ namespace Atlas {
                         .size = size
                     };
                 }
+
+                template <typename T>
+                static Description cpuBuffer(std::string name) {
+                    return {
+                        .name = std::move(name),
+                            .type = Type::BUFFER_CPU,
+                            .cpuInitial = std::any(T{})
+                        };
+                }
             };
 
             explicit Resource(const Type type, GPUImage &&image) : type_(type), data_(std::move(image)) {}
-            explicit Resource(const Type type, Buffer &&buffer) : type_(type), data_(std::move(buffer)) {}
+            explicit Resource(const Type type, GPUBuffer &&buffer) : type_(type), data_(std::move(buffer)) {}
+            explicit Resource(const Type type, CPUBuffer &&buffer) : type_(type), data_(std::move(buffer)) {}
 
-            Kind kind() const { return std::holds_alternative<GPUImage>(data_) ? Kind::IMAGE : Kind::BUFFER; }
             Type type() const {return type_;}
+            Kind kind() const {
+                if (std::holds_alternative<GPUImage>(data_))  return Kind::GPU_IMAGE;
+                if (std::holds_alternative<GPUBuffer>(data_)) return Kind::GPU_BUFFER;
+                return Kind::CPU_BUFFER;
+            }
 
             GPUImage &asImage() { return std::get<GPUImage>(data_); }
             const GPUImage &asImage() const { return std::get<GPUImage>(data_); }
 
-            Buffer &asBuffer() { return std::get<Buffer>(data_); }
-            const Buffer &asBuffer() const { return std::get<Buffer>(data_); }
+            GPUBuffer &asBuffer() { return std::get<GPUBuffer>(data_); }
+            const GPUBuffer &asBuffer() const { return std::get<GPUBuffer>(data_); }
+
+            CPUBuffer &asCPUBuffer() { return std::get<CPUBuffer>(data_); }
+            const CPUBuffer &asCPUBuffer() const { return std::get<CPUBuffer>(data_); }
 
         private:
             Type type_{Type::INVALID};
-            std::variant<GPUImage, Buffer> data_;
+            std::variant<GPUImage, GPUBuffer, CPUBuffer> data_;
         };
 
         virtual ~IRenderStage() = default;

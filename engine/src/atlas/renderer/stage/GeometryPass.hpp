@@ -92,12 +92,12 @@ namespace Atlas {
 
         std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
         Storage<GPUObjectData> opaqueObjectData;
-        std::unique_ptr<Buffer> objectDataBuffer;
+        std::unique_ptr<GPUBuffer> objectDataBuffer;
         VkDescriptorSet objectDataSet = VK_NULL_HANDLE;
-        std::unique_ptr<Buffer> opaqueIndirectCommandBuffer;
+        std::unique_ptr<GPUBuffer> opaqueIndirectCommandBuffer;
 
         Storage<Light> lights;
-        std::unique_ptr<Buffer> lightsBuffer;
+        std::unique_ptr<GPUBuffer> lightsBuffer;
         VkDescriptorSet lightSet = VK_NULL_HANDLE;
         std::unique_ptr<DescriptorSetLayout> lightSetLayout;
 
@@ -105,8 +105,8 @@ namespace Atlas {
         VkDescriptorSet skyboxDescriptorSet = VK_NULL_HANDLE;
         AssetHandle boundSkyboxHandle = INVALID_ASSET_HANDLE;
 
-        std::unique_ptr<Buffer> mergedVertexBuffer;
-        std::unique_ptr<Buffer> mergedIndexBuffer;
+        std::unique_ptr<GPUBuffer> mergedVertexBuffer;
+        std::unique_ptr<GPUBuffer> mergedIndexBuffer;
         uint32_t nextVertex = 0;
         uint32_t nextIndex = 0;
         std::unordered_map<AssetHandle, MeshAllocation> meshAllocations;

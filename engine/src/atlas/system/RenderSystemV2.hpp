@@ -7,7 +7,7 @@
 #include "renderer/Camera.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/RenderGraph.hpp"
-#include "renderer/abstraction/Buffer.hpp"
+#include "renderer/abstraction/GPUBuffer.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
 
 
@@ -52,7 +52,7 @@ namespace Atlas {
         // Set 0 - Global descriptors (UBO)
         std::unique_ptr<DescriptorSetLayout> globalSetLayout;
         std::unique_ptr<DescriptorPool> globalPool;
-        std::vector<std::unique_ptr<Buffer> > globalUboBuffers;
+        std::vector<std::unique_ptr<GPUBuffer> > globalUboBuffers;
         std::vector<VkDescriptorSet> globalDescriptorSets;
     };
 }

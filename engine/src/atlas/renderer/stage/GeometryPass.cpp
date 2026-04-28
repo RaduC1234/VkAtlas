@@ -8,7 +8,7 @@
 #include "asset/AssetManager.hpp"
 #include "core/Log.hpp"
 #include "entity/Object.hpp"
-#include "renderer/abstraction/Buffer.hpp"
+#include "renderer/abstraction/GPUBuffer.hpp"
 
 namespace Atlas {
     GeometryPass::GeometryPass(Device &device, const DescriptorSetLayout &globalSetLayout)
@@ -444,19 +444,19 @@ namespace Atlas {
     }
 
     void GeometryPass::createGPUBuffers() {
-        mergedVertexBuffer = std::make_unique<Buffer>(
+        mergedVertexBuffer = std::make_unique<GPUBuffer>(
             device, VERTEX_BUDGET,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
         );
 
-        mergedIndexBuffer = std::make_unique<Buffer>(
+        mergedIndexBuffer = std::make_unique<GPUBuffer>(
             device, INDEX_BUDGET,
             VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
         );
 
-        opaqueIndirectCommandBuffer = std::make_unique<Buffer>(
+        opaqueIndirectCommandBuffer = std::make_unique<GPUBuffer>(
             device,
             sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
             VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
@@ -465,7 +465,7 @@ namespace Atlas {
         );
         opaqueIndirectCommandBuffer->map();
 
-        objectDataBuffer = std::make_unique<Buffer>(
+        objectDataBuffer = std::make_unique<GPUBuffer>(
             device, sizeof(GPUObjectData) * MAX_OBJECTS,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_AUTO,
@@ -476,7 +476,7 @@ namespace Atlas {
                 .writeBuffer(0, &objInfo)
                 .overwrite(objectDataSet);
 
-        lightsBuffer = std::make_unique<Buffer>(
+        lightsBuffer = std::make_unique<GPUBuffer>(
             device, sizeof(Light) * MAX_LIGHTS,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             VMA_MEMORY_USAGE_AUTO,
@@ -551,14 +551,14 @@ namespace Atlas {
         meshAllocations[handle] = alloc;
 
         const VkDeviceSize vSize = vertices.size() * sizeof(Mesh::Vertex);
-        Buffer vStaging(device, vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+        GPUBuffer vStaging(device, vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
         vStaging.uploadData(vertices.data(), vSize);
-        Buffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, nextVertex * sizeof(Mesh::Vertex));
+        GPUBuffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, nextVertex * sizeof(Mesh::Vertex));
 
         const VkDeviceSize iSize = indices.size() * sizeof(uint32_t);
-        Buffer iStaging(device, iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+        GPUBuffer iStaging(device, iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
         iStaging.uploadData(indices.data(), iSize);
-        Buffer::copy(device, iStaging.get(), mergedIndexBuffer->get(), iSize, 0, nextIndex * sizeof(uint32_t));
+        GPUBuffer::copy(device, iStaging.get(), mergedIndexBuffer->get(), iSize, 0, nextIndex * sizeof(uint32_t));
 
         nextVertex += alloc.vertexCount;
         nextIndex += alloc.indexCount;
