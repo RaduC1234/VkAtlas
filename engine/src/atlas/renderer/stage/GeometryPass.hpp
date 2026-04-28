@@ -93,6 +93,7 @@ namespace Atlas {
         const GPUBuffer *sceneIndexBuffer = nullptr;
         const GPUBuffer *opaqueIndirectCmds = nullptr;
         std::vector<AssetHandle> *textureHandles = nullptr; // CPU buffer from CullingPass
+        const uint32_t *opaqueDrawCountPtr = nullptr;       // CPU buffer from CullingPass
         // const GPUBuffer           *transparentIndirectCmds = nullptr; // future
 
         uint32_t opaqueDrawCount = 0;

@@ -29,6 +29,7 @@ namespace Atlas {
         out.push_back("opaque_indirect_cmds");
         out.push_back("object_data_buffer");
         out.push_back("texture_handles");
+        out.push_back("opaque_draw_count");
         // out.push_back("transparent_indirect_cmds");
         // out.push_back("cluster_buffer");
     }
@@ -48,6 +49,7 @@ namespace Atlas {
         sceneIndexBuffer = &resources.at("scene_index_buffer").get().asGPUBuffer();
         opaqueIndirectCmds = &resources.at("opaque_indirect_cmds").get().asGPUBuffer();
         textureHandles = &resources.at("texture_handles").get().asCPUBuffer().as<std::vector<AssetHandle> >();
+        opaqueDrawCountPtr = &resources.at("opaque_draw_count").get().asCPUBuffer().as<uint32_t>();
 
         auto objInfo = resources.at("object_data_buffer").get().asGPUBuffer().descriptorInfo();
         DescriptorWriter(*objectDataSetLayout, *pool)
@@ -62,12 +64,10 @@ namespace Atlas {
 
     void GeometryPass::onSceneChanged(entt::registry &registry) {
         lights.clear();
-        opaqueDrawCount = static_cast<uint32_t>(textureHandles ? 0 : 0); // reset, filled below
 
         // Rebuild bindless texture descriptors from what CullingPass filled into texture_handles.
         // Index in the vector == slot in the bindless array, matching textureIndices in GPUObjectData.
         if (textureHandles) {
-            opaqueDrawCount = 0;
             for (uint32_t i = 0; i < static_cast<uint32_t>(textureHandles->size()); i++) {
                 const auto tex = AssetManager::get().getTexture((*textureHandles)[i]);
                 if (!tex) continue;
@@ -90,15 +90,9 @@ namespace Atlas {
             }
         }
 
-        // Count opaque draws from the registry (CullingPass already wrote indirect cmds,
-        // we just need the count for vkCmdDrawIndexedIndirect).
-        opaqueDrawCount = 0;
-        for (auto entity: registry.view<TransformComponent, MaterialComponent, ModelComponent>()) {
-            const auto &material = registry.get<MaterialComponent>(entity);
-            if (material.baseColor.w >= 1.0f) {
-                opaqueDrawCount++;
-            }
-        }
+        // Use the exact draw count written by CullingPass — avoids issuing extra indirect draws
+        // for objects that were skipped (invalid mesh, over MAX_OBJECTS, etc.).
+        opaqueDrawCount = opaqueDrawCountPtr ? *opaqueDrawCountPtr : 0;
 
         // Skybox
         auto skyboxView = registry.view<SkyboxComponent>();

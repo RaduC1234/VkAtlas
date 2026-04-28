@@ -15,6 +15,7 @@ namespace Atlas {
         out.push_back(Resource::Description::vertexBuffer("scene_vertex_buffer", VERTEX_BUDGET));
         out.push_back(Resource::Description::indexBuffer("scene_index_buffer", INDEX_BUDGET));
         out.push_back(Resource::Description::cpuBuffer<std::vector<AssetHandle>>("texture_handles"));
+        out.push_back(Resource::Description::cpuBuffer<uint32_t>("opaque_draw_count"));
 
         out.push_back({
             .name = "opaque_indirect_cmds",
@@ -58,6 +59,8 @@ namespace Atlas {
         indexBuffer = &resources.at("scene_index_buffer").get().asGPUBuffer();
 
         textureHandles = &resources.at("texture_handles").get().asCPUBuffer().as<std::vector<AssetHandle>>();
+        opaqueDrawCountPtr = &resources.at("opaque_draw_count").get().asCPUBuffer().as<uint32_t>();
+        *opaqueDrawCountPtr = 0;
 
         opaqueIndirectCmds = &resources.at("opaque_indirect_cmds").get().asGPUBuffer();
         opaqueIndirectCmds->map();
@@ -148,6 +151,8 @@ namespace Atlas {
         if (!opaqueObjectData.empty()) {
             objectDataBuffer->uploadData(opaqueObjectData.data(), sizeof(GPUObjectData) * opaqueObjectData.size());
         }
+
+        *opaqueDrawCountPtr = static_cast<uint32_t>(opaqueIndirectCommands.size());
     }
 
     void CullingPass::record(VkCommandBuffer /*cmd*/, VkDescriptorSet /*globalSet*/) {

@@ -89,12 +89,20 @@ namespace Atlas {
                 }
 
                 if (output.kind() == IRenderStage::Resource::Kind::GPU_BUFFER) {
-                    auto buffer = GPUBuffer::Builder(device)
-                            .setSize(output.size)
-                            .setUsage(output.bufferUsage)
-                            .setAllocationFlags(output.hostVisible ? VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT : VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-
-                    ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buffer.build())});
+                    if (output.hostVisible) {
+                        auto buffer = GPUBuffer::Builder(device)
+                                .setSize(output.size)
+                                .setUsage(output.bufferUsage)
+                                .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
+                                .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+                        ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buffer.build())});
+                    } else {
+                        auto buffer = GPUBuffer::Builder(device)
+                                .setSize(output.size)
+                                .setUsage(output.bufferUsage)
+                                .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+                        ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buffer.build())});
+                    }
                     continue;
                 }
             }
@@ -144,10 +152,15 @@ namespace Atlas {
                         Barrier barrier{};
                         barrier.resourceName = input;
                         barrier.isBuffer = true;
-                        barrier.srcAccess = VK_ACCESS_SHADER_WRITE_BIT; // Assume the worst case: previous stage wrote to it.
-                        barrier.dstAccess = VK_ACCESS_SHADER_READ_BIT;
-                        barrier.srcStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT; // Assume worst case: previous stage was compute. TODO: track this more accurately.
-                        barrier.dstStage = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                        // Source: cover both compute-shader writes (future) and host writes (current usage).
+                        barrier.srcAccess = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_HOST_WRITE_BIT;
+                        barrier.srcStage  = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_HOST_BIT;
+                        // Destination: cover both shader reads and indirect-command reads so that
+                        // vkCmdDrawIndexedIndirect can safely consume buffers like opaque_indirect_cmds.
+                        barrier.dstAccess = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+                        barrier.dstStage  = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT
+                                          | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
+                                          | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
                         node.barriersBeforeExec.push_back(barrier);
                         continue;

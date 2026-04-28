@@ -60,6 +60,7 @@ namespace Atlas {
         GPUBuffer *opaqueIndirectCmds      = nullptr;
         GPUBuffer *objectDataBuffer        = nullptr;
         std::vector<AssetHandle>* textureHandles = nullptr;
+        uint32_t *opaqueDrawCountPtr       = nullptr;
 
         std::vector<VkDrawIndexedIndirectCommand> opaqueIndirectCommands;
         std::vector<VkDrawIndexedIndirectCommand> transparentIndirectCommands;
