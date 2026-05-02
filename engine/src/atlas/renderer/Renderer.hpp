@@ -17,6 +17,8 @@ namespace Atlas {
     public:
         struct Settings {
             Window::Settings windowSettings;
+            bool imguiWindowRenderTarget = false;
+            bool enableRaytracing = false;
         };
 
         Renderer(const Settings &settings);
@@ -41,6 +43,7 @@ namespace Atlas {
         void beginSwapChainRenderPass(VkCommandBuffer);
         void endSwapChainRenderPass(VkCommandBuffer) const;
 
+        Settings settings;
     private:
         void createCommandBuffers();
         void freeCommandBuffers();

@@ -1,10 +1,10 @@
 #pragma once
 
 #include "renderer/Device.hpp"
-#include "asset/Asset.hpp"
+#include "asset/IAsset.hpp"
 
 namespace Atlas {
-    class Cubemap : public Asset {
+    class Cubemap : public IAsset {
     public:
         ~Cubemap() override;
 

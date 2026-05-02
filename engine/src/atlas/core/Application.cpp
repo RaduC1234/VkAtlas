@@ -12,7 +12,6 @@
 
 namespace Atlas {
     Application::Application(const ApplicationSpecification &specification) : specification(specification), renderer(Renderer::Settings{.windowSettings = Window::Settings{.title = specification.name}}) {
-        AssetManager::create(renderer.device(), specification.pNativeApp);
         this->renderer.window().setWindowIcon("assets/icons/android_robot.png");
         this->renderer.window().setTheme(Window::Theme::DARK);
 
@@ -27,7 +26,6 @@ namespace Atlas {
         if (currentScene) {
             currentScene->onDelete();
         }
-        AssetManager::destroy();
     }
 
     void Application::run() {

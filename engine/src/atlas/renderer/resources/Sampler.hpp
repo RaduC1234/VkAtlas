@@ -1,10 +1,10 @@
 #pragma once
 
-#include "asset/Asset.hpp"
+#include "asset/IAsset.hpp"
 #include "renderer/Device.hpp"
 
 namespace Atlas {
-    class Sampler final : public Asset {
+    class Sampler final : public IAsset {
     public:
         ~Sampler() override;
 

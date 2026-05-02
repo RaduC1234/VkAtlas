@@ -21,7 +21,7 @@ namespace Atlas {
          * @brief Get the desktop assets path
          * @return Path to the assets directory
          */
-        [[nodiscard]] std::filesystem::path getAssetsPath() const override;
+        [[nodiscard]] std::filesystem::path rootPath() const override;
 
     private:
         std::filesystem::path assetsPath;

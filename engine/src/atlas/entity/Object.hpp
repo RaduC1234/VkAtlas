@@ -6,6 +6,12 @@
 #include <glm/glm.hpp>
 
 namespace Atlas {
+    struct SceneNodeComponent {
+        std::string name;
+        entt::entity parent = entt::null;
+        std::vector<entt::entity> children;
+    };
+
     struct TransformComponent {
         glm::vec3 translation{};
         glm::vec3 scale{1.0f, 1.0f, 1.0f};

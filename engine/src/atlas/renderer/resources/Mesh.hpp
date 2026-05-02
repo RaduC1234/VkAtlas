@@ -7,10 +7,10 @@
 
 #include "renderer/Device.hpp"
 #include "renderer/abstraction/GPUBuffer.hpp"
-#include "asset/Asset.hpp"
+#include "asset/IAsset.hpp"
 
 namespace Atlas {
-    class Mesh final : public Asset {
+    class Mesh final : public IAsset {
     public:
         struct Vertex {
             glm::vec3 position{};

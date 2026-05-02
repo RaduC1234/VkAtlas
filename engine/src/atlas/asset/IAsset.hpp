@@ -10,9 +10,9 @@ namespace Atlas {
      * This enables automatic deduplication - assets with identical content
      * share the same hash and can reuse the same GPU resources.
      */
-    class Asset {
+    class IAsset {
     public:
-        virtual ~Asset() = default;
+        virtual ~IAsset() = default;
 
         /**
          * @brief Get the content hash of this asset

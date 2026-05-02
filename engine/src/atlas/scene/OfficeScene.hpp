@@ -7,9 +7,6 @@
 #include "system/CameraSystem.hpp"
 #include "system/RenderSystemV2.hpp"
 
-#ifdef _WIN32
-#endif
-
 namespace Atlas {
 
     class OfficeScene : public IScene {
@@ -21,9 +18,8 @@ namespace Atlas {
         void onUpdate(float deltaTime) override;
         void onRender(FrameContext frameContext) override;
         void onDelete() override;
-    protected:
 
-        // Systems
+    protected:
         std::unique_ptr<CameraSystem> cameraSystem;
         std::unique_ptr<RenderSystemV2> renderSystem;
     };
