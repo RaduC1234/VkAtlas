@@ -1,13 +1,25 @@
 #include "OutputStage.hpp"
+#include "renderer/Renderer.hpp"
 #include "renderer/abstraction/GPUImage.hpp"
+#include "backends/imgui_impl_vulkan.h"
 
 namespace Atlas {
     OutputStage::OutputStage(Device &device, Renderer &renderer)
         : IRenderStage(Queue::GRAPHICS), device(device), renderer(renderer) {
     }
 
+    OutputStage::~OutputStage() {
+        if (viewportSampler != VK_NULL_HANDLE)
+            vkDestroySampler(device.device(), viewportSampler, nullptr);
+        if (viewportTexture != VK_NULL_HANDLE)
+            ImGui_ImplVulkan_RemoveTexture(viewportTexture);
+    }
+
+    bool OutputStage::isImGuiTarget() const {
+        return renderer.settings.imguiWindowRenderTarget;
+    }
+
     void OutputStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
-        // Writes directly to the swapchain — no owned resource declared.
     }
 
     void OutputStage::getDeclaredInputs(std::vector<std::string> &out) const {
@@ -19,31 +31,39 @@ namespace Atlas {
 
         auto layoutIt = ctx.finalLayouts.find("post_color");
         auto writerIt = ctx.lastWrittenBy.find("post_color");
-
         if (layoutIt != ctx.finalLayouts.end()) {
             sourceLayout = layoutIt->second;
             sourceIsCompute = writerIt != ctx.lastWrittenBy.end() &&
                               writerIt->second == Queue::COMPUTE;
-            // Only restore the source layout when a compute stage owns it across
-            // frames (e.g. PathTracingStage keeps post_color in GENERAL for
-            // accumulation). Graphics writers (PostProcessPass) terminate their
-            // render pass with finalLayout = SHADER_READ_ONLY_OPTIMAL every frame,
-            // so the graph re-establishes the layout — no restore needed.
             restoreLayout = sourceIsCompute ? sourceLayout : VK_IMAGE_LAYOUT_UNDEFINED;
         }
+
+        if (!isImGuiTarget()) return;
+
+        VkSamplerCreateInfo si{};
+        si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        si.magFilter = VK_FILTER_LINEAR;
+        si.minFilter = VK_FILTER_LINEAR;
+        si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        vkCreateSampler(device.device(), &si, nullptr, &viewportSampler);
+
+        viewportTexture = ImGui_ImplVulkan_AddTexture(
+            viewportSampler,
+            postColorSource->view(0),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        );
     }
 
     void OutputStage::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {
-        // ------------------------------------------------------------------ //
-        // Pre-blit barriers                                                  //
-        //                                                                    //
-        // 1. post_color: <sourceLayout> → TRANSFER_SRC_OPTIMAL               //
-        // 2. swapchain : UNDEFINED      → TRANSFER_DST_OPTIMAL               //
-        //                                                                    //
-        // We always discard the swapchain's previous content (UNDEFINED) —   //
-        // the blit overwrites every pixel, so preserving the previous frame  //
-        // would only cost a pointless cache flush on tilers.                 //
-        // ------------------------------------------------------------------ //
+        if (isImGuiTarget()) {
+            recordToViewport(cmd);
+        } else {
+            recordToSwapChain(cmd);
+        }
+    }
+
+    void OutputStage::recordToSwapChain(VkCommandBuffer cmd) {
         VkImage swapImage = renderer.getCurrentSwapchainImage();
 
         const VkPipelineStageFlags srcStage = sourceIsCompute
@@ -53,114 +73,180 @@ namespace Atlas {
                                             ? VK_ACCESS_SHADER_WRITE_BIT
                                             : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-        VkImageMemoryBarrier preBarriers[2]{};
+        VkImageMemoryBarrier pre[2]{};
+        pre[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        pre[0].oldLayout = sourceLayout;
+        pre[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        pre[0].srcAccessMask = srcAccess;
+        pre[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        pre[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[0].image = postColorSource->image();
+        pre[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-        auto &srcBarrier = preBarriers[0];
-        srcBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        srcBarrier.oldLayout = sourceLayout;
-        srcBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        srcBarrier.srcAccessMask = srcAccess;
-        srcBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        srcBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        srcBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        srcBarrier.image = postColorSource->image();
-        srcBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-        auto &dstBarrier = preBarriers[1];
-        dstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        dstBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        dstBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        dstBarrier.srcAccessMask = 0;
-        dstBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        dstBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        dstBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        dstBarrier.image = swapImage;
-        dstBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        pre[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        pre[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        pre[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        pre[1].srcAccessMask = 0;
+        pre[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        pre[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[1].image = swapImage;
+        pre[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
         vkCmdPipelineBarrier(cmd,
                              srcStage | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             0, 0, nullptr, 0, nullptr,
-                             2, preBarriers);
+                             0, 0, nullptr, 0, nullptr, 2, pre);
 
-        // ------------------------------------------------------------------ //
-        // Blit                                                               //
-        // ------------------------------------------------------------------ //
-        const VkExtent2D srcExtent = postColorSource->extent();
-        const VkExtent2D dstExtent = renderer.getSwapchainExtent();
-
+        const VkExtent2D src = postColorSource->extent();
+        const VkExtent2D dst = renderer.getSwapchainExtent();
         VkImageBlit region{};
         region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.srcOffsets[0] = {0, 0, 0};
-        region.srcOffsets[1] = {static_cast<int32_t>(srcExtent.width),
-                                static_cast<int32_t>(srcExtent.height), 1};
+        region.srcOffsets[1] = {(int32_t) src.width, (int32_t) src.height, 1};
         region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.dstOffsets[0] = {0, 0, 0};
-        region.dstOffsets[1] = {static_cast<int32_t>(dstExtent.width),
-                                static_cast<int32_t>(dstExtent.height), 1};
+        region.dstOffsets[1] = {(int32_t) dst.width, (int32_t) dst.height, 1};
 
-        // LINEAR gives a cheap rescale when window/render extents differ;
-        // it collapses to a copy when they match.
         vkCmdBlitImage(cmd,
                        postColorSource->image(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                        swapImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       1, &region,
-                       VK_FILTER_LINEAR);
+                       1, &region, VK_FILTER_LINEAR);
 
-        // ------------------------------------------------------------------ //
-        // Post-blit barriers                                                 //
-        //                                                                    //
-        // 1. swapchain : TRANSFER_DST_OPTIMAL → PRESENT_SRC_KHR              //
-        //                                                                    //
-        //    The ImGui render pass uses initialLayout = PRESENT_SRC_KHR with //
-        //    LOAD_OP_LOAD, so the swapchain image MUST be in PRESENT_SRC_KHR //
-        //    when the render pass begins. Skipping this transition was the   //
-        //    cause of VUID-vkCmdDraw-None-09600 firing every frame.          //
-        //                                                                    //
-        // 2. post_color: TRANSFER_SRC_OPTIMAL → <restoreLayout>  (optional)  //
-        //                                                                    //
-        //    Only emitted for compute writers — graphics writers re-enter    //
-        //    their render pass each frame from UNDEFINED.                    //
-        // ------------------------------------------------------------------ //
-        VkImageMemoryBarrier postBarriers[2]{};
-        uint32_t postBarrierCount = 0;
+        // Post-blit: swapchain → PRESENT_SRC_KHR for the ImGui render pass
+        VkImageMemoryBarrier post[2]{};
+        uint32_t postCount = 0;
 
-        // (1) swapchain → PRESENT_SRC_KHR
-        auto &presentBarrier = postBarriers[postBarrierCount++];
-        presentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        presentBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        presentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        presentBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        // The next consumer is the ImGui render pass (color attachment writes
-        // load the existing content). Sync against COLOR_ATTACHMENT_OUTPUT.
-        presentBarrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                                       VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        presentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        presentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        presentBarrier.image = swapImage;
-        presentBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        post[postCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        post[postCount].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        post[postCount].newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        post[postCount].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        post[postCount].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                                        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        post[postCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post[postCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post[postCount].image = swapImage;
+        post[postCount].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        ++postCount;
 
-        // (2) post_color → restoreLayout (compute writers only)
-        VkPipelineStageFlags restoreDstStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkPipelineStageFlags restoreDst = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         if (restoreLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
-            auto &restoreBarrier = postBarriers[postBarrierCount++];
-            restoreBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            restoreBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-            restoreBarrier.newLayout = restoreLayout;
-            restoreBarrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            restoreBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-            restoreBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            restoreBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            restoreBarrier.image = postColorSource->image();
-            restoreBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-            restoreDstStage |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            post[postCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            post[postCount].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            post[postCount].newLayout = restoreLayout;
+            post[postCount].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            post[postCount].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            post[postCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            post[postCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            post[postCount].image = postColorSource->image();
+            post[postCount].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            ++postCount;
+            restoreDst |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
         }
 
         vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             restoreDstStage,
-                             0, 0, nullptr, 0, nullptr,
-                             postBarrierCount, postBarriers);
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, restoreDst,
+                             0, 0, nullptr, 0, nullptr, postCount, post);
+    }
+
+    void OutputStage::recordToViewport(VkCommandBuffer cmd) {
+        /*VkImage swapImage = renderer.getCurrentSwapchainImage();
+
+        const VkPipelineStageFlags srcStage = sourceIsCompute
+                                                  ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                                                  : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        const VkAccessFlags srcAccess = sourceIsCompute
+                                            ? VK_ACCESS_SHADER_WRITE_BIT
+                                            : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        // 1. post_color → SHADER_READ_ONLY so ImGui can sample it this frame
+        // 2. swapchain  UNDEFINED → PRESENT_SRC_KHR so the ImGui render pass
+        //    (initialLayout = PRESENT_SRC_KHR, LOAD_OP_LOAD) finds a valid layout.
+        //    We clear it to black via the render pass clearValue, so discarding
+        //    the previous swapchain content with UNDEFINED oldLayout is correct.
+        VkImageMemoryBarrier barriers[2]{};
+
+        barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barriers[0].oldLayout = sourceLayout;
+        barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barriers[0].srcAccessMask = srcAccess;
+        barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[0].image = postColorSource->image();
+        barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+        barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barriers[1].newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        barriers[1].srcAccessMask = 0;
+        barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].image = swapImage;
+        barriers[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+        vkCmdPipelineBarrier(cmd,
+                             srcStage | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             0, 0, nullptr, 0, nullptr, 2, barriers);
+
+        // Restore post_color for the next frame (compute writers only — same logic as swapchain path)
+        if (restoreLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
+            VkImageMemoryBarrier restore{};
+            restore.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            restore.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            restore.newLayout = restoreLayout;
+            restore.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            restore.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            restore.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            restore.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            restore.image = postColorSource->image();
+            restore.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+            vkCmdPipelineBarrier(cmd,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 1, &restore);
+        }
+
+        // Replace the dockspace + Viewport ImGui block with this:
+
+        const ImGuiIO &io = ImGui::GetIO();
+        ImGuiViewport *mainViewport = ImGui::GetMainViewport();
+
+        // Pin to the main viewport, behind everything
+        ImGui::SetNextWindowPos(mainViewport->Pos);
+        ImGui::SetNextWindowSize(mainViewport->Size);
+        ImGui::SetNextWindowViewport(mainViewport->ID);
+        ImGui::SetNextWindowBgAlpha(1.0f);
+
+        constexpr ImGuiWindowFlags bgFlags =
+                ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_NoCollapse |
+                ImGuiWindowFlags_NoResize |
+                ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoScrollbar |
+                ImGuiWindowFlags_NoScrollWithMouse |
+                ImGuiWindowFlags_NoBringToFrontOnFocus |
+                ImGuiWindowFlags_NoNavFocus |
+                ImGuiWindowFlags_NoDocking |
+                ImGuiWindowFlags_MenuBar; // keep if you want a menu bar
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0.0f, 0.0f});
+        ImGui::Begin("##background", nullptr, bgFlags);
+        ImGui::PopStyleVar(3);
+
+        // Fill the entire content area with the rendered image
+        ImGui::Image((ImTextureID) viewportTexture, ImGui::GetContentRegionAvail());
+
+        // Dockspace layered on top of the image (PassthruCentralNode makes it transparent)
+        ImGui::DockSpace(ImGui::GetID("MainDockspace"),
+                         {0.0f, 0.0f},
+                         ImGuiDockNodeFlags_PassthruCentralNode);
+
+        ImGui::End();*/
     }
 } // namespace Atlas

@@ -9,7 +9,7 @@ namespace Atlas {
         AT_INFO("Desktop AssetManager initialized. Assets path: {}", assetsPath.string());
     }
 
-    std::filesystem::path DesktopAssetManager::getAssetsPath() const {
+    std::filesystem::path DesktopAssetManager::rootPath() const {
         return assetsPath;
     }
 

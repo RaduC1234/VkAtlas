@@ -27,7 +27,11 @@ namespace Atlas {
 
     private:
         ApplicationSpecification specification;
-        Renderer renderer;
+        Renderer renderer{
+            {
+                .enableRaytracing = true
+            }
+        };
 
         std::unique_ptr<IScene> currentScene;
     };

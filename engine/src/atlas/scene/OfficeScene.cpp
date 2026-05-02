@@ -1,8 +1,6 @@
 #include "OfficeScene.hpp"
 
-#ifdef ATLAS_PLATFORM_DESKTOP
 #include <imgui.h>
-#endif
 
 #include "core/Log.hpp"
 #include "system/CameraSystem.hpp"
@@ -18,7 +16,7 @@ namespace Atlas {
     }
 
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
-        this->registry = AssetManager::get().loadGltfAsScene("models/Cabinet_with_light3.glb");
+        AssetManager::get().importAsset("models/Cabinet_with_light3.glb", this->registry, entt::null);
 
         auto cameraEntity = registry.create();
         registry.emplace<TransformComponent>(cameraEntity);
@@ -44,14 +42,13 @@ namespace Atlas {
         static float irlMultiplier = 1.0f;
         static float exposureMultiplier = 1.0f;
         static auto viewMode = ViewMode::LIT;
-#ifdef ATLAS_PLATFORM_DESKTOP
+
         ImGui::Begin("Debug Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::SliderFloat("IRL Multiplier", &irlMultiplier, 0.01f, 10.0f);
         ImGui::SliderFloat("Exposure Multiplier", &exposureMultiplier, 0.0f, 5.0f);
         ImGui::Combo("View Mode", reinterpret_cast<int *>(&viewMode), "Lit\0Unlit\0Lighting Only\0");
         ImGui::End();
-#endif
 
         const GlobalUbo ubo{
             camera.getData(),

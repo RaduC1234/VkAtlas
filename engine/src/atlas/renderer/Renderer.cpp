@@ -8,9 +8,10 @@
 #include "entity/Object.hpp"
 
 namespace Atlas {
-    Renderer::Renderer(const Settings &settings) {
+    Renderer::Renderer(const Settings &settings) : settings(settings) {
         this->window_ = Window::create(settings.windowSettings);
         this->device_ = std::make_unique<Device>(*window_);
+        AssetManager::create(*device_, settings.windowSettings.pNativeApp);
         //this->sameFamily = device_->queueFamilyIndices().graphicsFamily.value() == device_->queueFamilyIndices().computeFamily.value();
 
         recreateSwapChain();
@@ -26,6 +27,7 @@ namespace Atlas {
         }
 
         freeCommandBuffers();
+        AssetManager::destroy();
     }
 
     FrameContext Renderer::beginFrame() {

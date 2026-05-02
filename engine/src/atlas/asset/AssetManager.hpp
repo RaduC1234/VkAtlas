@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <entt/entity/registry.hpp>
 
+#include "accessors/IAssetAccessor.hpp"
+#include "core/Log.hpp"
 #include "renderer/resources/Cubemap.hpp"
 #include "renderer/resources/Mesh.hpp"
 #include "renderer/resources/Sampler.hpp"
@@ -49,6 +51,7 @@ namespace Atlas {
 
 #pragma endregion
 
+#pragma region Loaders
         /**
          * @brief Load a texture and return its handle
          * @param virtualPath Virtual path to the texture (e.g., "textures/wood.png")
@@ -84,7 +87,9 @@ namespace Atlas {
          * @return AssetHandle for the created cubemap, or INVALID_ASSET_HANDLE on failure
          */
         AssetHandle loadCubemap(const std::string &right, const std::string &left, const std::string &top, const std::string &bottom, const std::string &front, const std::string &back);
+#pragma endregion
 
+#pragma region Creators
         /**
          * @brief Create a procedural sphere mesh and return its handle
          * @param radius Sphere radius
@@ -115,31 +120,13 @@ namespace Atlas {
         AssetHandle createPlane(float width = 1, float height = 1);
 
         /**
-         * @brief Load a glTF file (GLTF/GLB) and create mesh and texture assets.
-         * @param virtualPath Path to the glTF file inside assets
-         * @return AssetHandle of the first mesh created, or INVALID_ASSET_HANDLE on failure
-         */
-        std::vector<AssetHandle> loadGltf(const std::string &virtualPath);
-
-        /**
-         * @brief Load a glTF file and return an entt::registry representing the scene
-         *
-         * This function will parse the glTF scene graph, create entities and
-         * components in an EnTT registry, and return the populated registry. The
-         * returned registry can be used by higher-level scene systems to spawn
-         * or integrate the loaded scene.
-         *
-         * @param path Path to the glTF file
-         * @return entt::registry containing entities created from the glTF scene
-         */
-        entt::registry loadGltfAsScene(const std::string &path);
-
-        /**
          * @brief Create a default white 1x1 texture and return its handle
          * @return AssetHandle for the created white texture
          */
         AssetHandle createDefaultWhiteTexture();
+#pragma endregion
 
+#pragma region Getters
         /**
          * @brief Get texture by handle
          * @param handle Asset handle
@@ -168,6 +155,39 @@ namespace Atlas {
          */
         [[nodiscard]] std::string getPath(AssetHandle handle) const;
 
+        AssetHandle getHandle(const std::string &virtualPath) const;
+
+        /**
+         * @brief Create or return an existing mesh from raw vertex/index data
+         *
+         * This helper checks internal hashes/pools and either returns an existing
+         * handle for identical geometry or creates a new Mesh asset, stores it in
+         * the mesh pool and returns the new handle.
+         *
+         * @param vertices Vertex list for the mesh
+         * @param indices Index list for the mesh
+         * @param virtualPath Optional virtual path used for debugging/lookup
+         * @return AssetHandle referring to the created or existing mesh
+         */
+        AssetHandle getOrCreateMesh(const std::vector<Mesh::Vertex> &vertices, const std::vector<uint32_t> &indices, const std::string &virtualPath);
+
+        /**
+         * @brief Create or return an existing texture from raw pixel data
+         *
+         * Checks internal pools and hashes to deduplicate identical textures. If
+         * none exists it creates a new Sampler asset and stores it in the texture pool.
+         *
+         * @param pixels Pointer to RGBA/encoded pixel data
+         * @param width Texture width
+         * @param height Texture height
+         * @param format Vulkan pixel format of the provided data
+         * @param virtualPath Optional virtual path used for debugging/lookup
+         * @return AssetHandle referring to the created or existing texture
+         */
+        AssetHandle getOrCreateTexture(const unsigned char *pixels, uint32_t width, uint32_t height, VkFormat format, const std::string &virtualPath);
+#pragma endregion
+
+#pragma region Deleters
         /**
          * @brief Free a texture asset and release GPU memory
          *
@@ -253,6 +273,9 @@ namespace Atlas {
          * @endcode
          */
         bool freeAsset(AssetHandle handle);
+#pragma endregion
+
+        std::vector<entt::entity> importAsset(const std::string &virtualPath, entt::registry &registry, entt::entity parentEntity);
 
 #pragma region non-coherent functions
         /**
@@ -270,25 +293,7 @@ namespace Atlas {
          * @brief Get the platform-specific assets path
          * @return Path to the assets directory
          */
-        [[nodiscard]] virtual std::filesystem::path getAssetsPath() const = 0;
-
-        /**
-         * @brief Load a scene serialized to JSON and return an EnTT registry
-         *
-         * This will parse a JSON scene file produced by the editor/runtime and
-         * populate an entt::registry with entities and their components.
-         *
-         * @param filePath Path to the JSON scene file
-         * @return entt::registry populated from the JSON file
-         */
-        entt::registry loadSceneFromJson(const std::string &filePath) const {
-            // Default header-provided implementation: return an empty registry.
-            // The full JSON scene loader can be implemented in the .cpp if the
-            // project needs a non-header definition or more complex parsing.
-            // TODO: implement JSON parsing that populates and returns a registry.
-            (void) filePath; // silence unused parameter warning
-            return entt::registry{};
-        }
+        [[nodiscard]] virtual std::filesystem::path rootPath() const = 0;
 
     protected:
         /**
@@ -298,67 +303,19 @@ namespace Atlas {
          */
         explicit AssetManager(Device &device, void *nativeApp = nullptr);
 
-        /**
-         * @brief Create or return an existing mesh from raw vertex/index data
-         *
-         * This helper checks internal hashes/pools and either returns an existing
-         * handle for identical geometry or creates a new Mesh asset, stores it in
-         * the mesh pool and returns the new handle.
-         *
-         * @param vertices Vertex list for the mesh
-         * @param indices Index list for the mesh
-         * @param virtualPath Optional virtual path used for debugging/lookup
-         * @return AssetHandle referring to the created or existing mesh
-         */
-        AssetHandle getOrCreateMesh(const std::vector<Mesh::Vertex> &vertices, const std::vector<uint32_t> &indices, const std::string &virtualPath);
-
-        /**
-         * @brief Create or return an existing texture from raw pixel data
-         *
-         * Checks internal pools and hashes to deduplicate identical textures. If
-         * none exists it creates a new Sampler asset and stores it in the texture pool.
-         *
-         * @param pixels Pointer to RGBA/encoded pixel data
-         * @param width Texture width
-         * @param height Texture height
-         * @param format Vulkan pixel format of the provided data
-         * @param virtualPath Optional virtual path used for debugging/lookup
-         * @return AssetHandle referring to the created or existing texture
-         */
-        AssetHandle getOrCreateTexture(const unsigned char *pixels, uint32_t width, uint32_t height, VkFormat format, const std::string &virtualPath);
-
-        /**
-         * @brief Compute the local transform matrix for a glTF node
-         *
-         * Extracts translation, rotation and scale from the tinygltf::Node and
-         * returns a glm::mat4 representing the node's transform in local space.
-         *
-         * @param node Reference to a tinygltf::Node
-         * @return glm::mat4 transform matrix
-         */
-        glm::mat4 getNodeTransform(const tinygltf::Node &node);
-
-        /**
-         * @brief Recursively process a glTF node and populate an EnTT registry
-         *
-         * This function traverses the glTF node hierarchy, creates entities for
-         * nodes that contain mesh/primitive data, attaches necessary components
-         * (transform, mesh handle, material references), and appends the created
-         * entities to outEntities.
-         *
-         * @param registry EnTT registry to populate
-         * @param model tinygltf model owning the nodes
-         * @param nodeIdx Index of the node to process
-         * @param parentTransform Transform matrix of the parent node
-         * @param virtualPath Virtual path of the source glTF (for debugging)
-         * @param outEntities Vector to receive created entities
-         */
-        void processNode(entt::registry &registry, const tinygltf::Model &model, int32_t nodeIdx, const glm::mat4 &parentTransform, const std::string &virtualPath, std::vector<entt::entity> &outEntities);
+        template<typename T, typename... Args>
+        void registerLoader(Args &&... args) {
+            auto loader = std::make_shared<T>(std::forward<Args>(args)...);
+            for (auto &ext: loader->extensions())
+                accessors.emplace(ext, loader);
+        }
 
         Device &device;
         void *nativeApp;
 
         static std::shared_ptr<AssetManager> instance;
+        // AssetManager.hpp — change in protected section
+        std::unordered_map<std::string, std::shared_ptr<ILoader> > accessors;
 
         // Handle generation
         AssetHandle nextHandle = 1; // 0 and negative values are invalid
