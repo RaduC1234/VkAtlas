@@ -14,6 +14,39 @@ namespace Atlas {
     constexpr bool enableValidationLayers = true;
 #endif
 
+    struct RayTracingFunctions {
+        PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
+        PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
+        PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = nullptr;
+        PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR = nullptr;
+        PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR = nullptr;
+        PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR = nullptr;
+        PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR = nullptr;
+        PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR = nullptr;
+
+        void load(VkDevice device) {
+#define LOAD(name) \
+name = reinterpret_cast<PFN_##name>(vkGetDeviceProcAddr(device, #name)); \
+if (!name) throw std::runtime_error("Failed to load " #name);
+
+            LOAD(vkCreateAccelerationStructureKHR)
+            LOAD(vkDestroyAccelerationStructureKHR)
+            LOAD(vkGetAccelerationStructureBuildSizesKHR)
+            LOAD(vkCmdBuildAccelerationStructuresKHR)
+            LOAD(vkGetAccelerationStructureDeviceAddressKHR)
+            LOAD(vkCreateRayTracingPipelinesKHR)
+            LOAD(vkGetRayTracingShaderGroupHandlesKHR)
+            LOAD(vkCmdTraceRaysKHR)
+
+#undef LOAD
+        }
+
+        static RayTracingFunctions &get() {
+            static RayTracingFunctions instance;
+            return instance;
+        }
+    };
+
     struct SwapChainSupportDetails {
         VkSurfaceCapabilitiesKHR capabilities{};
         std::vector<VkSurfaceFormatKHR> formats;
@@ -59,6 +92,7 @@ namespace Atlas {
         SwapChainSupportDetails getSwapChainSupport() { return querySwapChainSupport(physicalDevice_); }
         QueueFamilyIndices findPhysicalQueueFamilies() { return findQueueFamilies(physicalDevice_); }
         const QueueFamilyIndices &queueFamilyIndices() const { return queueFamilyIndices_; }
+        const VkPhysicalDeviceRayTracingPipelinePropertiesKHR &rayTracingPipelineProperties() const { return rtPipelineProperties_; }
 
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
@@ -79,7 +113,8 @@ namespace Atlas {
         void createCommandPools();
 
         bool checkValidationLayerSupport();
-        std::vector<const char *> getRequiredExtensions() const;
+        std::vector<const char *> getRequiredInstanceExtensions() const;
+        std::vector<const char *> getRequiredDeviceExtensions() const;
         VkPhysicalDevice findBestDevice(const std::vector<VkPhysicalDevice> &devices);
         void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &info);
         QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
@@ -101,19 +136,23 @@ namespace Atlas {
         VkCommandPool computeCommandPool_ = VK_NULL_HANDLE;
         VmaAllocator allocator_ = VK_NULL_HANDLE;
 
+        VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtPipelineProperties_{};
+        VkPhysicalDeviceAccelerationStructurePropertiesKHR accelStructureProperties_{};
+
         Window &window_;
         std::unique_ptr<ExecutorService> executor_;
 
         const std::vector<const char *> validationLayers_ = {
             "VK_LAYER_KHRONOS_validation"
         };
-        const std::vector<const char *> deviceExtensions_ = {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-            VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME
-#ifdef DEBUG
-            ,VK_EXT_DEVICE_FAULT_EXTENSION_NAME,
-            VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME
-#endif
-        };
     };
 } // namespace Atlas
+
+#define vkCreateAccelerationStructureKHR            Atlas::RayTracingFunctions::get().vkCreateAccelerationStructureKHR
+#define vkDestroyAccelerationStructureKHR           Atlas::RayTracingFunctions::get().vkDestroyAccelerationStructureKHR
+#define vkGetAccelerationStructureBuildSizesKHR     Atlas::RayTracingFunctions::get().vkGetAccelerationStructureBuildSizesKHR
+#define vkCmdBuildAccelerationStructuresKHR         Atlas::RayTracingFunctions::get().vkCmdBuildAccelerationStructuresKHR
+#define vkGetAccelerationStructureDeviceAddressKHR  Atlas::RayTracingFunctions::get().vkGetAccelerationStructureDeviceAddressKHR
+#define vkCreateRayTracingPipelinesKHR              Atlas::RayTracingFunctions::get().vkCreateRayTracingPipelinesKHR
+#define vkGetRayTracingShaderGroupHandlesKHR        Atlas::RayTracingFunctions::get().vkGetRayTracingShaderGroupHandlesKHR
+#define vkCmdTraceRaysKHR                           Atlas::RayTracingFunctions::get().vkCmdTraceRaysKHR

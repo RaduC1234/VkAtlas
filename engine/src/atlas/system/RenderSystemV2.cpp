@@ -3,6 +3,7 @@
 #include "core/Log.hpp"
 #include "renderer/stage/GeometryStage.hpp"
 #include "renderer/stage/OutputStage.hpp"
+#include "renderer/stage/PathTracingStage.hpp"
 #include "renderer/stage/PostProcessingStage.hpp"
 
 namespace Atlas {
@@ -10,8 +11,9 @@ namespace Atlas {
         createGlobalUbo();
 
         this->renderGraph = std::make_unique<RenderGraph>(RenderGraph::Builder(device)
-                .addStage<GeometryStage>(device, *globalSetLayout)
-                .addStage<PostProcessPass>(device, *globalSetLayout)
+               // .addStage<GeometryStage>(device, *globalSetLayout)
+                //.addStage<PostProcessPass>(device, *globalSetLayout)
+                .addStage<PathTracingStage>(device, *globalSetLayout)
                 .addStage<OutputStage>(device, renderer)
                 .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
                 .build(RenderGraph::Mode::MultiPass));

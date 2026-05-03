@@ -8,6 +8,7 @@
 #include "renderer/Device.hpp"
 #include "renderer/abstraction/GPUBuffer.hpp"
 #include "asset/IAsset.hpp"
+#include "renderer/abstraction/AccelerationStructure.hpp"
 
 namespace Atlas {
     class Mesh final : public IAsset {
@@ -42,8 +43,11 @@ namespace Atlas {
         void bind(VkCommandBuffer commandBuffer);
         void draw(VkCommandBuffer commandBuffer);
 
+        const AccelerationStructure& accelerationStructure() const { return blas_; }
         const std::vector<Vertex>& getVertices() const { return vertices_; }
         const std::vector<uint32_t>& getIndices() const { return indices_; }
+        VkDeviceAddress vertexBufferAddress() const;
+        VkDeviceAddress indexBufferAddress()  const;
 
         static std::unique_ptr<Mesh> createSphere(Device& device, float radius = 1.0f, uint32_t segments = 32, uint32_t rings = 16);
         static std::unique_ptr<Mesh> createCube(Device &device, float size = 1.0f);
@@ -57,14 +61,18 @@ namespace Atlas {
 
         Device &device;
 
+        AccelerationStructure blas_;
+
         std::vector<Vertex> vertices_;
         std::vector<uint32_t> indices_;
 
         std::unique_ptr<GPUBuffer> vertexBuffer;
-        uint32_t vertexCount;
+        uint32_t vertexCount{0};
 
         std::unique_ptr<GPUBuffer> indexBuffer;
-        uint32_t indexCount;
+        uint32_t indexCount{0};
         bool hasIndexBuffer = false;
+
+
     };
 }

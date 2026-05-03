@@ -27,8 +27,17 @@ namespace Atlas {
     Mesh::Mesh(Device &device, const Builder &builder) : device{device} {
         vertices_ = builder.vertices;
         indices_ = builder.indices;
-        //createVertexBuffers(builder.vertices);
-        //createIndexBuffers(builder.indices);
+        createVertexBuffers(builder.vertices);
+        createIndexBuffers(builder.indices);
+
+        blas_ = AccelerationStructure::buildBLAS(
+            device,
+            vertexBufferAddress(),
+            indexBufferAddress(),
+            this->vertexCount,
+            this->indexCount,
+            sizeof(Vertex)
+        );
     }
 
     void Mesh::bind(VkCommandBuffer commandBuffer) {
@@ -55,21 +64,25 @@ namespace Atlas {
         assert(vertexCount >= 3 && "Vertex count must be at least 3");
         VkDeviceSize bufferSize = sizeof(vertices[0]) * vertexCount;
 
-        GPUBuffer stagingBuffer(
-            device,
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_AUTO,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-        );
+        GPUBuffer stagingBuffer = GPUBuffer::simple(device)
+                .setSize(bufferSize)
+                .setUsage(VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
+                .setUsage(VMA_MEMORY_USAGE_AUTO)
+                .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT)
+                .build();
 
         stagingBuffer.uploadData(vertices.data(), bufferSize);
 
         vertexBuffer = std::make_unique<GPUBuffer>(
-            device,
-            bufferSize,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+            GPUBuffer::simple(device)
+            .setSize(bufferSize)
+            .setUsage(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
+                      | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                      | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT // rt
+                      | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR // rt
+                      | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) // rt
+            .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
+            .build()
         );
 
         GPUBuffer::copy(device, stagingBuffer.get(), vertexBuffer->get(), bufferSize);
@@ -78,26 +91,31 @@ namespace Atlas {
     void Mesh::createIndexBuffers(const std::vector<uint32_t> &indices) {
         indexCount = static_cast<uint32_t>(indices.size());
         hasIndexBuffer = indexCount > 0;
-        if (!hasIndexBuffer) return;
+        if (!hasIndexBuffer) {
+            return;
+        }
 
         VkDeviceSize bufferSize = sizeof(uint32_t) * indexCount;
 
-        GPUBuffer stagingBuffer(
-            device,
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_AUTO,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT
-        );
+        GPUBuffer stagingBuffer = GPUBuffer::simple(device)
+                .setSize(bufferSize)
+                .setUsage(VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
+                .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
+                .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT)
+                .build();
 
         stagingBuffer.uploadData(indices.data(), bufferSize);
 
         indexBuffer = std::make_unique<GPUBuffer>(
-            device,
-            bufferSize,
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
+            GPUBuffer::simple(device)
+            .setSize(bufferSize)
+            .setUsage(VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+                      | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                      | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT // rt
+                      | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR // rt
+                      | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT) // rt
+            .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
+            .build()
         );
 
         GPUBuffer::copy(device, stagingBuffer.get(), indexBuffer->get(), bufferSize);
@@ -124,8 +142,24 @@ namespace Atlas {
         return attributeDescriptions;
     }
 
+    VkDeviceAddress Mesh::vertexBufferAddress() const {
+        VkBufferDeviceAddressInfo addrInfo{};
+        addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+        addrInfo.buffer = vertexBuffer->get();
+
+        return vkGetBufferDeviceAddress(device.device(), &addrInfo);
+    }
+
+    VkDeviceAddress Mesh::indexBufferAddress() const {
+        VkBufferDeviceAddressInfo addrInfo{};
+        addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+        addrInfo.buffer = indexBuffer->get();
+
+        return vkGetBufferDeviceAddress(device.device(), &addrInfo);
+    }
+
     std::unique_ptr<Mesh> Mesh::createSphere(Device &device, float radius, uint32_t segments, uint32_t rings) {
-        Mesh::Builder builder;
+        Builder builder;
 
         for (uint32_t ring = 0; ring <= rings; ++ring) {
             float theta = static_cast<float>(ring) * glm::pi<float>() / static_cast<float>(rings);

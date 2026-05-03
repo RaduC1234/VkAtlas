@@ -1,3 +1,4 @@
+#define ATLAS_NO_RT_MACROS
 #include "Device.hpp"
 
 #include <set>
@@ -97,7 +98,7 @@ namespace Atlas {
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         createInfo.pApplicationInfo = &appInfo;
 
-        auto extensions = getRequiredExtensions();
+        auto extensions = getRequiredInstanceExtensions();
         createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
         createInfo.ppEnabledExtensionNames = extensions.data();
 
@@ -206,23 +207,36 @@ namespace Atlas {
             queueCIs.push_back(queueCreateInfo);
         }
 
+        accelStructureProperties_ = {};
+        accelStructureProperties_.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+
+        rtPipelineProperties_ = {};
+        rtPipelineProperties_.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+        rtPipelineProperties_.pNext = &accelStructureProperties_;
+
+        VkPhysicalDeviceProperties2 props2{};
+        props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        props2.pNext = &rtPipelineProperties_;
+        vkGetPhysicalDeviceProperties2(physicalDevice_, &props2);
+
         VkPhysicalDeviceVulkan12Features vk12{};
         vk12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-        vk12.timelineSemaphore = VK_TRUE;
-        vk12.runtimeDescriptorArray = VK_TRUE;
-        vk12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-        vk12.descriptorBindingPartiallyBound = VK_TRUE;
-        vk12.descriptorBindingVariableDescriptorCount = VK_TRUE;
-        vk12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
 
         VkPhysicalDeviceVulkan11Features vk11{};
         vk11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
         vk11.pNext = &vk12;
-        vk11.shaderDrawParameters = VK_TRUE;
-        vk11.multiview = VK_TRUE;
+
+        VkPhysicalDeviceAccelerationStructureFeaturesKHR accelFeatures{};
+        accelFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+
+        VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{};
+        rtPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
 
         VkPhysicalDeviceFeatures2 feats2{};
         feats2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        rtPipelineFeatures.pNext = nullptr;
+        accelFeatures.pNext = &rtPipelineFeatures;
+        vk12.pNext = &accelFeatures;
         feats2.pNext = &vk11;
         vkGetPhysicalDeviceFeatures2(physicalDevice_, &feats2);
 
@@ -230,18 +244,46 @@ namespace Atlas {
             throw std::runtime_error("GPU lacks descriptor indexing features required for bindless textures");
         }
 
-        VkPhysicalDeviceFeatures coreFeatures{};
-        coreFeatures.samplerAnisotropy = VK_TRUE;
-        coreFeatures.multiDrawIndirect = VK_TRUE;
+        if (!vk12.bufferDeviceAddress) {
+            throw std::runtime_error("GPU does not support bufferDeviceAddress (required for ray tracing)");
+        }
 
-        std::vector<const char *> allExts = deviceExtensions_;
+        if (!accelFeatures.accelerationStructure) {
+            throw std::runtime_error("GPU does not support VK_KHR_acceleration_structure");
+        }
+
+        if (!rtPipelineFeatures.rayTracingPipeline) {
+            throw std::runtime_error("GPU does not support VK_KHR_ray_tracing_pipeline");
+        }
+
+        feats2.features.samplerAnisotropy = VK_TRUE;
+        feats2.features.multiDrawIndirect = VK_TRUE;
+
+        vk12.timelineSemaphore = VK_TRUE;
+        vk12.runtimeDescriptorArray = VK_TRUE;
+        vk12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        vk12.descriptorBindingPartiallyBound = VK_TRUE;
+        vk12.descriptorBindingVariableDescriptorCount = VK_TRUE;
+        vk12.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+        vk12.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
+        vk12.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE;
+        vk12.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
+        vk12.bufferDeviceAddress = VK_TRUE;
+
+        vk11.shaderDrawParameters = VK_TRUE;
+        vk11.multiview = VK_TRUE;
+
+        accelFeatures.accelerationStructure = VK_TRUE;
+        rtPipelineFeatures.rayTracingPipeline = VK_TRUE;
+
+        std::vector<const char *> allExts = getRequiredDeviceExtensions();
 
         VkDeviceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        createInfo.pNext = &vk11;
+        createInfo.pNext = &feats2;
         createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCIs.size());
         createInfo.pQueueCreateInfos = queueCIs.data();
-        createInfo.pEnabledFeatures = &coreFeatures;
+        createInfo.pEnabledFeatures = nullptr; // MUST be null when using pNext feature chain
         createInfo.enabledExtensionCount = static_cast<uint32_t>(allExts.size());
         createInfo.ppEnabledExtensionNames = allExts.data();
 
@@ -259,7 +301,14 @@ namespace Atlas {
         vkGetDeviceQueue(device_, queueFamilyIndices_.computeFamily.value(), 0, &computeQueue_);
         vkGetDeviceQueue(device_, queueFamilyIndices_.transferFamily.value(), 0, &transferQueue_);
 
+        RayTracingFunctions::get().load(device_);
+
         AT_INFO("Logical device created. Max push constant size: {} bytes", properties.limits.maxPushConstantsSize);
+        AT_INFO("Ray Tracing Properties:");
+        AT_INFO("  - Shader Group Handle Size:    {}", rtPipelineProperties_.shaderGroupHandleSize);
+        AT_INFO("  - Max Ray Recursion Depth:     {}", rtPipelineProperties_.maxRayRecursionDepth);
+        AT_INFO("  - Shader Group Base Alignment: {}", rtPipelineProperties_.shaderGroupBaseAlignment);
+        AT_INFO("  - Max Shader Group Stride:     {}", rtPipelineProperties_.maxShaderGroupStride);
     }
 
     void Device::createVmaAllocator() {
@@ -267,6 +316,7 @@ namespace Atlas {
         allocatorInfo.physicalDevice = this->physicalDevice_;
         allocatorInfo.device = this->device_;
         allocatorInfo.instance = this->vkInstance_;
+        allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 
         if (vmaCreateAllocator(&allocatorInfo, &allocator_) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create VMA allocator");
@@ -317,15 +367,34 @@ namespace Atlas {
         return true;
     }
 
-    std::vector<const char *> Device::getRequiredExtensions() const {
+    std::vector<const char *> Device::getRequiredInstanceExtensions() const {
         auto extensions = window_.getRequiredExtensions();
 
         if constexpr (enableValidationLayers) {
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
         }
 
-
+        extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME); // ray tracing
         return extensions;
+    }
+
+    std::vector<const char *> Device::getRequiredDeviceExtensions() const {
+        std::vector<const char *> deviceExtensions;
+        deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+
+        deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
+
+#ifdef DEBUG
+        deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+        deviceExtensions.push_back(VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME);
+#endif
+        return deviceExtensions;
     }
 
     void Device::outputRequiredInstanceExtensions(const std::vector<const char *> &required) {
@@ -407,7 +476,8 @@ namespace Atlas {
             &extensionCount,
             availableExtensions.data());
 
-        std::set<std::string> requiredExtensions(deviceExtensions_.begin(), deviceExtensions_.end());
+        auto deviceExtensions = getRequiredDeviceExtensions();
+        std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
 
         for (const auto &extension: availableExtensions) {
             requiredExtensions.erase(extension.extensionName);
@@ -500,3 +570,14 @@ namespace Atlas {
         vkFreeCommandBuffers(device_, graphicsCommandPool_, 1, &commandBuffer);
     }
 } // namespace Atlas
+
+#ifndef ATLAS_NO_RT_MACROS
+#define vkCreateAccelerationStructureKHR            Atlas::RayTracingFunctions::get().vkCreateAccelerationStructureKHR
+#define vkDestroyAccelerationStructureKHR           Atlas::RayTracingFunctions::get().vkDestroyAccelerationStructureKHR
+#define vkGetAccelerationStructureBuildSizesKHR     Atlas::RayTracingFunctions::get().vkGetAccelerationStructureBuildSizesKHR
+#define vkCmdBuildAccelerationStructuresKHR         Atlas::RayTracingFunctions::get().vkCmdBuildAccelerationStructuresKHR
+#define vkGetAccelerationStructureDeviceAddressKHR  Atlas::RayTracingFunctions::get().vkGetAccelerationStructureDeviceAddressKHR
+#define vkCreateRayTracingPipelinesKHR              Atlas::RayTracingFunctions::get().vkCreateRayTracingPipelinesKHR
+#define vkGetRayTracingShaderGroupHandlesKHR        Atlas::RayTracingFunctions::get().vkGetRayTracingShaderGroupHandlesKHR
+#define vkCmdTraceRaysKHR                           Atlas::RayTracingFunctions::get().vkCmdTraceRaysKHR
+#endif

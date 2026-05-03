@@ -215,4 +215,18 @@ namespace Atlas {
         }
         vkUpdateDescriptorSets(pool.Device.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
+
+    DescriptorWriter &DescriptorWriter::writeAccelerationStructure(uint32_t binding, VkWriteDescriptorSetAccelerationStructureKHR *asInfo) {
+        assert(setLayout.bindings.count(binding) == 1 && "Layout does not contain specified binding");
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        write.dstBinding = binding;
+        write.descriptorCount = 1;
+        write.pNext = asInfo; // AS info goes in pNext, not pBufferInfo/pImageInfo
+
+        writes.push_back(write);
+        return *this;
+    }
 }

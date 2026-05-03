@@ -1,0 +1,126 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : require
+
+// ---- Structs ----
+
+struct CameraData {
+    mat4 projection;
+    mat4 view;
+    mat4 viewProjection;
+    vec4 frustumPlanes[6];
+    vec3 position;
+    float nearPlane;
+    vec3 direction;
+    float farPlane;
+};
+
+struct DebugData {
+    float iblMultiplier;
+    float exposureMultiplier;
+    uint viewMode;
+};
+
+struct RayPayload {
+    vec3  radiance;
+    vec3  throughput;
+    vec3  origin;
+    vec3  direction;
+    bool  done;
+    uint  seed;
+};
+
+// ---- Descriptors ----
+
+layout(set = 0, binding = 0) uniform GlobalUbo {
+    CameraData cameraData;
+    DebugData  debugData;
+} ubo;
+
+layout(set = 1, binding = 0, rgba32f) uniform image2D outputImage;
+layout(set = 1, binding = 1)          uniform accelerationStructureEXT tlas;
+
+// ---- Push constants ----
+
+layout(push_constant) uniform PushConstants {
+    uint sampleIndex;
+    uint maxBounces;
+    uint frameIndex;
+    uint pad;
+} pc;
+
+// ---- RNG — PCG hash ----
+
+uint pcgHash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word  = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float randFloat(inout uint seed) {
+    seed = pcgHash(seed);
+    return float(seed) / float(0xFFFFFFFFu);
+}
+
+vec2 randVec2(inout uint seed) {
+    return vec2(randFloat(seed), randFloat(seed));
+}
+
+// ---- Payload location ----
+
+layout(location = 0) rayPayloadEXT RayPayload payload;
+
+void main() {
+    const ivec2 pixel     = ivec2(gl_LaunchIDEXT.xy);
+    const ivec2 imageSize = ivec2(gl_LaunchSizeEXT.xy);
+
+    // Seed: combine pixel + sample index for per-sample noise
+    uint seed = uint(pixel.x + pixel.y * imageSize.x)
+              + pc.sampleIndex * 719393u
+              + pc.frameIndex  * 1234567u;
+
+    // Jittered subpixel offset for anti-aliasing
+    vec2 jitter = randVec2(seed) - 0.5;
+    vec2 uv     = (vec2(pixel) + 0.5 + jitter) / vec2(imageSize);
+    uv          = uv * 2.0 - 1.0;
+
+    // Reconstruct ray from camera matrices
+    vec4 origin    = inverse(ubo.cameraData.view) * vec4(0, 0, 0, 1);
+    vec4 target    = inverse(ubo.cameraData.projection) * vec4(uv, 1, 1);
+    vec4 direction = inverse(ubo.cameraData.view) * vec4(normalize(target.xyz), 0);
+
+    payload.radiance   = vec3(0.0);
+    payload.throughput = vec3(1.0);
+    payload.origin     = origin.xyz;
+    payload.direction  = normalize(direction.xyz);
+    payload.done       = false;
+    payload.seed       = seed;
+
+    // Path trace — up to maxBounces
+    for (uint bounce = 0; bounce < pc.maxBounces; bounce++) {
+        traceRayEXT(
+            tlas,
+            gl_RayFlagsOpaqueEXT,
+            0xFF,           // cull mask
+            0,              // sbt record offset — hit group 0
+            0,              // sbt record stride
+            0,              // miss index
+            payload.origin,
+            0.001,          // tMin
+            payload.direction,
+            10000.0,        // tMax
+            0               // payload location
+        );
+
+        if (payload.done) break;
+    }
+
+    // Accumulate: running average
+    if (pc.sampleIndex == 0u) {
+        imageStore(outputImage, pixel, vec4(payload.radiance, 1.0));
+    } else {
+        vec3 prev = imageLoad(outputImage, pixel).rgb;
+        vec3 accumulated = mix(prev, payload.radiance, 1.0 / float(pc.sampleIndex + 1u));
+        imageStore(outputImage, pixel, vec4(accumulated, 1.0));
+    }
+}

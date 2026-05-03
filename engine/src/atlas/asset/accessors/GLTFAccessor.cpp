@@ -14,9 +14,6 @@ namespace Atlas {
     GLTFAccessor::GLTFAccessor(ExecutorService &service) : executor(service) {
     }
 
-    // =========================================================================
-    // importAsset
-    // =========================================================================
     std::vector<entt::entity> GLTFAccessor::importAsset(
         const std::string &path,
         entt::registry &registry,
@@ -53,15 +50,11 @@ namespace Atlas {
 
         AT_INFO("Loading glTF file: {} ({} meshes, {} images)", path, model.meshes.size(), model.images.size());
 
-        // Thread-safe containers for results
         std::mutex handleMutex;
         std::vector<AssetHandle> imageHandles(model.images.size(), INVALID_ASSET_HANDLE);
 
         AT_INFO("Loading assets...");
 
-        // ========================================================================
-        // STEP 1: Load all images in parallel
-        // ========================================================================
         std::vector<std::future<void> > imageFutures;
         imageFutures.reserve(model.images.size());
 
