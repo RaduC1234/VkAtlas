@@ -1,13 +1,20 @@
-//
-// Created by Radu on 01-May-26.
-//
+#pragma once
 
-#ifndef ATLAS_OBJACESSOR_HPP
-#define ATLAS_OBJACESSOR_HPP
+#include "IAssetAccessor.hpp"
+#include "asset/AssetManager.hpp"
 
+namespace Atlas {
+    class OBJAccessor : public ILoader {
+    public:
+        explicit OBJAccessor(ExecutorService &service);
+        ~OBJAccessor() override = default;
 
-class OBJAcessor {
-};
+        std::vector<std::string> extensions() const override { return {".obj"}; }
 
+        std::vector<entt::entity> importAsset(const std::string &path, entt::registry &registry, entt::entity parentEntity) override;
+        std::vector<std::byte> exportAsset(const std::vector<entt::entity> &entities, const entt::registry &registry) override;
 
-#endif //ATLAS_OBJACESSOR_HPP
+    private:
+        ExecutorService &executor;
+    };
+}

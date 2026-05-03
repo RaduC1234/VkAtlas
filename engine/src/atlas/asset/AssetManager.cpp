@@ -5,14 +5,12 @@
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <stb_image.h>
-#include <tiny_gltf.h>
-#include <tiny_obj_loader.h>
+
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/hash.hpp>
-#include <glm/gtx/matrix_decompose.hpp>
 
 #include "accessors/GLTFAccessor.hpp"
-#include "entity/Object.hpp"
+#include "accessors/OBJAcessor.hpp"
 
 #if defined(ATLAS_PLATFORM_ANDROID)
 #include "android/AndroidAssetManager.hpp"
@@ -41,6 +39,7 @@ namespace Atlas {
 
     AssetManager::AssetManager(Device &device, void *nativeApp) : device(device), nativeApp(nativeApp) {
         registerLoader<GLTFAccessor>(device.executor());
+        registerLoader<OBJAccessor>(device.executor());
     }
 
     AssetManager &AssetManager::create(Device &device, void *nativeApp) {
@@ -133,90 +132,6 @@ namespace Atlas {
         stbi_image_free(pixels);
 
         AT_TRACE("Loaded texture: {} (handle: {}, {}x{}, hdr: {})", virtualPath, handle, width, height, isHDR);
-        return handle;
-    }
-
-    AssetHandle AssetManager::loadMesh(const std::string &virtualPath) {
-        auto it = pathToHandle.find(virtualPath);
-        if (it != pathToHandle.end()) {
-            AT_TRACE("Mesh already loaded: {} (handle: {})", virtualPath, it->second);
-            return it->second;
-        }
-
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
-
-        std::filesystem::path fullPath = rootPath() / virtualPath;
-
-        Mesh::Builder builder{};
-        tinyobj::attrib_t attrib;
-        std::vector<tinyobj::shape_t> shapes;
-        std::vector<tinyobj::material_t> materials;
-        std::string warn, err;
-
-        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, fullPath.string().c_str())) {
-            AT_ERROR("Failed to load mesh: {} - {}", fullPath.string(), warn + err);
-            return INVALID_ASSET_HANDLE;
-        }
-
-        builder.vertices.clear();
-        builder.indices.clear();
-
-        std::unordered_map<Mesh::Vertex, uint32_t> uniqueVertices;
-        for (const auto &shape: shapes) {
-            for (const auto &index: shape.mesh.indices) {
-                Mesh::Vertex vertex{};
-
-                if (index.vertex_index >= 0) {
-                    vertex.position = glm::vec3(
-                        attrib.vertices[3 * index.vertex_index + 0],
-                        attrib.vertices[3 * index.vertex_index + 1],
-                        attrib.vertices[3 * index.vertex_index + 2]
-                    );
-
-                    if (!attrib.colors.empty()) {
-                        vertex.color = glm::vec3(
-                            attrib.colors[3 * index.vertex_index + 0],
-                            attrib.colors[3 * index.vertex_index + 1],
-                            attrib.colors[3 * index.vertex_index + 2]
-                        );
-                    } else {
-                        vertex.color = glm::vec3(1.0f);
-                    }
-                }
-
-                if (index.normal_index >= 0 && !attrib.normals.empty()) {
-                    vertex.normal = glm::vec3(
-                        attrib.normals[3 * index.normal_index + 0],
-                        attrib.normals[3 * index.normal_index + 1],
-                        attrib.normals[3 * index.normal_index + 2]
-                    );
-                } else {
-                    vertex.normal = glm::vec3(0.0f);
-                }
-
-                if (index.texcoord_index >= 0 && !attrib.texcoords.empty()) {
-                    vertex.uv = glm::vec2(
-                        attrib.texcoords[2 * index.texcoord_index + 0],
-                        attrib.texcoords[2 * index.texcoord_index + 1]
-                    );
-                } else {
-                    vertex.uv = glm::vec2(0.0f);
-                }
-
-                if (uniqueVertices.count(vertex) == 0) {
-                    uniqueVertices[vertex] = static_cast<uint32_t>(builder.vertices.size());
-                    builder.vertices.push_back(vertex);
-                }
-                builder.indices.push_back(uniqueVertices[vertex]);
-            }
-        }
-
-        auto mesh = std::make_unique<Mesh>(device, builder);
-        meshPool[handle] = std::move(mesh);
-
-        AT_TRACE("Loaded mesh: {} (handle: {}, {} vertices, {} indices)", virtualPath, handle, builder.vertices.size(), builder.indices.size());
         return handle;
     }
 
