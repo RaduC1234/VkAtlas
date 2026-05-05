@@ -31,7 +31,7 @@ namespace Atlas {
         Device &device() const { return *device_; }
 
         VkRenderPass getSwapChainRenderPass() const { return swapChain_->getRenderPass(); }
-        float getAspectRatio() const { return swapChain_->extentAspectRatio(); }
+        float getAspectRatio() const;
         size_t getImageCount() const { return swapChain_->imageCount(); }
         VkImage getCurrentSwapchainImage() const { return swapChain_->getImage(currentImageIndex); }
         VkExtent2D getSwapchainExtent() const { return swapChain_->getSwapChainExtent(); }

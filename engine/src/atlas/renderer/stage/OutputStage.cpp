@@ -153,7 +153,7 @@ namespace Atlas {
     }
 
     void OutputStage::recordToViewport(VkCommandBuffer cmd) {
-        /*VkImage swapImage = renderer.getCurrentSwapchainImage();
+        VkImage swapImage = renderer.getCurrentSwapchainImage();
 
         const VkPipelineStageFlags srcStage = sourceIsCompute
                                                   ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
@@ -214,43 +214,13 @@ namespace Atlas {
                                  0, 0, nullptr, 0, nullptr, 1, &restore);
         }
 
-        // Replace the dockspace + Viewport ImGui block with this:
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::Begin("Viewport");
+        ImGui::PopStyleVar();
 
-        const ImGuiIO &io = ImGui::GetIO();
-        ImGuiViewport *mainViewport = ImGui::GetMainViewport();
+        ImVec2 size = ImGui::GetContentRegionAvail();
+        ImGui::Image(viewportTexture, size);
 
-        // Pin to the main viewport, behind everything
-        ImGui::SetNextWindowPos(mainViewport->Pos);
-        ImGui::SetNextWindowSize(mainViewport->Size);
-        ImGui::SetNextWindowViewport(mainViewport->ID);
-        ImGui::SetNextWindowBgAlpha(1.0f);
-
-        constexpr ImGuiWindowFlags bgFlags =
-                ImGuiWindowFlags_NoTitleBar |
-                ImGuiWindowFlags_NoCollapse |
-                ImGuiWindowFlags_NoResize |
-                ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoScrollbar |
-                ImGuiWindowFlags_NoScrollWithMouse |
-                ImGuiWindowFlags_NoBringToFrontOnFocus |
-                ImGuiWindowFlags_NoNavFocus |
-                ImGuiWindowFlags_NoDocking |
-                ImGuiWindowFlags_MenuBar; // keep if you want a menu bar
-
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {0.0f, 0.0f});
-        ImGui::Begin("##background", nullptr, bgFlags);
-        ImGui::PopStyleVar(3);
-
-        // Fill the entire content area with the rendered image
-        ImGui::Image((ImTextureID) viewportTexture, ImGui::GetContentRegionAvail());
-
-        // Dockspace layered on top of the image (PassthruCentralNode makes it transparent)
-        ImGui::DockSpace(ImGui::GetID("MainDockspace"),
-                         {0.0f, 0.0f},
-                         ImGuiDockNodeFlags_PassthruCentralNode);
-
-        ImGui::End();*/
+        ImGui::End();
     }
 } // namespace Atlas

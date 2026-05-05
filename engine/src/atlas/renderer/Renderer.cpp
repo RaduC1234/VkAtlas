@@ -5,6 +5,7 @@
 #include <cassert>
 #include <stdexcept>
 
+#include <imgui_internal.h>
 #include "entity/Object.hpp"
 
 namespace Atlas {
@@ -28,6 +29,15 @@ namespace Atlas {
 
         freeCommandBuffers();
         AssetManager::destroy();
+    }
+
+    float Renderer::getAspectRatio() const {
+        if (settings.imguiWindowRenderTarget) {
+            if (ImGuiWindow *viewport = ImGui::FindWindowByName("Viewport")) {
+                return viewport->InnerRect.GetWidth() / viewport->InnerRect.GetHeight();
+            }
+        }
+        return swapChain_->extentAspectRatio();
     }
 
     FrameContext Renderer::beginFrame() {
@@ -60,7 +70,7 @@ namespace Atlas {
             throw std::runtime_error("failed to begin recording compute command buffer!");
         }
 
-        this->imGuiLayer_->beginFrame();
+        this->imGuiLayer_->beginFrame(settings.imguiWindowRenderTarget);
 
         return {
             .graphicsCommandBuffer = graphicsCommandBuffer,

@@ -60,14 +60,6 @@ namespace Atlas {
          * @return AssetHandle for the loaded texture
          */
         AssetHandle loadTexture(const std::string &virtualPath, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
-
-        /**
-         * @brief Load a mesh and return its handle
-         * @param virtualPath Virtual path to the mesh file (e.g., "models/sphere.obj")
-         * @return AssetHandle for the loaded mesh
-         */
-        AssetHandle loadMesh(const std::string &virtualPath);
-
         /**
          * @brief Load a skybox/cubemap asset and return its handle
          *
