@@ -519,6 +519,10 @@ namespace Atlas {
                             material.baseColor = glm::vec4(1.0f);
                         }
 
+                        material.transparent = mat.alphaMode == "BLEND" ||
+                                               mat.alphaMode == "MASK" ||
+                                               material.baseColor.a < 1.0f;
+
                         // Albedo texture
                         if (pbr.baseColorTexture.index >= 0) {
                             int texIdx = pbr.baseColorTexture.index;
@@ -686,7 +690,7 @@ namespace Atlas {
                                 sn.parent = entt::null;
 
                                 auto &transform = registry.emplace<TransformComponent>(entity);
-                                transform.translation = wTranslation * glm::vec3(1.0f, -1.0f, 1.0f);
+                                transform.translation = wTranslation;
                                 transform.rotation    = glm::eulerAngles(wRotation);
                                 transform.scale       = wScale;
 
@@ -701,9 +705,22 @@ namespace Atlas {
                                     light.type = LightType::RECT;
                                 }
 
-                                constexpr glm::vec3 defaultDir = glm::vec3{0.0f, 0.0f, -1.0f};
-                                light.direction   = glm::normalize(wRotation * defaultDir);
-                                light.direction.y = -light.direction.y;
+                                // The Unreal exporter inserts the light child node rotation used by
+                                // glTF punctual lights, so the rect emitter plane is local X/Y here.
+                                glm::vec3 localDirection{0.0f, 0.0f, -1.0f};
+                                if (lobj.Has("direction") && lobj.Get("direction").IsArray()) {
+                                    const auto &darr = lobj.Get("direction").Get<tinygltf::Value::Array>();
+                                    if (darr.size() >= 3 && darr[0].IsNumber() && darr[1].IsNumber() && darr[2].IsNumber()) {
+                                        localDirection = glm::vec3(
+                                            static_cast<float>(darr[0].Get<double>()),
+                                            static_cast<float>(darr[1].Get<double>()),
+                                            static_cast<float>(darr[2].Get<double>())
+                                        );
+                                    }
+                                }
+                                light.direction = glm::normalize(wRotation * localDirection);
+                                light.rectRight = glm::normalize(wRotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                                light.rectUp = glm::normalize(wRotation * glm::vec3(0.0f, 1.0f, 0.0f));
 
                                 // color
                                 light.color = glm::vec3(1.0f);

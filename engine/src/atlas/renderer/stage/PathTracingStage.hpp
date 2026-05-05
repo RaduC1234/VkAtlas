@@ -33,7 +33,7 @@ namespace Atlas {
         static constexpr uint32_t MAX_TEXTURES = 512;
         static constexpr uint32_t MAX_OBJECTS = 1024;
         static constexpr uint32_t MAX_LIGHTS = 16;
-        static constexpr uint32_t MAX_BOUNCES = 4;
+        static constexpr uint32_t MAX_BOUNCES = 6;
 
         Device &device;
         const DescriptorSetLayout &globalSetLayout;
@@ -44,15 +44,15 @@ namespace Atlas {
         // Scene data buffers
         std::unique_ptr<GPUBuffer> objectBuffer;
         std::unique_ptr<GPUBuffer> lightBuffer;
+        std::unique_ptr<GPUBuffer> vertexBuffer;
+        std::unique_ptr<GPUBuffer> indexBuffer;
+        std::unique_ptr<GPUImage> accumulationImage;
 
         // Descriptors
         std::unique_ptr<DescriptorSetLayout> ptSetLayout;
         std::unique_ptr<DescriptorPool> ptPool;
         VkDescriptorSet ptSet = VK_NULL_HANDLE;
-
-        std::unique_ptr<DescriptorSetLayout> textureSetLayout;
-        std::unique_ptr<DescriptorPool> texturePool;
-        VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
+        VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE; // alias for ptSet
 
         // Pipeline
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;

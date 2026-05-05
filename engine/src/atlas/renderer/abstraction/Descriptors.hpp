@@ -106,5 +106,6 @@ namespace Atlas {
         DescriptorSetLayout &setLayout;
         DescriptorPool &pool;
         std::vector<VkWriteDescriptorSet> writes;
+        std::vector<VkWriteDescriptorSetAccelerationStructureKHR> asInfos;
     };
 }

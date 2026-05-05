@@ -35,7 +35,9 @@ namespace Atlas {
             sourceLayout = layoutIt->second;
             sourceIsCompute = writerIt != ctx.lastWrittenBy.end() &&
                               writerIt->second == Queue::COMPUTE;
-            restoreLayout = sourceIsCompute ? sourceLayout : VK_IMAGE_LAYOUT_UNDEFINED;
+            restoreLayout = sourceLayout == VK_IMAGE_LAYOUT_GENERAL
+                                ? sourceLayout
+                                : VK_IMAGE_LAYOUT_UNDEFINED;
         }
 
         if (!isImGuiTarget()) return;
@@ -66,12 +68,14 @@ namespace Atlas {
     void OutputStage::recordToSwapChain(VkCommandBuffer cmd) {
         VkImage swapImage = renderer.getCurrentSwapchainImage();
 
-        const VkPipelineStageFlags srcStage = sourceIsCompute
-                                                  ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-                                                  : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        const VkAccessFlags srcAccess = sourceIsCompute
-                                            ? VK_ACCESS_SHADER_WRITE_BIT
-                                            : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        // sourceLayout is GENERAL for ray tracing / compute writers.
+        // Use the broadest safe srcStage — covers compute, ray tracing, and raster.
+        const VkPipelineStageFlags srcStage = (sourceLayout == VK_IMAGE_LAYOUT_GENERAL)
+            ? (VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+            : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        const VkAccessFlags srcAccess = (sourceLayout == VK_IMAGE_LAYOUT_GENERAL)
+            ? VK_ACCESS_SHADER_WRITE_BIT
+            : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
         VkImageMemoryBarrier pre[2]{};
         pre[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -140,7 +144,7 @@ namespace Atlas {
             post[postCount].image = postColorSource->image();
             post[postCount].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             ++postCount;
-            restoreDst |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            restoreDst |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
         }
 
         vkCmdPipelineBarrier(cmd,

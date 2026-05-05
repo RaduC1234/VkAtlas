@@ -153,7 +153,8 @@ namespace Atlas {
                         barrier.srcAccess = VK_ACCESS_SHADER_WRITE_BIT; // Assume the worst case: previous stage wrote to it.
                         barrier.dstAccess = VK_ACCESS_SHADER_READ_BIT;
                         barrier.srcStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-                        barrier.dstStage = isCompute ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                        barrier.dstStage = isCompute
+                                               ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
                                                : VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
                         node.barriersBeforeExec.push_back(barrier);
@@ -369,7 +370,7 @@ namespace Atlas {
             case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL: return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
             case VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL:
             case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL: return VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-            case VK_IMAGE_LAYOUT_GENERAL: return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            case VK_IMAGE_LAYOUT_GENERAL: return VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR; // Could be compute or ray tracing wait for both
             default: return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         }
     }

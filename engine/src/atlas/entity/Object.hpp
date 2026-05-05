@@ -93,6 +93,7 @@ namespace Atlas {
         AssetHandle normalMap = INVALID_ASSET_HANDLE;
         AssetHandle metallicRoughnessMap = INVALID_ASSET_HANDLE;
         AssetHandle ambientOcclusion = INVALID_ASSET_HANDLE;
+        bool transparent{false};
     };
 
     struct SkyboxComponent {
@@ -123,6 +124,8 @@ namespace Atlas {
         // For RECT lights
         float width{0.0f};
         float height{0.0f};
+        glm::vec3 rectRight{1.0f, 0.0f, 0.0f};
+        glm::vec3 rectUp{0.0f, 1.0f, 0.0f};
     };
 
     struct PostProcessingVolumeComponent {

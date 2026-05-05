@@ -45,6 +45,8 @@ struct Light {
     float width;
     vec3  direction;
     float height;
+    vec3  rectRight;
+    vec3  rectUp;
 };
 
 // ---- Constants ----
@@ -53,14 +55,28 @@ const float PI      = 3.14159265359;
 const float INV_PI  = 0.31830988618;
 const float EPSILON = 1e-5;
 
+const uint LIGHT_TYPE_POINT       = 1u;
+const uint LIGHT_TYPE_SPOT        = 2u;
+const uint LIGHT_TYPE_DIRECTIONAL = 3u;
+const uint LIGHT_TYPE_RECT        = 4u;
+
 // ---- Descriptors ----
 
 layout(set = 1, binding = 1) uniform accelerationStructureEXT tlas;
-layout(set = 1, binding = 2) readonly buffer VertexBuffer  { Vertex   vertices[]; };
-layout(set = 1, binding = 3) readonly buffer IndexBuffer   { uint     indices[];  };
-layout(set = 1, binding = 4) readonly buffer ObjectBuffer  { ObjectData objects[]; };
-layout(set = 1, binding = 5) readonly buffer LightBuffer   { Light    lights[];   };
+layout(scalar, set = 1, binding = 2) readonly buffer VertexBuffer  { Vertex   vertices[]; };
+layout(scalar, set = 1, binding = 3) readonly buffer IndexBuffer   { uint     indices[];  };
+layout(scalar, set = 1, binding = 4) readonly buffer ObjectBuffer  { ObjectData objects[]; };
+layout(scalar, set = 1, binding = 5) readonly buffer LightBuffer   { Light    lights[];   };
 layout(set = 1, binding = 6) uniform        sampler2D      textures[];
+
+// ---- Push constants ----
+
+layout(push_constant) uniform PushConstants {
+    uint sampleIndex;
+    uint maxBounces;
+    uint frameIndex;
+    uint lightCount;
+} pc;
 
 // ---- Payload ----
 
@@ -154,6 +170,13 @@ float distanceAttenuation(float dist, float range) {
     return (window * window) / max(dist * dist, EPSILON);
 }
 
+float spotAttenuation(vec3 L, vec3 dir, float innerAngle, float outerAngle) {
+    float cosOuter = cos(outerAngle);
+    float cosInner = cos(innerAngle);
+    float cosAngle = dot(dir, -L);
+    return clamp((cosAngle - cosOuter) / max(cosInner - cosOuter, EPSILON), 0.0, 1.0);
+}
+
 // ---- Main ----
 
 void main() {
@@ -211,7 +234,7 @@ void main() {
 
     // ---- NEE — direct light sampling ----
     vec3 directLight = vec3(0.0);
-    for (uint i = 0u; i < 4u; i++) {
+    for (uint i = 0u; i < pc.lightCount; i++) {
         Light light = lights[i];
         if (light.intensity <= 0.0) continue;
 
@@ -219,16 +242,44 @@ void main() {
         float atten;
         float tMax;
 
-        if (light.type == 1u) {
+        if (light.type == LIGHT_TYPE_DIRECTIONAL) {
             L     = normalize(-light.direction);
             atten = 1.0;
             tMax  = 10000.0;
+        } else if (light.type == LIGHT_TYPE_RECT) {
+            vec3 lightNormal = normalize(light.direction);
+            vec3 rectT = normalize(light.rectRight);
+            vec3 rectB = normalize(light.rectUp);
+
+            vec2 u = vec2(randFloat(payload.seed), randFloat(payload.seed)) - 0.5;
+            vec3 samplePos = light.position
+                           + rectT * (u.x * max(light.width, EPSILON))
+                           + rectB * (u.y * max(light.height, EPSILON));
+
+            vec3 toLight = samplePos - worldPos;
+            float dist = length(toLight);
+            if (dist <= 0.001) continue;
+
+            L = toLight / dist;
+            float cosLight = abs(dot(lightNormal, -L));
+            if (cosLight <= 0.0) continue;
+
+            float area = max(light.width * light.height, EPSILON);
+            atten = area * cosLight / max(dist * dist, EPSILON);
+            tMax = max(dist - 0.001, 0.0);
         } else {
             vec3  toLight = light.position - worldPos;
             float dist    = length(toLight);
-            L             = toLight / max(dist, EPSILON);
-            atten         = distanceAttenuation(dist, light.range);
-            tMax          = dist - 0.001;
+            if (dist <= 0.001) continue;
+
+            L     = toLight / dist;
+            atten = distanceAttenuation(dist, light.range);
+            tMax  = max(dist - 0.001, 0.0);
+        }
+
+        if (light.type == LIGHT_TYPE_SPOT) {
+            atten *= spotAttenuation(L, normalize(light.direction),
+                                     light.innerConeAngle, light.outerConeAngle);
         }
 
         float NdotL = dot(N, L);
@@ -238,8 +289,8 @@ void main() {
         shadowPayload = true;
         traceRayEXT(tlas,
             gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
-            0xFF, 1, 0, 1,              // hit group 1 = shadow, miss index 1 = shadow miss
-            worldPos, 0.001, L, tMax, 1);
+            0xFF, 0, 0, 1,              // hit group 1 = shadow, miss index 1 = shadow miss
+            worldPos + N * 0.001, 0.0, L, tMax, 1);
 
         if (shadowPayload) continue;    // occluded
 
@@ -282,7 +333,7 @@ void main() {
 
         vec3  F   = F_Schlick(HdotV, F0);
         float Vis = V_SmithGGXCorrelated(NdotV, NdotL, roughness);
-        brdfWeight = F * Vis * HdotV / max(NdotH * 0.25, EPSILON);
+        brdfWeight = F * Vis * NdotL * HdotV / max(NdotH * 0.25, EPSILON);
         pdf        = specularWeight / totalWeight;
     } else {
         // Cosine-weighted diffuse bounce
@@ -307,9 +358,7 @@ void main() {
     payload.direction   = nextDir;
 
     // Russian roulette termination after bounce 2
-    float survivalProb = clamp(max(payload.throughput.r,
-                                   max(payload.throughput.g,
-                                       payload.throughput.b)), 0.05, 1.0);
+    float survivalProb = clamp(max(payload.throughput.r, max(payload.throughput.g, payload.throughput.b)), 0.05, 1.0);
     if (randFloat(payload.seed) > survivalProb) {
         payload.done = true;
         return;

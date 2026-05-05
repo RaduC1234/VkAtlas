@@ -15,7 +15,8 @@ namespace Atlas {
     enum class ViewMode : uint32_t {
         LIT,
         UNLIT,
-        LIGHTING_ONLY
+        LIGHTING_ONLY,
+        PATH_TRACING
     };
     struct alignas(16) DebugData {
         float irradianceMultiplier{1.0f};
@@ -45,9 +46,17 @@ namespace Atlas {
 
     private:
         void createGlobalUbo();
+        void resetPathTracing();
+        bool pathTracingCameraChanged(const Camera::Data &cameraData) const;
 
         Device &device;
-        std::unique_ptr<RenderGraph> renderGraph;
+        std::unique_ptr<RenderGraph> rasterGraph;
+        std::unique_ptr<RenderGraph> pathTracingGraph;
+        class PathTracingStage *pathTracingStage = nullptr;
+
+        ViewMode activeViewMode = ViewMode::LIT;
+        bool hasLastPathTracingCamera = false;
+        Camera::Data lastPathTracingCamera{};
 
         // Set 0 - Global descriptors (UBO)
         std::unique_ptr<DescriptorSetLayout> globalSetLayout;

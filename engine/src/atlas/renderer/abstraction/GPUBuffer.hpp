@@ -260,6 +260,13 @@ namespace Atlas {
         void uploadData(const void *data, VkDeviceSize size, VkDeviceSize offset = 0);
 
         /**
+         * @brief Flushes a mapped allocation range so host writes become visible to the GPU.
+         * @param size Number of bytes to flush. VK_WHOLE_SIZE flushes to the end of the buffer.
+         * @param offset Byte offset into the allocation.
+         */
+        void flush(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
+
+        /**
          * @brief Copies one instance of data into the aligned slot at @p index. Buffer must be mapped.
          * @param data Pointer to a single instance.
          * @param index Index within the buffer (e.g., object index).

@@ -104,16 +104,34 @@ namespace Atlas {
     AccelerationStructure AccelerationStructure::buildTLAS(Device &device, const std::vector<VkAccelerationStructureInstanceKHR> &instances) {
         const auto instanceCount = static_cast<uint32_t>(instances.size());
 
-        auto instanceBuffer = GPUBuffer::simple(device)
-                .setSize(sizeof(VkAccelerationStructureInstanceKHR) * instanceCount)
-                .setUsage(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
-                .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
-                .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT)
-                .build();
-
-        memcpy(instanceBuffer.getMapped(),
+        // Staging buffer — host-visible so getMapped() is guaranteed non-null
+        GPUBuffer instanceStaging(
+            device,
+            sizeof(VkAccelerationStructureInstanceKHR) * instanceCount,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
+        );
+        instanceStaging.map();
+        memcpy(instanceStaging.getMapped(),
                instances.data(),
                sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
+        instanceStaging.flush(sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
+        instanceStaging.unmap();
+
+        // Device-local instance buffer readable by the AS build
+        auto instanceBuffer = GPUBuffer::simple(device)
+                .setSize(sizeof(VkAccelerationStructureInstanceKHR) * instanceCount)
+                .setUsage(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+                        | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+                        | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+                .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
+                .build();
+
+        GPUBuffer::copy(device,
+                        instanceStaging.get(), instanceBuffer.get(),
+                        sizeof(VkAccelerationStructureInstanceKHR) * instanceCount,
+                        0, 0);
 
         VkBufferDeviceAddressInfo instAddrInfo{};
         instAddrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;

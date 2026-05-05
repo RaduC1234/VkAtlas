@@ -244,6 +244,10 @@ namespace Atlas {
             throw std::runtime_error("GPU lacks descriptor indexing features required for bindless textures");
         }
 
+        if (!vk12.scalarBlockLayout) {
+            throw std::runtime_error("GPU does not support scalarBlockLayout (required for path tracing buffers)");
+        }
+
         if (!vk12.bufferDeviceAddress) {
             throw std::runtime_error("GPU does not support bufferDeviceAddress (required for ray tracing)");
         }
@@ -268,6 +272,7 @@ namespace Atlas {
         vk12.descriptorBindingUniformBufferUpdateAfterBind = VK_TRUE;
         vk12.descriptorBindingStorageImageUpdateAfterBind = VK_TRUE;
         vk12.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;
+        vk12.scalarBlockLayout = VK_TRUE;
         vk12.bufferDeviceAddress = VK_TRUE;
 
         vk11.shaderDrawParameters = VK_TRUE;

@@ -41,15 +41,16 @@ namespace Atlas {
     void OfficeScene::onRender(FrameContext frameContext) {
         static float irlMultiplier = 1.0f;
         static float exposureMultiplier = 1.0f;
-        static auto viewMode = ViewMode::LIT;
+        static int viewModeIndex = static_cast<int>(ViewMode::LIT);
 
         ImGui::Begin("Debug Settings");
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
         ImGui::SliderFloat("IRL Multiplier", &irlMultiplier, 0.01f, 10.0f);
         ImGui::SliderFloat("Exposure Multiplier", &exposureMultiplier, 0.0f, 5.0f);
-        ImGui::Combo("View Mode", reinterpret_cast<int *>(&viewMode), "Lit\0Unlit\0Lighting Only\0");
+        ImGui::Combo("View Mode", &viewModeIndex, "Lit\0Unlit\0Lighting Only\0Path Tracing\0");
         ImGui::End();
 
+        const auto viewMode = static_cast<ViewMode>(viewModeIndex);
         const GlobalUbo ubo{
             camera.getData(),
             {irlMultiplier, exposureMultiplier, static_cast<uint32_t>(viewMode), 0.0f}

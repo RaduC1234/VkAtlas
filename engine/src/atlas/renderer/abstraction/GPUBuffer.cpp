@@ -128,22 +128,30 @@ namespace Atlas {
     void GPUBuffer::uploadData(const void *data, VkDeviceSize size, VkDeviceSize offset) {
         map();
         std::memcpy(static_cast<int8_t *>(mapped_) + offset, data, size);
-        // Optional: flush if needed for non-coherent memory
+        flush(size, offset);
+    }
+
+    void GPUBuffer::flush(VkDeviceSize size, VkDeviceSize offset) {
+        if (size == VK_WHOLE_SIZE) {
+            size = totalSize_ - offset;
+        }
+        if (size == 0) {
+            return;
+        }
+        if (vmaFlushAllocation(device_.allocator(), allocation_, offset, size) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to flush buffer memory!");
+        }
     }
 
     void GPUBuffer::writeToIndex(const void *data, int index) {
         assert(mapped_ && "Buffer must be mapped before writing");
         assert(index >= 0 && static_cast<uint32_t>(index) < instanceCount_);
         std::memcpy(static_cast<char *>(mapped_) + index * alignmentSize_, data, instanceSize_);
+        flush(instanceSize_, index * alignmentSize_);
     }
 
     void GPUBuffer::flushIndex(int index) {
-        VkMappedMemoryRange range{};
-        range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-        range.memory = allocInfo_.deviceMemory;
-        range.offset = allocInfo_.offset + index * alignmentSize_;
-        range.size = alignmentSize_;
-        vkFlushMappedMemoryRanges(device_.device(), 1, &range);
+        flush(alignmentSize_, index * alignmentSize_);
     }
 
     VkDescriptorBufferInfo GPUBuffer::descriptorInfoForIndex(int index) const {

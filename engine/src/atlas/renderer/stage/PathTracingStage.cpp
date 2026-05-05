@@ -5,6 +5,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
+#include <array>
+#include <cstring>
+
 #include "core/Log.hpp"
 #include "entity/Object.hpp"
 
@@ -35,13 +38,15 @@ namespace Atlas {
         float width;
         glm::vec3 direction;
         float height;
+        glm::vec3 rectRight;
+        glm::vec3 rectUp;
     };
 
     struct PushConstants {
         uint32_t sampleIndex;
         uint32_t maxBounces;
         uint32_t frameIndex;
-        uint32_t pad;
+        uint32_t lightCount;
     };
 
     // =========================================================================
@@ -66,6 +71,24 @@ namespace Atlas {
             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT)
             .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
             .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT)
+            .build()
+        );
+
+        // Scene-wide packed geometry — rebuilt each onSceneChanged.
+        // Placeholder 1-element buffers so descriptors are always valid at init.
+        vertexBuffer = std::make_unique<GPUBuffer>(
+            GPUBuffer::simple(device)
+            .setSize(sizeof(Mesh::Vertex))
+            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
+            .build()
+        );
+
+        indexBuffer = std::make_unique<GPUBuffer>(
+            GPUBuffer::simple(device)
+            .setSize(sizeof(uint32_t))
+            .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
             .build()
         );
 
@@ -101,6 +124,17 @@ namespace Atlas {
 
     void PathTracingStage::onResourcesCreated(const Context &ctx) {
         outputImage = &ctx.resources.at("post_color").get().asImage();
+
+        const auto extent = outputImage->extent();
+        auto accum = GPUImage::Builder(device)
+                .setExtent(extent.width, extent.height)
+                .setFormat(VK_FORMAT_R32G32B32A32_SFLOAT)
+                .setUsage(VK_IMAGE_USAGE_STORAGE_BIT)
+                .setDebugName("path_tracing_accumulation")
+                .addView(VK_IMAGE_ASPECT_COLOR_BIT)
+                .build();
+        accumulationImage = std::make_unique<GPUImage>(std::move(accum));
+
         updateDescriptorSet();
     }
 
@@ -112,6 +146,10 @@ namespace Atlas {
         std::vector<VkAccelerationStructureInstanceKHR> tlasInstances;
         std::vector<PTObjectData> cpuObjects;
         std::vector<PTLight> cpuLights;
+
+        // Packed scene geometry — rebuilt every call
+        std::vector<Mesh::Vertex> allVertices;
+        std::vector<uint32_t> allIndices;
 
         tlasInstances.reserve(MAX_OBJECTS);
         cpuObjects.reserve(MAX_OBJECTS);
@@ -127,6 +165,8 @@ namespace Atlas {
             auto &transform = registry.get<TransformComponent>(entity);
             auto &model = registry.get<ModelComponent>(entity);
             auto &material = registry.get<MaterialComponent>(entity);
+
+            if (material.transparent || material.baseColor.a < 1.0f) continue;
 
             if (model.meshHandle == INVALID_ASSET_HANDLE) continue;
             const auto mesh = AssetManager::get().getMesh(model.meshHandle);
@@ -146,6 +186,13 @@ namespace Atlas {
             instance.accelerationStructureReference = mesh->accelerationStructure().deviceAddress();
             tlasInstances.push_back(instance);
 
+            // Record where this mesh lands in the packed buffers
+            const uint32_t firstVertex = static_cast<uint32_t>(allVertices.size());
+            const uint32_t firstIndex = static_cast<uint32_t>(allIndices.size());
+
+            for (const auto &v: mesh->getVertices()) allVertices.push_back(v);
+            for (const auto i: mesh->getIndices()) allIndices.push_back(i);
+
             // Object data for hit shader
             cpuObjects.push_back({
                 .modelMatrix = m,
@@ -157,9 +204,9 @@ namespace Atlas {
                     registerTexture(material.ambientOcclusion != INVALID_ASSET_HANDLE ? material.ambientOcclusion : defaultWhiteHandle)
                 ),
                 .baseColor = material.baseColor,
-                .firstIndex = 0, // mesh owns its own index buffer — hit shader uses gl_PrimitiveID directly
+                .firstIndex = firstIndex,
                 .indexCount = static_cast<uint32_t>(mesh->getIndices().size()),
-                .firstVertex = 0,
+                .firstVertex = firstVertex,
                 .pad = 0,
             });
         }
@@ -174,7 +221,7 @@ namespace Atlas {
             cpuLights.push_back({
                 .type = static_cast<uint32_t>(light.type),
                 .intensity = light.intensity,
-                .range = light.range == 0.f ? 20.f : light.range,
+                .range = light.range,
                 .innerConeAngle = light.innerConeAngle,
                 .color = glm::vec4(light.color, 1.f),
                 .outerConeAngle = light.outerConeAngle,
@@ -182,6 +229,8 @@ namespace Atlas {
                 .width = light.width,
                 .direction = light.direction,
                 .height = light.height,
+                .rectRight = light.rectRight,
+                .rectUp = light.rectUp,
             });
         }
 
@@ -191,6 +240,41 @@ namespace Atlas {
         // ---- Build TLAS --------------------------------------------------------
         if (!tlasInstances.empty())
             tlas_ = AccelerationStructure::buildTLAS(device, tlasInstances);
+
+        // ---- Upload packed geometry -----------------------------------------
+        if (!allVertices.empty()) {
+            const VkDeviceSize vSize = allVertices.size() * sizeof(Mesh::Vertex);
+            GPUBuffer vStaging(device, vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                               VMA_MEMORY_USAGE_AUTO,
+                               VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+            vStaging.uploadData(allVertices.data(), vSize);
+
+            vertexBuffer = std::make_unique<GPUBuffer>(
+                GPUBuffer::simple(device)
+                .setSize(vSize)
+                .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+                .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
+                .build()
+            );
+            GPUBuffer::copy(device, vStaging.get(), vertexBuffer->get(), vSize, 0, 0);
+        }
+
+        if (!allIndices.empty()) {
+            const VkDeviceSize iSize = allIndices.size() * sizeof(uint32_t);
+            GPUBuffer iStaging(device, iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                               VMA_MEMORY_USAGE_AUTO,
+                               VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+            iStaging.uploadData(allIndices.data(), iSize);
+
+            indexBuffer = std::make_unique<GPUBuffer>(
+                GPUBuffer::simple(device)
+                .setSize(iSize)
+                .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+                .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
+                .build()
+            );
+            GPUBuffer::copy(device, iStaging.get(), indexBuffer->get(), iSize, 0, 0);
+        }
 
         // ---- Upload scene data ------------------------------------------------
         if (!cpuObjects.empty())
@@ -213,14 +297,50 @@ namespace Atlas {
     // =========================================================================
 
     void PathTracingStage::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
-        if (!active || !tlas_.isValid() || !outputImage) return;
+        if (!active || !tlas_.isValid() || !outputImage || !accumulationImage) return;
+
+        // Transition display + accumulation images to GENERAL every frame.
+        // On sample 0 their contents are discarded; subsequent samples preserve
+        // the HDR accumulation while OutputStage restores post_color to GENERAL.
+        {
+            const bool preserveAccumulation = currentSample > 0;
+
+            std::array<VkImageMemoryBarrier, 2> barriers{};
+            barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barriers[0].oldLayout = preserveAccumulation
+                                        ? VK_IMAGE_LAYOUT_GENERAL
+                                        : VK_IMAGE_LAYOUT_UNDEFINED;
+            barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            barriers[0].srcAccessMask = preserveAccumulation
+                                            ? VK_ACCESS_TRANSFER_READ_BIT
+                                            : 0;
+            barriers[0].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barriers[0].image = outputImage->image();
+            barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+            barriers[1] = barriers[0];
+            barriers[1].srcAccessMask = preserveAccumulation
+                                            ? VK_ACCESS_SHADER_WRITE_BIT
+                                            : 0;
+            barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            barriers[1].image = accumulationImage->image();
+
+            vkCmdPipelineBarrier(cmd,
+                                 preserveAccumulation
+                                     ? (VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
+                                     : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                                 0, 0, nullptr, 0, nullptr,
+                                 static_cast<uint32_t>(barriers.size()), barriers.data());
+        }
 
         pipeline->bind(cmd);
 
-        const std::array<VkDescriptorSet, 3> sets = {
+        const std::array<VkDescriptorSet, 2> sets = {
             globalSet,
             ptSet,
-            bindlessTextureSet,
         };
 
         vkCmdBindDescriptorSets(cmd,
@@ -234,7 +354,7 @@ namespace Atlas {
             .sampleIndex = currentSample,
             .maxBounces = MAX_BOUNCES,
             .frameIndex = frameIndex,
-            .pad = 0,
+            .lightCount = lightCount,
         };
 
         vkCmdPushConstants(cmd, pipelineLayout,
@@ -270,53 +390,57 @@ namespace Atlas {
     // =========================================================================
 
     void PathTracingStage::createDescriptors() {
-        // ---- Bindless texture set (set 2) ----
-        textureSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        // ---- PT set (set 1) — must match PathTracing.rchit exactly ----
+        // binding 0 — outputImage   (storage image,       raygen)
+        // binding 1 — tlas          (accel struct,        raygen + chit)
+        // binding 2 — VertexBuffer  (storage buffer,      chit)
+        // binding 3 — IndexBuffer   (storage buffer,      chit)
+        // binding 4 — ObjectBuffer  (storage buffer,      chit)
+        // binding 5 — LightBuffer   (storage buffer,      chit)
+        // binding 6 — textures[]    (combined sampler[],  chit, bindless)
+        // binding 7 — accumulation  (storage image,       raygen)
+        ptSetLayout = DescriptorSetLayout::Builder(device)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                            VK_SHADER_STAGE_RAYGEN_BIT_KHR, 1)
+                .addBinding(1, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+                            VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
+                .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
+                .addBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
+                .addBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
+                .addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
+                .addBinding(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                             VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, MAX_TEXTURES)
-                .setBindingFlags(0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT
+                .addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                            VK_SHADER_STAGE_RAYGEN_BIT_KHR, 1)
+                .setBindingFlags(6, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT
                                     | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
                 .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
                 .build();
 
-        texturePool = DescriptorPool::Builder(device)
+        ptPool = DescriptorPool::Builder(device)
                 .setMaxSets(1)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES)
                 .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                 .build();
 
-        if (!texturePool->allocateDescriptor(
-            textureSetLayout->getDescriptorSetLayout(), bindlessTextureSet))
-            throw std::runtime_error("PathTracingStage: failed to allocate bindless texture set");
-
-        // ---- PT set (set 1) ----
-        // binding 0 — output image      (storage image)
-        // binding 1 — TLAS              (acceleration structure)
-        // binding 2 — object buffer     (storage buffer)
-        // binding 3 — light buffer      (storage buffer)
-        ptSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 1)
-                .addBinding(1, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
-                .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
-                .addBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
-                .build();
-
-        ptPool = DescriptorPool::Builder(device)
-                .setMaxSets(1)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2)
-                .build();
-
         if (!ptPool->allocateDescriptor(ptSetLayout->getDescriptorSetLayout(), ptSet))
             throw std::runtime_error("PathTracingStage: failed to allocate PT descriptor set");
+
+        // textures now live at ptSet binding 6 — alias so registerTexture() still works
+        bindlessTextureSet = ptSet;
     }
 
     void PathTracingStage::createPipelineLayout() {
         const std::vector<VkDescriptorSetLayout> layouts = {
-            globalSetLayout.getDescriptorSetLayout(), // set 0 — global (camera)
-            ptSetLayout->getDescriptorSetLayout(), // set 1 — PT resources + TLAS
-            textureSetLayout->getDescriptorSetLayout(), // set 2 — bindless textures
+            globalSetLayout.getDescriptorSetLayout(), // set 0 — same handle the global set was allocated from
+            ptSetLayout->getDescriptorSetLayout(), // set 1 — all PT resources
         };
 
         VkPushConstantRange pcRange{};
@@ -359,6 +483,9 @@ namespace Atlas {
         const uint32_t handleAlignment = rtProps.shaderGroupHandleAlignment;
         const uint32_t baseAlignment = rtProps.shaderGroupBaseAlignment;
         const uint32_t groupCount = pipeline->shaderGroupCount();
+        if (groupCount != 4) {
+            throw std::runtime_error("PathTracingStage: expected 4 ray tracing shader groups");
+        }
 
         // Each handle is padded to handleAlignment, each region is padded to baseAlignment
         const uint32_t handleSizeAligned = alignUp(handleSize, handleAlignment);
@@ -379,18 +506,18 @@ namespace Atlas {
             throw std::runtime_error("PathTracingStage: failed to get shader group handles");
         }
 
-        // Upload to SBT buffer
-        sbtBuffer = std::make_unique<GPUBuffer>(
-            GPUBuffer::simple(device)
-            .setSize(sbtSize)
-            .setUsage(VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
-            .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
-            .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT)
-            .build()
+        // Staging buffer — host-visible, write the aligned SBT data into it
+        GPUBuffer stagingBuffer(
+            device,
+            sbtSize,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VMA_MEMORY_USAGE_AUTO,
+            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
         );
+        stagingBuffer.map();
 
-        // Write handles into mapped buffer respecting alignment
-        uint8_t *pData = static_cast<uint8_t *>(sbtBuffer->getMapped());
+        uint8_t *pData = static_cast<uint8_t *>(stagingBuffer.getMapped());
+        std::memset(pData, 0, sbtSize);
         // raygen — group 0
         memcpy(pData, handles.data() + 0 * handleSize, handleSize);
         // miss — groups 1 and 2
@@ -399,25 +526,51 @@ namespace Atlas {
         // hit — group 3
         memcpy(pData + raygenSize + missSize, handles.data() + 3 * handleSize, handleSize);
 
+        stagingBuffer.flush(sbtSize);
+        stagingBuffer.unmap();
+
+        // Device-local SBT buffer — must have SHADER_DEVICE_ADDRESS_BIT for vkGetBufferDeviceAddress
+        sbtBuffer = std::make_unique<GPUBuffer>(
+            GPUBuffer::simple(device)
+            .setSize(sbtSize)
+            .setUsage(VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
+                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                      VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
+            .build()
+        );
+
+        // Copy staging -> device-local via a one-time command buffer
+        VkCommandBuffer cmd = device.beginSingleTimeCommands();
+        VkBufferCopy region{};
+        region.size = sbtSize;
+        vkCmdCopyBuffer(cmd, stagingBuffer.get(), sbtBuffer->get(), 1, &region);
+        device.endSingleTimeCommands(cmd);
+
         // Build device address regions
         VkBufferDeviceAddressInfo addrInfo{};
         addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
         addrInfo.buffer = sbtBuffer->get();
         const VkDeviceAddress sbtAddress = vkGetBufferDeviceAddress(device.device(), &addrInfo);
 
-        sbtRaygen = {sbtAddress, raygenSize, handleSizeAligned};
-        sbtMiss = {sbtAddress + raygenSize, missSize, handleSizeAligned};
-        sbtHit = {sbtAddress + raygenSize + missSize, hitSize, handleSizeAligned};
+        sbtRaygen = {sbtAddress, raygenSize, raygenSize};
+        sbtMiss = {sbtAddress + raygenSize, handleSizeAligned, missSize};
+        sbtHit = {sbtAddress + raygenSize + missSize, handleSizeAligned, hitSize};
         sbtCallable = {};
     }
 
     void PathTracingStage::updateDescriptorSet() {
-        if (!outputImage || !tlas_.isValid()) return;
+        if (!outputImage || !accumulationImage || !tlas_.isValid()) return;
 
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageView = outputImage->view(0);
         imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
         imageInfo.sampler = VK_NULL_HANDLE;
+
+        VkDescriptorImageInfo accumulationInfo{};
+        accumulationInfo.imageView = accumulationImage->view(0);
+        accumulationInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        accumulationInfo.sampler = VK_NULL_HANDLE;
 
         auto tlasHandle = tlas_.handle();
 
@@ -426,14 +579,19 @@ namespace Atlas {
         asInfo.accelerationStructureCount = 1;
         asInfo.pAccelerationStructures = &tlasHandle;
 
+        auto vertexInfo = vertexBuffer->descriptorInfo();
+        auto indexInfo = indexBuffer->descriptorInfo();
         auto objInfo = objectBuffer->descriptorInfo();
         auto lightInfo = lightBuffer->descriptorInfo();
 
         DescriptorWriter(*ptSetLayout, *ptPool)
                 .writeImage(0, &imageInfo)
                 .writeAccelerationStructure(1, &asInfo)
-                .writeBuffer(2, &objInfo)
-                .writeBuffer(3, &lightInfo)
+                .writeBuffer(2, &vertexInfo)
+                .writeBuffer(3, &indexInfo)
+                .writeBuffer(4, &objInfo)
+                .writeBuffer(5, &lightInfo)
+                .writeImage(7, &accumulationInfo)
                 .overwrite(ptSet);
     }
 
@@ -462,8 +620,8 @@ namespace Atlas {
 
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = bindlessTextureSet;
-        write.dstBinding = 0;
+        write.dstSet = ptSet;
+        write.dstBinding = 6; // textures[] at binding 6 in set 1
         write.dstArrayElement = slot;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.descriptorCount = 1;
