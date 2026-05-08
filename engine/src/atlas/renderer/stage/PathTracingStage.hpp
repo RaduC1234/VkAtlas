@@ -1,6 +1,9 @@
 #pragma once
+#include <entt/signal/sigh.hpp>
+
 #include "IRenderStage.hpp"
 #include "asset/AssetManager.hpp"
+#include "renderer/Camera.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
 #include "renderer/abstraction/Pipeline.hpp"
 
@@ -13,7 +16,7 @@ namespace Atlas {
         void getDeclaredOutputs(std::vector<Resource::Description> &out) const override;
         void getDeclaredInputs(std::vector<std::string> &out) const override;
         void onResourcesCreated(const Context &ctx) override;
-        void onSceneChanged(entt::registry &registry) override;
+        void onUpdate(entt::registry &registry) override;
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 
         void reset();
@@ -25,8 +28,11 @@ namespace Atlas {
         void buildSBT();
         void updateDescriptorSet();
         void updateDescriptorSets();
+        void onCameraUpdated(entt::registry &registry, entt::entity entity);
+        void onCameraDestroyed(entt::registry &registry, entt::entity entity);
 
         uint32_t registerTexture(AssetHandle handle);
+        static bool cameraDataChanged(const Camera::Data &lhs, const Camera::Data &rhs);
 
         uint32_t alignUp(uint32_t size, uint32_t alignment) const;
 
@@ -71,6 +77,11 @@ namespace Atlas {
         uint32_t objectCount = 0;
         uint32_t lightCount = 0;
         bool active = true;
+        bool hasCameraData = false;
+        Camera::Data lastCameraData{};
+        entt::scoped_connection cameraConstructConnection;
+        entt::scoped_connection cameraUpdateConnection;
+        entt::scoped_connection cameraDestroyConnection;
 
         // Texture registry
         std::unordered_map<AssetHandle, uint32_t> handleToSlot;

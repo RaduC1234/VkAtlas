@@ -84,7 +84,7 @@ namespace Atlas {
     };
 
     struct CameraComponent {
-        Camera &camera;
+        Camera camera{};
     };
 
     struct MaterialComponent {

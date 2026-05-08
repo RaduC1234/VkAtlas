@@ -6,6 +6,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <array>
+#include <cmath>
 #include <cstring>
 
 #include "core/Log.hpp"
@@ -142,7 +143,11 @@ namespace Atlas {
     // onSceneChanged — build TLAS + upload scene data
     // =========================================================================
 
-    void PathTracingStage::onSceneChanged(entt::registry &registry) {
+    void PathTracingStage::onUpdate(entt::registry &registry) {
+        cameraConstructConnection = registry.on_construct<CameraComponent>().connect<&PathTracingStage::onCameraUpdated>(*this);
+        cameraUpdateConnection = registry.on_update<CameraComponent>().connect<&PathTracingStage::onCameraUpdated>(*this);
+        cameraDestroyConnection = registry.on_destroy<CameraComponent>().connect<&PathTracingStage::onCameraDestroyed>(*this);
+
         std::vector<VkAccelerationStructureInstanceKHR> tlasInstances;
         std::vector<PTObjectData> cpuObjects;
         std::vector<PTLight> cpuLights;
@@ -593,6 +598,36 @@ namespace Atlas {
                 .writeBuffer(5, &lightInfo)
                 .writeImage(7, &accumulationInfo)
                 .overwrite(ptSet);
+    }
+
+    void PathTracingStage::onCameraUpdated(entt::registry &registry, entt::entity entity) {
+        const auto &camera = registry.get<CameraComponent>(entity).camera;
+        const auto cameraData = camera.getData();
+
+        if (!hasCameraData || cameraDataChanged(cameraData, lastCameraData)) {
+            reset();
+            lastCameraData = cameraData;
+            hasCameraData = true;
+        }
+    }
+
+    void PathTracingStage::onCameraDestroyed(entt::registry &, entt::entity) {
+        hasCameraData = false;
+        reset();
+    }
+
+    bool PathTracingStage::cameraDataChanged(const Camera::Data &lhs, const Camera::Data &rhs) {
+        constexpr float epsilon = 0.00001f;
+        for (int column = 0; column < 4; ++column) {
+            for (int row = 0; row < 4; ++row) {
+                if (std::abs(lhs.projection[column][row] - rhs.projection[column][row]) > epsilon ||
+                    std::abs(lhs.view[column][row] - rhs.view[column][row]) > epsilon) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     uint32_t PathTracingStage::registerTexture(AssetHandle handle) {

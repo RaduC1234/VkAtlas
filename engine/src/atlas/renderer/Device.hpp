@@ -100,6 +100,7 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         VkCommandBuffer beginSingleTimeCommands();
         void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
 
+        static const char *vkResultToString(VkResult result);
     private:
         static constexpr uint32_t APPLICATION_VERSION = VK_MAKE_VERSION(1, 0, 0);
         static constexpr const char *APPLICATION_NAME = "Atlas Engine";
@@ -147,6 +148,8 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         };
     };
 } // namespace Atlas
+
+#define VK_ERROR_TO_STRING(result) std::string(Device::vkResultToString((result)))
 
 #define vkCreateAccelerationStructureKHR            Atlas::RayTracingFunctions::get().vkCreateAccelerationStructureKHR
 #define vkDestroyAccelerationStructureKHR           Atlas::RayTracingFunctions::get().vkDestroyAccelerationStructureKHR

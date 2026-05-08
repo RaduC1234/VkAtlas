@@ -177,7 +177,7 @@ namespace Atlas {
 
         virtual void onResourcesCreated(const Context &ctx) = 0;
 
-        virtual void onSceneChanged(entt::registry &registry) {
+        virtual void onUpdate(entt::registry &registry) {
         }
 
         virtual void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) = 0;

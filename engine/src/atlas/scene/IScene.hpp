@@ -19,6 +19,5 @@ namespace Atlas {
     protected:
         entt::registry registry;
         Renderer &renderer;
-        Camera camera{};
     };
 }

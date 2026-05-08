@@ -1,6 +1,7 @@
 #include "RenderSystemV2.hpp"
 
-#include <cmath>
+#include <ranges>
+#include <unordered_set>
 
 #include "core/Log.hpp"
 #include "renderer/stage/GeometryStage.hpp"
@@ -9,102 +10,49 @@
 #include "renderer/stage/PostProcessingStage.hpp"
 
 namespace Atlas {
-    namespace {
-        ViewMode resolveViewMode(const GlobalUbo &globalUbo) {
-            const auto mode = static_cast<ViewMode>(globalUbo.debugData.viewMode);
-            switch (mode) {
-                case ViewMode::LIT:
-                case ViewMode::UNLIT:
-                case ViewMode::LIGHTING_ONLY:
-                case ViewMode::PATH_TRACING:
-                    return mode;
-                default:
-                    return ViewMode::LIT;
-            }
-        }
-
-        bool matricesDiffer(const glm::mat4 &a, const glm::mat4 &b, float epsilon = 0.0001f) {
-            for (int c = 0; c < 4; ++c) {
-                for (int r = 0; r < 4; ++r) {
-                    if (std::abs(a[c][r] - b[c][r]) > epsilon) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-    }
-
     RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer) : device(device) {
         createGlobalUbo();
 
-        rasterGraph = std::make_unique<RenderGraph>(RenderGraph::Builder(device)
+        auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
             .addStage<GeometryStage>(device, *globalSetLayout)
             .addStage<PostProcessPass>(device, *globalSetLayout)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));
 
-        auto pathStage = std::make_unique<PathTracingStage>(device, *globalSetLayout);
-        pathTracingStage = pathStage.get();
-
-        pathTracingGraph = std::make_unique<RenderGraph>(RenderGraph::Builder(device)
-            .addStage(std::move(pathStage))
+        auto rayTracingGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
+            .addStage<PathTracingStage>(device, *globalSetLayout)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));
+
+        renderGraphs[ViewMode::LIT] = renderGraphs[ViewMode::UNLIT] = renderGraphs[ViewMode::LIGHTING_ONLY] = rasterGraph;
+        renderGraphs[ViewMode::PATH_TRACING] = std::move(rayTracingGraph);
     }
+
 
     void RenderSystemV2::build(entt::registry &registry) {
-        rasterGraph->build(registry);
-        pathTracingGraph->build(registry);
+        std::unordered_set<RenderGraph *> built;
+
+        for (auto &graph: renderGraphs | std::views::values) {
+            if (built.insert(graph.get()).second) {
+                graph->build(registry);
+            }
+        }
     }
 
-    void RenderSystemV2::render(const FrameContext frameContext, const GlobalUbo &globalUbo) {
-        const ViewMode viewMode = resolveViewMode(globalUbo);
-
-        if (viewMode == ViewMode::PATH_TRACING) {
-            if (activeViewMode != ViewMode::PATH_TRACING || pathTracingCameraChanged(globalUbo.cameraData)) {
-                resetPathTracing();
-            }
-            lastPathTracingCamera = globalUbo.cameraData;
-            hasLastPathTracingCamera = true;
-        }
-
-        activeViewMode = viewMode;
+    void RenderSystemV2::render(const FrameContext frameContext,const Camera::Data &cameraData,const DebugData &debugData) const {
+        GlobalUbo globalUbo{};
+        globalUbo.cameraData = cameraData;
+        globalUbo.debugData = debugData;
         globalUboBuffers[frameContext.index]->uploadData(&globalUbo, sizeof(GlobalUbo));
 
-        RenderGraph &graph = viewMode == ViewMode::PATH_TRACING
-                                 ? *pathTracingGraph
-                                 : *rasterGraph;
-
-        graph.render(frameContext, globalDescriptorSets[frameContext.index]);
-    }
-
-    void RenderSystemV2::resetPathTracing() {
-        if (pathTracingStage) {
-            pathTracingStage->reset();
-        }
-        hasLastPathTracingCamera = false;
-    }
-
-    bool RenderSystemV2::pathTracingCameraChanged(const Camera::Data &cameraData) const {
-        if (!hasLastPathTracingCamera) {
-            return true;
-        }
-
-        return matricesDiffer(cameraData.view, lastPathTracingCamera.view) ||
-               matricesDiffer(cameraData.projection, lastPathTracingCamera.projection);
+        renderGraphs.at(debugData.viewMode)->render(frameContext, globalDescriptorSets[frameContext.index]);
     }
 
     void RenderSystemV2::createGlobalUbo() {
         globalSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-                            VK_SHADER_STAGE_VERTEX_BIT
-                            | VK_SHADER_STAGE_FRAGMENT_BIT
-                            | VK_SHADER_STAGE_RAYGEN_BIT_KHR
-                            | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
-                            | VK_SHADER_STAGE_MISS_BIT_KHR)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL)
                 .build();
 
         globalPool = DescriptorPool::Builder(device)

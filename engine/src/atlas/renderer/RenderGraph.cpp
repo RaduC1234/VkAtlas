@@ -119,7 +119,7 @@ namespace Atlas {
 
     void RenderGraph::build(entt::registry &registry) {
         for (auto &stage: stages_) {
-            stage->onSceneChanged(registry);
+            stage->onUpdate(registry);
         }
     }
 

@@ -30,7 +30,6 @@ namespace Atlas {
         const GPUImage *postColorSource = nullptr;
         VkImageLayout sourceLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         VkImageLayout restoreLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        bool sourceIsCompute = false;
 
         VkSampler viewportSampler = VK_NULL_HANDLE;
         VkDescriptorSet viewportTexture = VK_NULL_HANDLE;

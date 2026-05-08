@@ -5,40 +5,6 @@
 #include "core/Log.hpp"
 
 namespace Atlas {
-    const char *vkResultToString(VkResult result) {
-        switch (result) {
-            case VK_SUCCESS: return "VK_SUCCESS";
-            case VK_NOT_READY: return "VK_NOT_READY";
-            case VK_TIMEOUT: return "VK_TIMEOUT";
-            case VK_EVENT_SET: return "VK_EVENT_SET";
-            case VK_EVENT_RESET: return "VK_EVENT_RESET";
-            case VK_INCOMPLETE: return "VK_INCOMPLETE";
-            case VK_ERROR_OUT_OF_HOST_MEMORY: return "VK_ERROR_OUT_OF_HOST_MEMORY";
-            case VK_ERROR_OUT_OF_DEVICE_MEMORY: return "VK_ERROR_OUT_OF_DEVICE_MEMORY";
-            case VK_ERROR_INITIALIZATION_FAILED: return "VK_ERROR_INITIALIZATION_FAILED";
-            case VK_ERROR_DEVICE_LOST: return "VK_ERROR_DEVICE_LOST";
-            case VK_ERROR_MEMORY_MAP_FAILED: return "VK_ERROR_MEMORY_MAP_FAILED";
-            case VK_ERROR_LAYER_NOT_PRESENT: return "VK_ERROR_LAYER_NOT_PRESENT";
-            case VK_ERROR_EXTENSION_NOT_PRESENT: return "VK_ERROR_EXTENSION_NOT_PRESENT";
-            case VK_ERROR_FEATURE_NOT_PRESENT: return "VK_ERROR_FEATURE_NOT_PRESENT";
-            case VK_ERROR_INCOMPATIBLE_DRIVER: return "VK_ERROR_INCOMPATIBLE_DRIVER";
-            case VK_ERROR_TOO_MANY_OBJECTS: return "VK_ERROR_TOO_MANY_OBJECTS";
-            case VK_ERROR_FORMAT_NOT_SUPPORTED: return "VK_ERROR_FORMAT_NOT_SUPPORTED";
-            case VK_ERROR_FRAGMENTED_POOL: return "VK_ERROR_FRAGMENTED_POOL";
-            case VK_ERROR_UNKNOWN: return "VK_ERROR_UNKNOWN";
-            case VK_ERROR_OUT_OF_POOL_MEMORY: return "VK_ERROR_OUT_OF_POOL_MEMORY";
-            case VK_ERROR_INVALID_EXTERNAL_HANDLE: return "VK_ERROR_INVALID_EXTERNAL_HANDLE";
-            case VK_ERROR_FRAGMENTATION: return "VK_ERROR_FRAGMENTATION";
-            case VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS: return "VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS";
-            case VK_PIPELINE_COMPILE_REQUIRED: return "VK_PIPELINE_COMPILE_REQUIRED";
-            case VK_ERROR_SURFACE_LOST_KHR: return "VK_ERROR_SURFACE_LOST_KHR";
-            case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR: return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
-            case VK_SUBOPTIMAL_KHR: return "VK_SUBOPTIMAL_KHR";
-            case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
-            default: return "UNKNOWN_VK_RESULT";
-        }
-    }
-
     SwapChain::SwapChain(Device &deviceRef, VkExtent2D extent) : device{deviceRef}, windowExtent{extent} {
         init();
     }
@@ -142,8 +108,8 @@ namespace Atlas {
         submitInfo.pSignalSemaphores = signal;
 
         vkResetFences(device.device(), 1, &inFlightFences[currentFrame]);
-        if (vkQueueSubmit(device.graphicsQueue(), 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to submit draw command buffer!");
+        if (const auto result = vkQueueSubmit(device.graphicsQueue(), 1, &submitInfo, inFlightFences[currentFrame]); result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to submit draw command buffer! |" + VK_ERROR_TO_STRING(result));
         }
 
         VkPresentInfoKHR presentInfo = {};
@@ -210,8 +176,8 @@ namespace Atlas {
 
         createInfo.oldSwapchain = oldSwapChain == nullptr ? VK_NULL_HANDLE : oldSwapChain->swapChain;
 
-        if (vkCreateSwapchainKHR(device.device(), &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create swap chain!");
+        if (const auto result = vkCreateSwapchainKHR(device.device(), &createInfo, nullptr, &swapChain); result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create swap chain! |" + VK_ERROR_TO_STRING(result));
         }
 
         // we only specified a minimum number of images in the swap chain, so the implementation is
@@ -240,9 +206,8 @@ namespace Atlas {
             viewInfo.subresourceRange.baseArrayLayer = 0;
             viewInfo.subresourceRange.layerCount = 1;
 
-            if (vkCreateImageView(device.device(), &viewInfo, nullptr, &swapChainImageViews[i]) !=
-                VK_SUCCESS) {
-                throw std::runtime_error("failed to create texture image view!");
+            if (const auto result = vkCreateImageView(device.device(), &viewInfo, nullptr, &swapChainImageViews[i]); result != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create texture image view!" + VK_ERROR_TO_STRING(result));
             }
         }
     }
@@ -301,8 +266,8 @@ namespace Atlas {
         renderPassInfo.dependencyCount = 1;
         renderPassInfo.pDependencies = &dependency;
 
-        if (vkCreateRenderPass(device.device(), &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create render pass!");
+        if (const auto result = vkCreateRenderPass(device.device(), &renderPassInfo, nullptr, &renderPass); result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create render pass!" + VK_ERROR_TO_STRING(result));
         }
 
         VkAttachmentDescription colorAttachment1{};
@@ -339,8 +304,8 @@ namespace Atlas {
         info1.dependencyCount = 1;
         info1.pDependencies = &dep1;
 
-        if (vkCreateRenderPass(device.device(), &info1, nullptr, &imguiRenderPass) != VK_SUCCESS) {
-            throw std::runtime_error("SwapChain: failed to create imgui render pass");
+        if (const auto result = vkCreateRenderPass(device.device(), &info1, nullptr, &imguiRenderPass); result != VK_SUCCESS) {
+            throw std::runtime_error("SwapChain: failed to create imgui render pass" + VK_ERROR_TO_STRING(result));
         }
     }
 

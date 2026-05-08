@@ -20,7 +20,7 @@ namespace Atlas {
 
         auto cameraEntity = registry.create();
         registry.emplace<TransformComponent>(cameraEntity);
-        registry.emplace<CameraComponent>(cameraEntity, camera);
+        registry.emplace<CameraComponent>(cameraEntity);
 
         AssetHandle skybox = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k.hdr");
         AssetHandle irradiance = AssetManager::get().loadCubemap("cubemaps/citrus_orchard_road_puresky_2k_irradiance.ktx2");
@@ -35,7 +35,15 @@ namespace Atlas {
     void OfficeScene::onUpdate(float deltaTime) {
         float aspect = renderer.getAspectRatio();
         cameraSystem->update(registry, deltaTime, aspect);
-        camera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 200.f);
+
+        auto cameraView = registry.view<CameraComponent>();
+        if (!cameraView.empty()) {
+            const auto e = *cameraView.begin();
+            registry.patch<CameraComponent>(e, [aspect](auto &cc){
+                cc.camera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 200.f);
+            });
+        }
+
     }
 
     void OfficeScene::onRender(FrameContext frameContext) {
@@ -51,12 +59,20 @@ namespace Atlas {
         ImGui::End();
 
         const auto viewMode = static_cast<ViewMode>(viewModeIndex);
-        const GlobalUbo ubo{
-            camera.getData(),
-            {irlMultiplier, exposureMultiplier, static_cast<uint32_t>(viewMode), 0.0f}
-        };
 
-        renderSystem->render(frameContext, ubo);
+        auto cameraView = registry.view<CameraComponent>();
+        if (cameraView.empty()) {
+            return;
+        }
+
+        const auto cameraEntity = *cameraView.begin();
+        const auto &camera = cameraView.get<CameraComponent>(cameraEntity).camera;
+
+        renderSystem->render(
+            frameContext,
+            camera.getData(),
+            {irlMultiplier, exposureMultiplier, viewMode, 0.0f}
+        );
     }
 
     void OfficeScene::onDelete() {
