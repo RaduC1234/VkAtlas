@@ -38,7 +38,7 @@ namespace Atlas {
 
         static constexpr uint32_t MAX_TEXTURES = 512;
         static constexpr uint32_t MAX_OBJECTS = 1024;
-        static constexpr uint32_t MAX_LIGHTS = 16;
+        static constexpr uint32_t MAX_LIGHTS = 32;
         static constexpr uint32_t MAX_BOUNCES = 6;
 
         Device &device;
@@ -47,31 +47,26 @@ namespace Atlas {
         GPUImage *outputImage = nullptr;
         AccelerationStructure tlas_;
 
-        // Scene data buffers
         std::unique_ptr<GPUBuffer> objectBuffer;
         std::unique_ptr<GPUBuffer> lightBuffer;
         std::unique_ptr<GPUBuffer> vertexBuffer;
         std::unique_ptr<GPUBuffer> indexBuffer;
         std::unique_ptr<GPUImage> accumulationImage;
 
-        // Descriptors
         std::unique_ptr<DescriptorSetLayout> ptSetLayout;
         std::unique_ptr<DescriptorPool> ptPool;
         VkDescriptorSet ptSet = VK_NULL_HANDLE;
         VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE; // alias for ptSet
 
-        // Pipeline
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         std::unique_ptr<Pipeline> pipeline;
 
-        // SBT
         std::unique_ptr<GPUBuffer> sbtBuffer;
         VkStridedDeviceAddressRegionKHR sbtRaygen{};
         VkStridedDeviceAddressRegionKHR sbtMiss{};
         VkStridedDeviceAddressRegionKHR sbtHit{};
         VkStridedDeviceAddressRegionKHR sbtCallable{};
 
-        // State
         uint32_t currentSample = 0;
         uint32_t frameIndex = 0;
         uint32_t objectCount = 0;

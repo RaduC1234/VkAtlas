@@ -62,7 +62,7 @@ namespace Atlas {
         geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
         geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
         geometry.geometry.triangles = triangles;
-        geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+        geometry.flags = 0;
 
         VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
         buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;

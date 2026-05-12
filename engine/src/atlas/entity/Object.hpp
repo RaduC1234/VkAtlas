@@ -93,6 +93,7 @@ namespace Atlas {
         AssetHandle normalMap = INVALID_ASSET_HANDLE;
         AssetHandle metallicRoughnessMap = INVALID_ASSET_HANDLE;
         AssetHandle ambientOcclusion = INVALID_ASSET_HANDLE;
+        bool alphaMasked{false};
         bool transparent{false};
     };
 

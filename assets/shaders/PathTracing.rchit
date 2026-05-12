@@ -31,7 +31,7 @@ struct ObjectData {
     uint  firstIndex;
     uint  indexCount;
     uint  firstVertex;
-    uint  pad;
+    uint  flags;
 };
 
 struct Light {
@@ -98,6 +98,35 @@ uint pcgHash(uint seed) {
 float randFloat(inout uint seed) {
     seed = pcgHash(seed);
     return float(seed) / float(0xFFFFFFFFu);
+}
+
+bool hasInvalid(float v) {
+    return isnan(v) || isinf(v);
+}
+
+bool hasInvalid(vec3 v) {
+    return any(isnan(v)) || any(isinf(v));
+}
+
+vec3 safeNormalize(vec3 v, vec3 fallback) {
+    float len2 = dot(v, v);
+    if (hasInvalid(v) || hasInvalid(len2) || len2 <= EPSILON * EPSILON) return fallback;
+    return v * inversesqrt(len2);
+}
+
+vec3 fallbackTangent(vec3 N) {
+    vec3 axis = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+    return safeNormalize(cross(axis, N), vec3(1.0, 0.0, 0.0));
+}
+
+vec3 sanitizeColor(vec3 color) {
+    if (hasInvalid(color)) return vec3(0.0);
+    return clamp(color, vec3(0.0), vec3(1.0e6));
+}
+
+vec3 offsetRayOrigin(vec3 position, vec3 geometricNormal, vec3 direction) {
+    float side = dot(direction, geometricNormal) >= 0.0 ? 1.0 : -1.0;
+    return position + geometricNormal * (0.001 * side);
 }
 
 // ---- BRDF ----
@@ -198,8 +227,14 @@ void main() {
     vec3 localPos = v0.position * bary.x + v1.position * bary.y + v2.position * bary.z;
     vec3 worldPos = (obj.modelMatrix * vec4(localPos, 1.0)).xyz;
 
-    vec3 localNormal = normalize(v0.normal * bary.x + v1.normal * bary.y + v2.normal * bary.z);
-    vec3 N           = normalize((obj.normalMatrix * vec4(localNormal, 0.0)).xyz);
+    vec3 worldEdge1 = (obj.modelMatrix * vec4(v1.position - v0.position, 0.0)).xyz;
+    vec3 worldEdge2 = (obj.modelMatrix * vec4(v2.position - v0.position, 0.0)).xyz;
+    vec3 geometricNormal = safeNormalize(cross(worldEdge1, worldEdge2), vec3(0.0, 1.0, 0.0));
+    if (dot(geometricNormal, -payload.direction) < 0.0) geometricNormal = -geometricNormal;
+
+    vec3 localNormal = v0.normal * bary.x + v1.normal * bary.y + v2.normal * bary.z;
+    vec3 N           = safeNormalize((obj.normalMatrix * vec4(localNormal, 0.0)).xyz, geometricNormal);
+    if (dot(N, geometricNormal) < 0.0) N = -N;
 
     vec2 uv = v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z;
 
@@ -219,17 +254,21 @@ void main() {
     // Normal map
     if (obj.textureIndices.y != 0u) {
         vec3 ts = texture(textures[nonuniformEXT(obj.textureIndices.y)], uv).rgb * 2.0 - 1.0;
-        vec3 T  = normalize(v0.tangent.xyz * bary.x + v1.tangent.xyz * bary.y + v2.tangent.xyz * bary.z);
-        T       = normalize((obj.modelMatrix * vec4(T, 0.0)).xyz);
-        T       = normalize(T - dot(T, N) * N);
-        vec3 B  = cross(N, T) * v0.tangent.w;
-        N       = normalize(mat3(T, B, N) * ts);
+        if (!hasInvalid(ts)) {
+            vec3 tangentLocal = v0.tangent.xyz * bary.x + v1.tangent.xyz * bary.y + v2.tangent.xyz * bary.z;
+            vec3 T = safeNormalize((obj.modelMatrix * vec4(tangentLocal, 0.0)).xyz, fallbackTangent(N));
+            T = safeNormalize(T - dot(T, N) * N, fallbackTangent(N));
+
+            float tangentSign = v0.tangent.w * bary.x + v1.tangent.w * bary.y + v2.tangent.w * bary.z;
+            tangentSign = tangentSign < 0.0 ? -1.0 : 1.0;
+            vec3 B = safeNormalize(cross(N, T) * tangentSign, fallbackTangent(N));
+
+            N = safeNormalize(mat3(T, B, N) * ts, N);
+            if (dot(N, geometricNormal) < 0.0) N = -N;
+        }
     }
 
-    // Flip normal if hit from back face
-    if (dot(N, -payload.direction) < 0.0) N = -N;
-
-    vec3 V  = -payload.direction;
+    vec3 V  = safeNormalize(-payload.direction, geometricNormal);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
     // ---- NEE — direct light sampling ----
@@ -283,19 +322,19 @@ void main() {
         }
 
         float NdotL = dot(N, L);
-        if (NdotL <= 0.0) continue;
+        if (NdotL <= 0.0 || dot(geometricNormal, L) <= 0.0) continue;
 
         // Shadow ray
         shadowPayload = true;
         traceRayEXT(tlas,
             gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
             0xFF, 0, 0, 1,              // hit group 1 = shadow, miss index 1 = shadow miss
-            worldPos + N * 0.001, 0.0, L, tMax, 1);
+            offsetRayOrigin(worldPos, geometricNormal, L), 0.0, L, tMax, 1);
 
         if (shadowPayload) continue;    // occluded
 
         float NdotV = max(dot(N, V), EPSILON);
-        vec3  H     = normalize(V + L);
+        vec3  H     = safeNormalize(V + L, N);
         float NdotH = max(dot(N, H), 0.0);
         float HdotV = max(dot(H, V), 0.0);
 
@@ -311,7 +350,7 @@ void main() {
         directLight  += (diffuse + specular) * radiance * NdotL;
     }
 
-    payload.radiance += payload.throughput * directLight;
+    payload.radiance = sanitizeColor(payload.radiance + payload.throughput * directLight);
 
     // ---- Indirect — sample next bounce direction ----
     float specularWeight = length(F_Schlick(max(dot(N, V), 0.0), F0));
@@ -325,7 +364,7 @@ void main() {
     if (randFloat(payload.seed) < specularWeight / totalWeight) {
         // GGX specular bounce
         vec3  H     = sampleGGX(vec2(randFloat(payload.seed), randFloat(payload.seed)), roughness, N);
-        nextDir     = reflect(-V, H);
+        nextDir     = safeNormalize(reflect(-V, H), N);
         float NdotL = max(dot(N, nextDir), 0.0);
         float NdotV = max(dot(N, V), EPSILON);
         float NdotH = max(dot(N, H), 0.0);
@@ -340,7 +379,7 @@ void main() {
         nextDir     = sampleCosineHemisphere(
                           vec2(randFloat(payload.seed), randFloat(payload.seed)), N);
         float NdotL = max(dot(N, nextDir), 0.0);
-        vec3  H     = normalize(V + nextDir);
+        vec3  H     = safeNormalize(V + nextDir, N);
         float HdotV = max(dot(H, V), 0.0);
         vec3  F     = F_Schlick(HdotV, F0);
         vec3  kD    = (1.0 - F) * (1.0 - metallic);
@@ -348,20 +387,27 @@ void main() {
         pdf         = diffuseWeight / totalWeight;
     }
 
-    if (dot(nextDir, N) <= 0.0 || pdf < EPSILON) {
+    if (hasInvalid(nextDir) || hasInvalid(brdfWeight) || hasInvalid(pdf) ||
+        dot(nextDir, N) <= 0.0 || dot(nextDir, geometricNormal) <= 0.0 || pdf < EPSILON) {
         payload.done = true;
         return;
     }
 
-    payload.throughput *= brdfWeight / pdf;
-    payload.origin      = worldPos + N * 0.001;
+    payload.throughput = sanitizeColor(payload.throughput * (brdfWeight / pdf));
+    payload.origin      = offsetRayOrigin(worldPos, geometricNormal, nextDir);
     payload.direction   = nextDir;
 
     // Russian roulette termination after bounce 2
-    float survivalProb = clamp(max(payload.throughput.r, max(payload.throughput.g, payload.throughput.b)), 0.05, 1.0);
+    float maxThroughput = max(payload.throughput.r, max(payload.throughput.g, payload.throughput.b));
+    if (hasInvalid(maxThroughput) || maxThroughput <= EPSILON) {
+        payload.done = true;
+        return;
+    }
+
+    float survivalProb = clamp(maxThroughput, 0.05, 1.0);
     if (randFloat(payload.seed) > survivalProb) {
         payload.done = true;
         return;
     }
-    payload.throughput /= survivalProb;
+    payload.throughput = sanitizeColor(payload.throughput / survivalProb);
 }

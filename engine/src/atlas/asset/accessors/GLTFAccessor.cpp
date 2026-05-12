@@ -140,6 +140,8 @@ namespace Atlas {
                         imgName.find("normal") != std::string::npos ||
                         imgName.find("nrm") != std::string::npos ||
                         imgName.find("norm") != std::string::npos ||
+                        imgName.ends_with("_n") ||
+                        imgName.ends_with("-n") ||
                         imgName.find("_n.") != std::string::npos ||
                         imgName.find("_n_") != std::string::npos;
 
@@ -295,7 +297,10 @@ namespace Atlas {
                         // Normal
                         if (hasNormal) {
                             auto nv = reinterpret_cast<const float *>(normBase + v * normStride);
-                            vert.normal = glm::vec3(nv[0], nv[1], nv[2]);
+                            vert.normal = glm::vec3(-nv[0], -nv[1], nv[2]);
+                            if (glm::dot(vert.normal, vert.normal) > 0.0f) {
+                                vert.normal = glm::normalize(vert.normal);
+                            }
                         } else {
                             vert.normal = glm::vec3(0.0f);
                         }
@@ -319,7 +324,11 @@ namespace Atlas {
                         // Tangent
                         if (hasTangent) {
                             auto tv = reinterpret_cast<const float *>(tangentBase + v * tangentStride);
-                            vert.tangent = glm::vec4(tv[0], tv[1], tv[2], tv[3]);
+                            glm::vec3 tangent{-tv[0], -tv[1], tv[2]};
+                            if (glm::dot(tangent, tangent) > 0.0f) {
+                                tangent = glm::normalize(tangent);
+                            }
+                            vert.tangent = glm::vec4(tangent, -tv[3]);
                         } else {
                             vert.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
                         }
@@ -478,6 +487,10 @@ namespace Atlas {
         glm::vec4 wPerspective;
         glm::decompose(worldTransform, wScale, wRotation, wTranslation, wSkew, wPerspective);
 
+        const auto toEngineDirection = [](const glm::vec3 &direction) {
+            return glm::normalize(glm::vec3(-direction.x, -direction.y, direction.z));
+        };
+
         if (node.mesh >= 0 && node.mesh < static_cast<int>(model.meshes.size())) {
             const tinygltf::Mesh &mesh = model.meshes[node.mesh];
 
@@ -519,8 +532,9 @@ namespace Atlas {
                             material.baseColor = glm::vec4(1.0f);
                         }
 
+                        material.alphaMasked = mat.alphaMode == "MASK";
                         material.transparent = mat.alphaMode == "BLEND" ||
-                                               mat.alphaMode == "MASK" ||
+                                               material.alphaMasked ||
                                                material.baseColor.a < 1.0f;
 
                         // Albedo texture
@@ -622,7 +636,7 @@ namespace Atlas {
             sn.parent = entt::null;
 
             auto &transform = registry.emplace<TransformComponent>(entity);
-            transform.translation = wTranslation * glm::vec3(1.0f, -1.0f, 1.0f);
+            transform.translation = wTranslation;
             transform.rotation    = glm::eulerAngles(wRotation);
             transform.scale       = wScale;
 
@@ -651,9 +665,10 @@ namespace Atlas {
             light.intensity = static_cast<float>(gltfLight.intensity);
             light.range = static_cast<float>(gltfLight.range);
 
+            // glTF punctual lights emit along local -Z. Convert that vector
+            // through the same 180-degree Z turn used for imported geometry.
             constexpr glm::vec3 defaultDir = glm::vec3{0.0f, 0.0f, -1.0f};
-            light.direction = glm::normalize(wRotation * defaultDir);
-            light.direction = -light.direction;
+            light.direction = toEngineDirection(wRotation * defaultDir);
 
             outEntities.push_back(entity);
 
@@ -718,9 +733,9 @@ namespace Atlas {
                                         );
                                     }
                                 }
-                                light.direction = glm::normalize(wRotation * localDirection);
-                                light.rectRight = glm::normalize(wRotation * glm::vec3(1.0f, 0.0f, 0.0f));
-                                light.rectUp = glm::normalize(wRotation * glm::vec3(0.0f, 1.0f, 0.0f));
+                                light.direction = toEngineDirection(wRotation * localDirection);
+                                light.rectRight = toEngineDirection(wRotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                                light.rectUp = toEngineDirection(wRotation * glm::vec3(0.0f, 1.0f, 0.0f));
 
                                 // color
                                 light.color = glm::vec3(1.0f);

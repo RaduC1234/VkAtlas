@@ -6,17 +6,11 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <array>
-#include <cmath>
-#include <cstring>
 
 #include "core/Log.hpp"
 #include "entity/Object.hpp"
 
 namespace Atlas {
-    // =========================================================================
-    // GPU-side structs — must match shader exactly
-    // =========================================================================
-
     struct PTObjectData {
         glm::mat4 modelMatrix;
         glm::mat4 normalMatrix;
@@ -25,7 +19,7 @@ namespace Atlas {
         uint32_t firstIndex;
         uint32_t indexCount;
         uint32_t firstVertex;
-        uint32_t pad;
+        uint32_t flags;
     };
 
     struct PTLight {
@@ -50,9 +44,7 @@ namespace Atlas {
         uint32_t lightCount;
     };
 
-    // =========================================================================
-    // Construction / destruction
-    // =========================================================================
+    constexpr uint32_t MATERIAL_FLAG_ALPHA_MASKED = 1u << 0u;
 
     PathTracingStage::PathTracingStage(Device &device, const DescriptorSetLayout &globalSetLayout) : IRenderStage(Queue::GRAPHICS), device(device), globalSetLayout(globalSetLayout) {
         defaultWhiteHandle = AssetManager::get().createDefaultWhiteTexture();
@@ -106,10 +98,6 @@ namespace Atlas {
             vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
     }
 
-    // =========================================================================
-    // IRenderStage
-    // =========================================================================
-
     void PathTracingStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
         out.push_back({
             .name = "post_color",
@@ -120,7 +108,6 @@ namespace Atlas {
     }
 
     void PathTracingStage::getDeclaredInputs(std::vector<std::string> &out) const {
-        // No graph inputs — all data comes from ECS + owned GPU buffers
     }
 
     void PathTracingStage::onResourcesCreated(const Context &ctx) {
@@ -139,10 +126,6 @@ namespace Atlas {
         updateDescriptorSet();
     }
 
-    // =========================================================================
-    // onSceneChanged — build TLAS + upload scene data
-    // =========================================================================
-
     void PathTracingStage::onUpdate(entt::registry &registry) {
         cameraConstructConnection = registry.on_construct<CameraComponent>().connect<&PathTracingStage::onCameraUpdated>(*this);
         cameraUpdateConnection = registry.on_update<CameraComponent>().connect<&PathTracingStage::onCameraUpdated>(*this);
@@ -152,7 +135,6 @@ namespace Atlas {
         std::vector<PTObjectData> cpuObjects;
         std::vector<PTLight> cpuLights;
 
-        // Packed scene geometry — rebuilt every call
         std::vector<Mesh::Vertex> allVertices;
         std::vector<uint32_t> allIndices;
 
@@ -160,7 +142,11 @@ namespace Atlas {
         cpuObjects.reserve(MAX_OBJECTS);
         cpuLights.reserve(MAX_LIGHTS);
 
-        // ---- Meshes --------------------------------------------------------
+        const auto safeNormalize = [](const glm::vec3 &v, const glm::vec3 &fallback) {
+            const float len2 = glm::dot(v, v);
+            return len2 > 1e-8f ? v * glm::inversesqrt(len2) : fallback;
+        };
+
         for (auto entity: registry.view<TransformComponent, ModelComponent, MaterialComponent>()) {
             if (cpuObjects.size() >= MAX_OBJECTS) {
                 AT_WARN("PathTracingStage: MAX_OBJECTS reached");
@@ -171,7 +157,7 @@ namespace Atlas {
             auto &model = registry.get<ModelComponent>(entity);
             auto &material = registry.get<MaterialComponent>(entity);
 
-            if (material.transparent || material.baseColor.a < 1.0f) continue;
+            if (material.transparent && !material.alphaMasked) continue;
 
             if (model.meshHandle == INVALID_ASSET_HANDLE) continue;
             const auto mesh = AssetManager::get().getMesh(model.meshHandle);
@@ -180,7 +166,6 @@ namespace Atlas {
             const uint32_t objectIndex = static_cast<uint32_t>(cpuObjects.size());
             const glm::mat4 m = transform.mat4();
 
-            // TLAS instance — row-major 3x4 transform
             const glm::mat4 mT = glm::transpose(m);
             VkAccelerationStructureInstanceKHR instance{};
             memcpy(&instance.transform, &mT, sizeof(instance.transform));
@@ -191,37 +176,45 @@ namespace Atlas {
             instance.accelerationStructureReference = mesh->accelerationStructure().deviceAddress();
             tlasInstances.push_back(instance);
 
-            // Record where this mesh lands in the packed buffers
-            const uint32_t firstVertex = static_cast<uint32_t>(allVertices.size());
-            const uint32_t firstIndex = static_cast<uint32_t>(allIndices.size());
+            const auto firstVertex = static_cast<uint32_t>(allVertices.size());
+            const auto firstIndex = static_cast<uint32_t>(allIndices.size());
 
-            for (const auto &v: mesh->getVertices()) allVertices.push_back(v);
-            for (const auto i: mesh->getIndices()) allIndices.push_back(i);
+            for (const auto &v: mesh->getVertices()) {
+                allVertices.push_back(v);
+            }
+            for (const auto i: mesh->getIndices()) {
+                allIndices.push_back(i);
+            }
 
-            // Object data for hit shader
             cpuObjects.push_back({
                 .modelMatrix = m,
                 .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
                 .textureIndices = glm::uvec4(
                     registerTexture(material.albedoTexture != INVALID_ASSET_HANDLE ? material.albedoTexture : defaultWhiteHandle),
-                    registerTexture(material.normalMap != INVALID_ASSET_HANDLE ? material.normalMap : defaultWhiteHandle),
-                    registerTexture(material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? material.metallicRoughnessMap : defaultWhiteHandle),
-                    registerTexture(material.ambientOcclusion != INVALID_ASSET_HANDLE ? material.ambientOcclusion : defaultWhiteHandle)
+                    material.normalMap != INVALID_ASSET_HANDLE ? registerTexture(material.normalMap) : 0u,
+                    material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? registerTexture(material.metallicRoughnessMap) : 0u,
+                    material.ambientOcclusion != INVALID_ASSET_HANDLE ? registerTexture(material.ambientOcclusion) : 0u
                 ),
                 .baseColor = material.baseColor,
                 .firstIndex = firstIndex,
                 .indexCount = static_cast<uint32_t>(mesh->getIndices().size()),
                 .firstVertex = firstVertex,
-                .pad = 0,
+                .flags = material.alphaMasked ? MATERIAL_FLAG_ALPHA_MASKED : 0u,
             });
         }
 
-        // ---- Lights --------------------------------------------------------
         for (auto entity: registry.view<TransformComponent, LightComponent>()) {
-            if (cpuLights.size() >= MAX_LIGHTS) break;
+            if (cpuLights.size() >= MAX_LIGHTS) {
+                AT_WARN("PathTracingStage: MAX_LIGHTS reached");
+                break;
+            }
 
             auto &transform = registry.get<TransformComponent>(entity);
             auto &light = registry.get<LightComponent>(entity);
+
+            const glm::vec3 direction = safeNormalize(light.direction, glm::vec3(0.0f, -1.0f, 0.0f));
+            const glm::vec3 rectRight = safeNormalize(light.rectRight, glm::vec3(1.0f, 0.0f, 0.0f));
+            const glm::vec3 rectUp = safeNormalize(light.rectUp, glm::vec3(0.0f, 1.0f, 0.0f));
 
             cpuLights.push_back({
                 .type = static_cast<uint32_t>(light.type),
@@ -232,19 +225,20 @@ namespace Atlas {
                 .outerConeAngle = light.outerConeAngle,
                 .position = transform.translation,
                 .width = light.width,
-                .direction = light.direction,
+                .direction = direction,
                 .height = light.height,
-                .rectRight = light.rectRight,
-                .rectUp = light.rectUp,
+                .rectRight = rectRight,
+                .rectUp = rectUp,
             });
         }
 
         objectCount = static_cast<uint32_t>(cpuObjects.size());
         lightCount = static_cast<uint32_t>(cpuLights.size());
 
-        // ---- Build TLAS --------------------------------------------------------
-        if (!tlasInstances.empty())
+
+        if (!tlasInstances.empty()) {
             tlas_ = AccelerationStructure::buildTLAS(device, tlasInstances);
+        }
 
         // ---- Upload packed geometry -----------------------------------------
         if (!allVertices.empty()) {
@@ -281,28 +275,25 @@ namespace Atlas {
             GPUBuffer::copy(device, iStaging.get(), indexBuffer->get(), iSize, 0, 0);
         }
 
-        // ---- Upload scene data ------------------------------------------------
-        if (!cpuObjects.empty())
+        if (!cpuObjects.empty()) {
+            // upload scene data
             objectBuffer->uploadData(cpuObjects.data(), cpuObjects.size() * sizeof(PTObjectData));
+        }
 
-        if (!cpuLights.empty())
+        if (!cpuLights.empty()) {
             lightBuffer->uploadData(cpuLights.data(), cpuLights.size() * sizeof(PTLight));
+        }
 
-        // Descriptor set needs to be updated with the new TLAS
-        updateDescriptorSet();
-
-        // Reset accumulation on scene change
+        updateDescriptorSet(); // Descriptor set needs to be updated with the new TLAS
         reset();
 
         AT_INFO("PathTracingStage: {} objects, {} lights", objectCount, lightCount);
     }
 
-    // =========================================================================
-    // record
-    // =========================================================================
-
     void PathTracingStage::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
-        if (!active || !tlas_.isValid() || !outputImage || !accumulationImage) return;
+        if (!active || !tlas_.isValid() || !outputImage || !accumulationImage) {
+            return;
+        }
 
         // Transition display + accumulation images to GENERAL every frame.
         // On sample 0 their contents are discarded; subsequent samples preserve
@@ -312,13 +303,9 @@ namespace Atlas {
 
             std::array<VkImageMemoryBarrier, 2> barriers{};
             barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barriers[0].oldLayout = preserveAccumulation
-                                        ? VK_IMAGE_LAYOUT_GENERAL
-                                        : VK_IMAGE_LAYOUT_UNDEFINED;
+            barriers[0].oldLayout = preserveAccumulation ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
             barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-            barriers[0].srcAccessMask = preserveAccumulation
-                                            ? VK_ACCESS_TRANSFER_READ_BIT
-                                            : 0;
+            barriers[0].srcAccessMask = preserveAccumulation ? VK_ACCESS_TRANSFER_READ_BIT : 0;
             barriers[0].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
             barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -326,9 +313,7 @@ namespace Atlas {
             barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
             barriers[1] = barriers[0];
-            barriers[1].srcAccessMask = preserveAccumulation
-                                            ? VK_ACCESS_SHADER_WRITE_BIT
-                                            : 0;
+            barriers[1].srcAccessMask = preserveAccumulation ? VK_ACCESS_SHADER_WRITE_BIT : 0;
             barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
             barriers[1].image = accumulationImage->image();
 
@@ -343,7 +328,7 @@ namespace Atlas {
 
         pipeline->bind(cmd);
 
-        const std::array<VkDescriptorSet, 2> sets = {
+        const std::array sets = {
             globalSet,
             ptSet,
         };
@@ -352,7 +337,7 @@ namespace Atlas {
                                 VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
                                 pipelineLayout,
                                 0,
-                                static_cast<uint32_t>(sets.size()), sets.data(),
+                                sets.size(), sets.data(),
                                 0, nullptr);
 
         const PushConstants pc{
@@ -363,66 +348,44 @@ namespace Atlas {
         };
 
         vkCmdPushConstants(cmd, pipelineLayout,
-                           VK_SHADER_STAGE_RAYGEN_BIT_KHR
-                           | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
-                           | VK_SHADER_STAGE_MISS_BIT_KHR,
+                           VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
                            0, sizeof(PushConstants), &pc);
 
         const auto extent = outputImage->extent();
 
-        vkCmdTraceRaysKHR(cmd,
-                          &sbtRaygen,
-                          &sbtMiss,
-                          &sbtHit,
-                          &sbtCallable,
-                          extent.width, extent.height, 1);
+        vkCmdTraceRaysKHR(cmd, &sbtRaygen, &sbtMiss, &sbtHit, &sbtCallable, extent.width, extent.height, 1);
 
         currentSample++;
         frameIndex++;
     }
-
-    // =========================================================================
-    // reset
-    // =========================================================================
 
     void PathTracingStage::reset() {
         currentSample = 0;
         active = true;
     }
 
-    // =========================================================================
-    // Private — setup
-    // =========================================================================
-
     void PathTracingStage::createDescriptors() {
         // ---- PT set (set 1) — must match PathTracing.rchit exactly ----
         // binding 0 — outputImage   (storage image,       raygen)
         // binding 1 — tlas          (accel struct,        raygen + chit)
-        // binding 2 — VertexBuffer  (storage buffer,      chit)
-        // binding 3 — IndexBuffer   (storage buffer,      chit)
-        // binding 4 — ObjectBuffer  (storage buffer,      chit)
+        // binding 2 — VertexBuffer  (storage buffer,      chit + ahit)
+        // binding 3 — IndexBuffer   (storage buffer,      chit + ahit)
+        // binding 4 — ObjectBuffer  (storage buffer,      chit + ahit)
         // binding 5 — LightBuffer   (storage buffer,      chit)
-        // binding 6 — textures[]    (combined sampler[],  chit, bindless)
+        // binding 6 — textures[]    (combined sampler[],  chit + ahit, bindless)
         // binding 7 — accumulation  (storage image,       raygen)
+        constexpr VkShaderStageFlags hitStages = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+
         ptSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                            VK_SHADER_STAGE_RAYGEN_BIT_KHR, 1)
-                .addBinding(1, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
-                            VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
-                .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                            VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
-                .addBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                            VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
-                .addBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                            VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
-                .addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-                            VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
-                .addBinding(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                            VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, MAX_TEXTURES)
-                .addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
-                            VK_SHADER_STAGE_RAYGEN_BIT_KHR, 1)
-                .setBindingFlags(6, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT
-                                    | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 1)
+                .addBinding(1, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
+                .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages, 1)
+                .addBinding(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages, 1)
+                .addBinding(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, hitStages, 1)
+                .addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
+                .addBinding(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, hitStages, MAX_TEXTURES)
+                .addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 1)
+                .setBindingFlags(6, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
                 .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
                 .build();
 
@@ -438,20 +401,17 @@ namespace Atlas {
         if (!ptPool->allocateDescriptor(ptSetLayout->getDescriptorSetLayout(), ptSet))
             throw std::runtime_error("PathTracingStage: failed to allocate PT descriptor set");
 
-        // textures now live at ptSet binding 6 — alias so registerTexture() still works
         bindlessTextureSet = ptSet;
     }
 
     void PathTracingStage::createPipelineLayout() {
         const std::vector<VkDescriptorSetLayout> layouts = {
-            globalSetLayout.getDescriptorSetLayout(), // set 0 — same handle the global set was allocated from
+            globalSetLayout.getDescriptorSetLayout(),
             ptSetLayout->getDescriptorSetLayout(), // set 1 — all PT resources
         };
 
         VkPushConstantRange pcRange{};
-        pcRange.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR
-                             | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
-                             | VK_SHADER_STAGE_MISS_BIT_KHR;
+        pcRange.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR;
         pcRange.offset = 0;
         pcRange.size = sizeof(PushConstants);
 
@@ -476,7 +436,7 @@ namespace Atlas {
             "shaders/PathTracing.rgen.spv",
             "shaders/PathTracing.rmiss.spv",
             "shaders/PathTracing.rchit.spv",
-            "", // no any-hit
+            "shaders/PathTracing.rahit.spv",
             "shaders/PathTracingShadow.rmiss.spv",
             configInfo
         );
@@ -492,7 +452,6 @@ namespace Atlas {
             throw std::runtime_error("PathTracingStage: expected 4 ray tracing shader groups");
         }
 
-        // Each handle is padded to handleAlignment, each region is padded to baseAlignment
         const uint32_t handleSizeAligned = alignUp(handleSize, handleAlignment);
 
         // Regions:
@@ -504,39 +463,31 @@ namespace Atlas {
         const uint32_t hitSize = alignUp(handleSizeAligned, baseAlignment);
         const uint32_t sbtSize = raygenSize + missSize + hitSize;
 
-        // Fetch raw handles from pipeline
         const uint32_t dataSize = groupCount * handleSize;
         std::vector<uint8_t> handles(dataSize);
         if (vkGetRayTracingShaderGroupHandlesKHR(device.device(), pipeline->pipeline(), 0, groupCount, dataSize, handles.data()) != VK_SUCCESS) {
             throw std::runtime_error("PathTracingStage: failed to get shader group handles");
         }
 
-        // Staging buffer — host-visible, write the aligned SBT data into it
-        GPUBuffer stagingBuffer(
-            device,
-            sbtSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_AUTO,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-        );
+        GPUBuffer stagingBuffer = GPUBuffer::simple(device)
+                .setSize(sbtSize)
+                .setUsage(VK_BUFFER_USAGE_TRANSFER_SRC_BIT)
+                .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
+                .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT)
+                .build();
         stagingBuffer.map();
 
         uint8_t *pData = static_cast<uint8_t *>(stagingBuffer.getMapped());
         std::memset(pData, 0, sbtSize);
-        // raygen — group 0
-        memcpy(pData, handles.data() + 0 * handleSize, handleSize);
-        // miss — groups 1 and 2
-        memcpy(pData + raygenSize, handles.data() + 1 * handleSize, handleSize);
-        memcpy(pData + raygenSize + handleSizeAligned, handles.data() + 2 * handleSize, handleSize);
-        // hit — group 3
-        memcpy(pData + raygenSize + missSize, handles.data() + 3 * handleSize, handleSize);
+        std::memcpy(pData, handles.data() + 0 * handleSize, handleSize); // raygen — group 0
+        std::memcpy(pData + raygenSize, handles.data() + 1 * handleSize, handleSize); // miss — groups 1 and 2
+        std::memcpy(pData + raygenSize + handleSizeAligned, handles.data() + 2 * handleSize, handleSize);
+        std::memcpy(pData + raygenSize + missSize, handles.data() + 3 * handleSize, handleSize); // hit — group 3
 
         stagingBuffer.flush(sbtSize);
         stagingBuffer.unmap();
 
-        // Device-local SBT buffer — must have SHADER_DEVICE_ADDRESS_BIT for vkGetBufferDeviceAddress
-        sbtBuffer = std::make_unique<GPUBuffer>(
-            GPUBuffer::simple(device)
+        sbtBuffer = std::make_unique<GPUBuffer>(GPUBuffer::simple(device)
             .setSize(sbtSize)
             .setUsage(VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
@@ -545,14 +496,12 @@ namespace Atlas {
             .build()
         );
 
-        // Copy staging -> device-local via a one-time command buffer
         VkCommandBuffer cmd = device.beginSingleTimeCommands();
         VkBufferCopy region{};
         region.size = sbtSize;
         vkCmdCopyBuffer(cmd, stagingBuffer.get(), sbtBuffer->get(), 1, &region);
         device.endSingleTimeCommands(cmd);
 
-        // Build device address regions
         VkBufferDeviceAddressInfo addrInfo{};
         addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
         addrInfo.buffer = sbtBuffer->get();
@@ -565,7 +514,9 @@ namespace Atlas {
     }
 
     void PathTracingStage::updateDescriptorSet() {
-        if (!outputImage || !accumulationImage || !tlas_.isValid()) return;
+        if (!outputImage || !accumulationImage || !tlas_.isValid()) {
+            return;
+        }
 
         VkDescriptorImageInfo imageInfo{};
         imageInfo.imageView = outputImage->view(0);
