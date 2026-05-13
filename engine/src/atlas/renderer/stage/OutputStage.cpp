@@ -30,12 +30,11 @@ namespace Atlas {
         postColorSource = &ctx.resources.at("post_color").get().asImage();
 
         auto layoutIt = ctx.finalLayouts.find("post_color");
-        auto writerIt = ctx.lastWrittenBy.find("post_color");
         if (layoutIt != ctx.finalLayouts.end()) {
             sourceLayout = layoutIt->second;
-            sourceIsCompute = writerIt != ctx.lastWrittenBy.end() &&
-                              writerIt->second == Queue::COMPUTE;
-            restoreLayout = sourceIsCompute ? sourceLayout : VK_IMAGE_LAYOUT_UNDEFINED;
+            restoreLayout = sourceLayout == VK_IMAGE_LAYOUT_GENERAL
+                                ? sourceLayout
+                                : VK_IMAGE_LAYOUT_UNDEFINED;
         }
 
         if (!isImGuiTarget()) return;
@@ -51,7 +50,7 @@ namespace Atlas {
         viewportTexture = ImGui_ImplVulkan_AddTexture(
             viewportSampler,
             postColorSource->view(0),
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            sourceLayout
         );
     }
 
@@ -66,12 +65,14 @@ namespace Atlas {
     void OutputStage::recordToSwapChain(VkCommandBuffer cmd) {
         VkImage swapImage = renderer.getCurrentSwapchainImage();
 
-        const VkPipelineStageFlags srcStage = sourceIsCompute
-                                                  ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-                                                  : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        const VkAccessFlags srcAccess = sourceIsCompute
-                                            ? VK_ACCESS_SHADER_WRITE_BIT
-                                            : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        // sourceLayout is GENERAL for ray tracing / compute writers.
+        // Use the broadest safe srcStage — covers compute, ray tracing, and raster.
+        const VkPipelineStageFlags srcStage = (sourceLayout == VK_IMAGE_LAYOUT_GENERAL)
+            ? (VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+            : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        const VkAccessFlags srcAccess = (sourceLayout == VK_IMAGE_LAYOUT_GENERAL)
+            ? VK_ACCESS_SHADER_WRITE_BIT
+            : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
         VkImageMemoryBarrier pre[2]{};
         pre[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -140,7 +141,7 @@ namespace Atlas {
             post[postCount].image = postColorSource->image();
             post[postCount].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             ++postCount;
-            restoreDst |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            restoreDst |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
         }
 
         vkCmdPipelineBarrier(cmd,
@@ -151,14 +152,16 @@ namespace Atlas {
     void OutputStage::recordToViewport(VkCommandBuffer cmd) {
         VkImage swapImage = renderer.getCurrentSwapchainImage();
 
-        const VkPipelineStageFlags srcStage = sourceIsCompute
-                                                  ? VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+        const bool sourceIsShaderWrite = sourceLayout == VK_IMAGE_LAYOUT_GENERAL;
+        const VkPipelineStageFlags srcStage = sourceIsShaderWrite
+                                                  ? (VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
                                                   : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        const VkAccessFlags srcAccess = sourceIsCompute
+        const VkAccessFlags srcAccess = sourceIsShaderWrite
                                             ? VK_ACCESS_SHADER_WRITE_BIT
                                             : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-        // 1. post_color → SHADER_READ_ONLY so ImGui can sample it this frame
+        // 1. Make post_color visible to ImGui in the descriptor layout registered
+        //    with ImGui_ImplVulkan_AddTexture.
         // 2. swapchain  UNDEFINED → PRESENT_SRC_KHR so the ImGui render pass
         //    (initialLayout = PRESENT_SRC_KHR, LOAD_OP_LOAD) finds a valid layout.
         //    We clear it to black via the render pass clearValue, so discarding
@@ -167,7 +170,7 @@ namespace Atlas {
 
         barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barriers[0].oldLayout = sourceLayout;
-        barriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barriers[0].newLayout = sourceLayout;
         barriers[0].srcAccessMask = srcAccess;
         barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -190,25 +193,6 @@ namespace Atlas {
                              srcStage | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                              0, 0, nullptr, 0, nullptr, 2, barriers);
-
-        // Restore post_color for the next frame (compute writers only — same logic as swapchain path)
-        if (restoreLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
-            VkImageMemoryBarrier restore{};
-            restore.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            restore.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            restore.newLayout = restoreLayout;
-            restore.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            restore.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-            restore.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            restore.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-            restore.image = postColorSource->image();
-            restore.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-            vkCmdPipelineBarrier(cmd,
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 0, 0, nullptr, 0, nullptr, 1, &restore);
-        }
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin("Viewport");

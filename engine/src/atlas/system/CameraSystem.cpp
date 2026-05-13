@@ -49,7 +49,6 @@ namespace Atlas {
 
         for (auto entity: view) {
             auto &tf = view.get<TransformComponent>(entity);
-            auto &camComp = view.get<CameraComponent>(entity);
 
             if (glm::dot(rotationDt, rotationDt) > std::numeric_limits<float>::epsilon()) {
                 tf.rotation += lookSpeed * deltaTime * rotationDt;
@@ -90,8 +89,10 @@ namespace Atlas {
                 tf.translation += moveSpeed * deltaTime * glm::normalize(dir);
             }
 
-            camComp.camera.setViewYXZ(tf.translation, tf.rotation);
-            camComp.camera.setPerspectiveProjection(glm::radians(50.0f), screenAspect, 0.1f, 100.0f);
+            registry.patch<CameraComponent>(entity, [&](auto &camComp) {
+                camComp.camera.setViewYXZ(tf.translation, tf.rotation);
+                camComp.camera.setPerspectiveProjection(glm::radians(50.0f), screenAspect, 0.1f, 100.0f);
+            });
         }
     }
 }

@@ -100,10 +100,12 @@ namespace Atlas {
 
         bool build(VkDescriptorSet &set);
         void overwrite(VkDescriptorSet &set);
+        DescriptorWriter &writeAccelerationStructure(uint32_t binding, VkWriteDescriptorSetAccelerationStructureKHR *asInfo);
 
     private:
         DescriptorSetLayout &setLayout;
         DescriptorPool &pool;
         std::vector<VkWriteDescriptorSet> writes;
+        std::vector<VkWriteDescriptorSetAccelerationStructureKHR> asInfos;
     };
 }

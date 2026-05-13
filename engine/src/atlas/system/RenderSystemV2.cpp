@@ -1,35 +1,58 @@
 #include "RenderSystemV2.hpp"
 
+#include <ranges>
+#include <unordered_set>
+
 #include "core/Log.hpp"
 #include "renderer/stage/GeometryStage.hpp"
 #include "renderer/stage/OutputStage.hpp"
+#include "renderer/stage/PathTracingStage.hpp"
 #include "renderer/stage/PostProcessingStage.hpp"
 
 namespace Atlas {
     RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer) : device(device) {
         createGlobalUbo();
 
-        this->renderGraph = std::make_unique<RenderGraph>(RenderGraph::Builder(device)
-                .addStage<GeometryStage>(device, *globalSetLayout)
-                .addStage<PostProcessPass>(device, *globalSetLayout)
-                .addStage<OutputStage>(device, renderer)
-                .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
-                .build(RenderGraph::Mode::MultiPass));
+        auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
+            .addStage<GeometryStage>(device, *globalSetLayout)
+            .addStage<PostProcessPass>(device, *globalSetLayout)
+            .addStage<OutputStage>(device, renderer)
+            .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
+            .build(RenderGraph::Mode::MultiPass));
+
+        auto rayTracingGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
+            .addStage<PathTracingStage>(device, *globalSetLayout)
+            .addStage<OutputStage>(device, renderer)
+            .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
+            .build(RenderGraph::Mode::MultiPass));
+
+        renderGraphs[ViewMode::LIT] = renderGraphs[ViewMode::UNLIT] = renderGraphs[ViewMode::LIGHTING_ONLY] = rasterGraph;
+        renderGraphs[ViewMode::PATH_TRACING] = std::move(rayTracingGraph);
     }
+
 
     void RenderSystemV2::build(entt::registry &registry) {
-        renderGraph->build(registry);
+        std::unordered_set<RenderGraph *> built;
+
+        for (auto &graph: renderGraphs | std::views::values) {
+            if (built.insert(graph.get()).second) {
+                graph->build(registry);
+            }
+        }
     }
 
-    void RenderSystemV2::render(const FrameContext frameContext, const GlobalUbo &globalUbo) {
+    void RenderSystemV2::render(const FrameContext frameContext,const Camera::Data &cameraData,const DebugData &debugData) const {
+        GlobalUbo globalUbo{};
+        globalUbo.cameraData = cameraData;
+        globalUbo.debugData = debugData;
         globalUboBuffers[frameContext.index]->uploadData(&globalUbo, sizeof(GlobalUbo));
 
-        renderGraph->render(frameContext, globalDescriptorSets[frameContext.index]);
+        renderGraphs.at(debugData.viewMode)->render(frameContext, globalDescriptorSets[frameContext.index]);
     }
 
     void RenderSystemV2::createGlobalUbo() {
         globalSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL)
                 .build();
 
         globalPool = DescriptorPool::Builder(device)

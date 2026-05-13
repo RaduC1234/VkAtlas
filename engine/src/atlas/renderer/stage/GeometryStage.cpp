@@ -45,7 +45,7 @@ namespace Atlas {
         createPipelines();
     }
 
-    void GeometryStage::onSceneChanged(entt::registry &registry) {
+    void GeometryStage::onUpdate(entt::registry &registry) {
         opaqueObjectData.clear();
         lights.clear();
 

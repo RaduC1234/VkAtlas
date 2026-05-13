@@ -14,9 +14,6 @@ namespace Atlas {
     GLTFAccessor::GLTFAccessor(ExecutorService &service) : executor(service) {
     }
 
-    // =========================================================================
-    // importAsset
-    // =========================================================================
     std::vector<entt::entity> GLTFAccessor::importAsset(
         const std::string &path,
         entt::registry &registry,
@@ -53,15 +50,11 @@ namespace Atlas {
 
         AT_INFO("Loading glTF file: {} ({} meshes, {} images)", path, model.meshes.size(), model.images.size());
 
-        // Thread-safe containers for results
         std::mutex handleMutex;
         std::vector<AssetHandle> imageHandles(model.images.size(), INVALID_ASSET_HANDLE);
 
         AT_INFO("Loading assets...");
 
-        // ========================================================================
-        // STEP 1: Load all images in parallel
-        // ========================================================================
         std::vector<std::future<void> > imageFutures;
         imageFutures.reserve(model.images.size());
 
@@ -147,6 +140,8 @@ namespace Atlas {
                         imgName.find("normal") != std::string::npos ||
                         imgName.find("nrm") != std::string::npos ||
                         imgName.find("norm") != std::string::npos ||
+                        imgName.ends_with("_n") ||
+                        imgName.ends_with("-n") ||
                         imgName.find("_n.") != std::string::npos ||
                         imgName.find("_n_") != std::string::npos;
 
@@ -302,7 +297,10 @@ namespace Atlas {
                         // Normal
                         if (hasNormal) {
                             auto nv = reinterpret_cast<const float *>(normBase + v * normStride);
-                            vert.normal = glm::vec3(nv[0], nv[1], nv[2]);
+                            vert.normal = glm::vec3(-nv[0], -nv[1], nv[2]);
+                            if (glm::dot(vert.normal, vert.normal) > 0.0f) {
+                                vert.normal = glm::normalize(vert.normal);
+                            }
                         } else {
                             vert.normal = glm::vec3(0.0f);
                         }
@@ -326,7 +324,11 @@ namespace Atlas {
                         // Tangent
                         if (hasTangent) {
                             auto tv = reinterpret_cast<const float *>(tangentBase + v * tangentStride);
-                            vert.tangent = glm::vec4(tv[0], tv[1], tv[2], tv[3]);
+                            glm::vec3 tangent{-tv[0], -tv[1], tv[2]};
+                            if (glm::dot(tangent, tangent) > 0.0f) {
+                                tangent = glm::normalize(tangent);
+                            }
+                            vert.tangent = glm::vec4(tangent, -tv[3]);
                         } else {
                             vert.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
                         }
@@ -485,6 +487,10 @@ namespace Atlas {
         glm::vec4 wPerspective;
         glm::decompose(worldTransform, wScale, wRotation, wTranslation, wSkew, wPerspective);
 
+        const auto toEngineDirection = [](const glm::vec3 &direction) {
+            return glm::normalize(glm::vec3(-direction.x, -direction.y, direction.z));
+        };
+
         if (node.mesh >= 0 && node.mesh < static_cast<int>(model.meshes.size())) {
             const tinygltf::Mesh &mesh = model.meshes[node.mesh];
 
@@ -525,6 +531,11 @@ namespace Atlas {
                         } else {
                             material.baseColor = glm::vec4(1.0f);
                         }
+
+                        material.alphaMasked = mat.alphaMode == "MASK";
+                        material.transparent = mat.alphaMode == "BLEND" ||
+                                               material.alphaMasked ||
+                                               material.baseColor.a < 1.0f;
 
                         // Albedo texture
                         if (pbr.baseColorTexture.index >= 0) {
@@ -625,7 +636,7 @@ namespace Atlas {
             sn.parent = entt::null;
 
             auto &transform = registry.emplace<TransformComponent>(entity);
-            transform.translation = wTranslation * glm::vec3(1.0f, -1.0f, 1.0f);
+            transform.translation = wTranslation;
             transform.rotation    = glm::eulerAngles(wRotation);
             transform.scale       = wScale;
 
@@ -654,9 +665,10 @@ namespace Atlas {
             light.intensity = static_cast<float>(gltfLight.intensity);
             light.range = static_cast<float>(gltfLight.range);
 
+            // glTF punctual lights emit along local -Z. Convert that vector
+            // through the same 180-degree Z turn used for imported geometry.
             constexpr glm::vec3 defaultDir = glm::vec3{0.0f, 0.0f, -1.0f};
-            light.direction = glm::normalize(wRotation * defaultDir);
-            light.direction = -light.direction;
+            light.direction = toEngineDirection(wRotation * defaultDir);
 
             outEntities.push_back(entity);
 
@@ -693,7 +705,7 @@ namespace Atlas {
                                 sn.parent = entt::null;
 
                                 auto &transform = registry.emplace<TransformComponent>(entity);
-                                transform.translation = wTranslation * glm::vec3(1.0f, -1.0f, 1.0f);
+                                transform.translation = wTranslation;
                                 transform.rotation    = glm::eulerAngles(wRotation);
                                 transform.scale       = wScale;
 
@@ -708,9 +720,22 @@ namespace Atlas {
                                     light.type = LightType::RECT;
                                 }
 
-                                constexpr glm::vec3 defaultDir = glm::vec3{0.0f, 0.0f, -1.0f};
-                                light.direction   = glm::normalize(wRotation * defaultDir);
-                                light.direction.y = -light.direction.y;
+                                // The Unreal exporter inserts the light child node rotation used by
+                                // glTF punctual lights, so the rect emitter plane is local X/Y here.
+                                glm::vec3 localDirection{0.0f, 0.0f, -1.0f};
+                                if (lobj.Has("direction") && lobj.Get("direction").IsArray()) {
+                                    const auto &darr = lobj.Get("direction").Get<tinygltf::Value::Array>();
+                                    if (darr.size() >= 3 && darr[0].IsNumber() && darr[1].IsNumber() && darr[2].IsNumber()) {
+                                        localDirection = glm::vec3(
+                                            static_cast<float>(darr[0].Get<double>()),
+                                            static_cast<float>(darr[1].Get<double>()),
+                                            static_cast<float>(darr[2].Get<double>())
+                                        );
+                                    }
+                                }
+                                light.direction = toEngineDirection(wRotation * localDirection);
+                                light.rectRight = toEngineDirection(wRotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                                light.rectUp = toEngineDirection(wRotation * glm::vec3(0.0f, 1.0f, 0.0f));
 
                                 // color
                                 light.color = glm::vec3(1.0f);

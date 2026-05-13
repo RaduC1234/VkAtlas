@@ -1,5 +1,8 @@
 #include "SwapChain.hpp"
 
+#include <stdexcept>
+
+#include "core/Log.hpp"
 
 namespace Atlas {
     SwapChain::SwapChain(Device &deviceRef, VkExtent2D extent) : device{deviceRef}, windowExtent{extent} {
@@ -83,7 +86,9 @@ namespace Atlas {
         imagesInFlight[*imageIndex] = inFlightFences[currentFrame];
 
         std::vector<VkSemaphore> waitSemaphores = {imageAvailableSemaphores[currentFrame]};
-        std::vector<VkPipelineStageFlags> waitStages = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        std::vector<VkPipelineStageFlags> waitStages = {
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT
+        };
 
         if (computeFinishedSemaphore.has_value()) {
             waitSemaphores.push_back(computeFinishedSemaphore.value());
@@ -103,8 +108,8 @@ namespace Atlas {
         submitInfo.pSignalSemaphores = signal;
 
         vkResetFences(device.device(), 1, &inFlightFences[currentFrame]);
-        if (vkQueueSubmit(device.graphicsQueue(), 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
-            throw std::runtime_error("failed to submit draw command buffer!");
+        if (const auto result = vkQueueSubmit(device.graphicsQueue(), 1, &submitInfo, inFlightFences[currentFrame]); result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to submit draw command buffer! |" + VK_ERROR_TO_STRING(result));
         }
 
         VkPresentInfoKHR presentInfo = {};
@@ -171,8 +176,8 @@ namespace Atlas {
 
         createInfo.oldSwapchain = oldSwapChain == nullptr ? VK_NULL_HANDLE : oldSwapChain->swapChain;
 
-        if (vkCreateSwapchainKHR(device.device(), &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create swap chain!");
+        if (const auto result = vkCreateSwapchainKHR(device.device(), &createInfo, nullptr, &swapChain); result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create swap chain! |" + VK_ERROR_TO_STRING(result));
         }
 
         // we only specified a minimum number of images in the swap chain, so the implementation is
@@ -201,9 +206,8 @@ namespace Atlas {
             viewInfo.subresourceRange.baseArrayLayer = 0;
             viewInfo.subresourceRange.layerCount = 1;
 
-            if (vkCreateImageView(device.device(), &viewInfo, nullptr, &swapChainImageViews[i]) !=
-                VK_SUCCESS) {
-                throw std::runtime_error("failed to create texture image view!");
+            if (const auto result = vkCreateImageView(device.device(), &viewInfo, nullptr, &swapChainImageViews[i]); result != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create texture image view!" + VK_ERROR_TO_STRING(result));
             }
         }
     }
@@ -262,8 +266,8 @@ namespace Atlas {
         renderPassInfo.dependencyCount = 1;
         renderPassInfo.pDependencies = &dependency;
 
-        if (vkCreateRenderPass(device.device(), &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create render pass!");
+        if (const auto result = vkCreateRenderPass(device.device(), &renderPassInfo, nullptr, &renderPass); result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create render pass!" + VK_ERROR_TO_STRING(result));
         }
 
         VkAttachmentDescription colorAttachment1{};
@@ -300,8 +304,8 @@ namespace Atlas {
         info1.dependencyCount = 1;
         info1.pDependencies = &dep1;
 
-        if (vkCreateRenderPass(device.device(), &info1, nullptr, &imguiRenderPass) != VK_SUCCESS) {
-            throw std::runtime_error("SwapChain: failed to create imgui render pass");
+        if (const auto result = vkCreateRenderPass(device.device(), &info1, nullptr, &imguiRenderPass); result != VK_SUCCESS) {
+            throw std::runtime_error("SwapChain: failed to create imgui render pass" + VK_ERROR_TO_STRING(result));
         }
     }
 

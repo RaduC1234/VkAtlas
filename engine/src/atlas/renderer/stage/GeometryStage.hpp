@@ -33,7 +33,7 @@ namespace Atlas {
         void getDeclaredInputs(std::vector<std::string> &out) const override;
 
         void onResourcesCreated(const Context &ctx) override;
-        void onSceneChanged(entt::registry &registry) override;
+        void onUpdate(entt::registry &registry) override;
 
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 

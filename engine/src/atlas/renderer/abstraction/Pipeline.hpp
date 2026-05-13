@@ -3,16 +3,16 @@
 #include "renderer/Device.hpp"
 
 namespace Atlas {
-
     enum class PipelineType {
         Graphics,
-        Compute
+        Compute,
+        RayTracing
     };
 
     struct GraphicsPipelineConfigInfo {
         GraphicsPipelineConfigInfo() = default;
-        GraphicsPipelineConfigInfo(const GraphicsPipelineConfigInfo&) = delete;
-        GraphicsPipelineConfigInfo& operator=(const GraphicsPipelineConfigInfo&) = delete;
+        GraphicsPipelineConfigInfo(const GraphicsPipelineConfigInfo &) = delete;
+        GraphicsPipelineConfigInfo &operator=(const GraphicsPipelineConfigInfo &) = delete;
 
         std::vector<VkVertexInputBindingDescription> bindingDescriptions{};
         std::vector<VkVertexInputAttributeDescription> attributeDescriptions{};
@@ -34,23 +34,38 @@ namespace Atlas {
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
     };
 
+    struct RayTracingPipelineConfigInfo {
+        VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
+        uint32_t maxRecursionDepth = 2;
+    };
+
     class Pipeline {
     public:
-        Pipeline(Device& device,
-            const std::string &vertexVertPath,
-            const std::string &fragmentVertPath,
-            const GraphicsPipelineConfigInfo& configInfo);
+        Pipeline(Device &device,
+                 const std::string &vertexVertPath,
+                 const std::string &fragmentVertPath,
+                 const GraphicsPipelineConfigInfo &configInfo);
 
-        Pipeline(Device& device,
-                 const std::string& computeShaderPath,
-                 const ComputePipelineConfigInfo& configInfo);
+        Pipeline(Device &device,
+                 const std::string &computeShaderPath,
+                 const ComputePipelineConfigInfo &configInfo);
+
+        Pipeline(Device &device,
+                 const std::string &rayGenerationShaderPath,
+                 const std::string &missShaderPath,
+                 const std::string &closestHitShaderPath,
+                 const std::string &anyHitShaderPath,
+                 const std::string &shadowMissShaderPath,
+                 const RayTracingPipelineConfigInfo &configInfo);
 
         ~Pipeline();
 
-        Pipeline(const Pipeline&) = delete;
-        Pipeline& operator=(const Pipeline&) = delete;
+        Pipeline(const Pipeline &) = delete;
+        Pipeline &operator=(const Pipeline &) = delete;
 
-        PipelineType getType() const { return type; }
+        PipelineType type() const { return type_; }
+        uint32_t shaderGroupCount() const { return shaderGroupCount_; }
+        VkPipeline pipeline() const { return pipeline_; }
 
         void bind(VkCommandBuffer commandBuffer);
 
@@ -64,17 +79,31 @@ namespace Atlas {
             const GraphicsPipelineConfigInfo &configInfo);
 
         void createComputePipeline(
-            const std::string & computeShaderPath,
-            const ComputePipelineConfigInfo& configInfo);
+            const std::string &computeShaderPath,
+            const ComputePipelineConfigInfo &configInfo);
 
-        void createShaderModule(const std::vector<char> &code, VkShaderModule* shaderModule) const;
+        void createRayTracingPipeline(
+            const std::string &rayGenerationShaderPath,
+            const std::string &missShaderPath,
+            const std::string &closestHitShaderPath,
+            const std::string &anyHitShaderPath,
+            const std::string &shadowMissShaderPath, const RayTracingPipelineConfigInfo &configInfo);
 
-        Device& device;
-        const PipelineType type;
-        VkPipeline pipeline;
+        void createShaderModule(const std::vector<char> &code, VkShaderModule *shaderModule) const;
 
-        VkShaderModule vertShaderModule;
-        VkShaderModule fragShaderModule;
-        VkShaderModule compShaderModule;
+        Device &device;
+        const PipelineType type_;
+        VkPipeline pipeline_;
+
+        VkShaderModule vertShaderModule = VK_NULL_HANDLE;
+        VkShaderModule fragShaderModule = VK_NULL_HANDLE;
+        VkShaderModule compShaderModule = VK_NULL_HANDLE;
+        VkShaderModule rayGenModule = VK_NULL_HANDLE;
+        VkShaderModule rayMissModule = VK_NULL_HANDLE;
+        VkShaderModule rayClosestHitModule = VK_NULL_HANDLE;
+        VkShaderModule rayAnyHitModule = VK_NULL_HANDLE;
+        VkShaderModule shadowMissModule = VK_NULL_HANDLE;
+
+        uint32_t shaderGroupCount_ = 0;
     };
 }
