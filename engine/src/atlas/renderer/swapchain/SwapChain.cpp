@@ -25,6 +25,30 @@ namespace Atlas {
     }
 
     SwapChain::~SwapChain() {
+        for (auto framebuffer: swapChainFramebuffers) {
+            vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
+        }
+        swapChainFramebuffers.clear();
+
+        for (auto framebuffer: overlayFramebuffers) {
+            vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
+        }
+        overlayFramebuffers.clear();
+
+        for (auto framebuffer: overlayClearFramebuffers) {
+            vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
+        }
+        overlayClearFramebuffers.clear();
+
+        vkDestroyRenderPass(device.device(), overlayClearRenderPass, nullptr);
+        vkDestroyRenderPass(device.device(), overlayRenderPass, nullptr);
+        vkDestroyRenderPass(device.device(), renderPass, nullptr);
+
+        for (int i = 0; i < depthImages.size(); i++) {
+            vkDestroyImageView(device.device(), depthImageViews[i], nullptr);
+            vmaDestroyImage(device.allocator(), depthImages[i], depthImageAllocations[i]);
+        }
+
         for (auto imageView: swapChainImageViews) {
             vkDestroyImageView(device.device(), imageView, nullptr);
         }
@@ -34,24 +58,6 @@ namespace Atlas {
             vkDestroySwapchainKHR(device.device(), swapChain, nullptr);
             swapChain = VK_NULL_HANDLE;
         }
-
-        for (int i = 0; i < depthImages.size(); i++) {
-            vkDestroyImageView(device.device(), depthImageViews[i], nullptr);
-            vmaDestroyImage(device.allocator(), depthImages[i], depthImageAllocations[i]);
-        }
-
-        for (auto framebuffer: swapChainFramebuffers) {
-            vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
-        }
-        swapChainFramebuffers.clear();
-
-        for (auto framebuffer: imguiFramebuffers) {
-            vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
-        }
-        imguiFramebuffers.clear();
-
-        vkDestroyRenderPass(device.device(), imguiRenderPass, nullptr);
-        vkDestroyRenderPass(device.device(), renderPass, nullptr);
 
         // cleanup synchronization objects
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -270,42 +276,47 @@ namespace Atlas {
             throw std::runtime_error("Failed to create render pass!" + VK_ERROR_TO_STRING(result));
         }
 
-        VkAttachmentDescription colorAttachment1{};
-        colorAttachment1.format = swapChainImageFormat;
-        colorAttachment1.samples = VK_SAMPLE_COUNT_1_BIT;
-        colorAttachment1.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-        colorAttachment1.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        colorAttachment1.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        colorAttachment1.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        colorAttachment1.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; // OutputPass left it here
-        colorAttachment1.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        createOverlayRenderPass(VK_ATTACHMENT_LOAD_OP_LOAD, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, overlayRenderPass);
+        createOverlayRenderPass(VK_ATTACHMENT_LOAD_OP_CLEAR, VK_IMAGE_LAYOUT_UNDEFINED, overlayClearRenderPass);
+    }
 
-        VkAttachmentReference colorRef1{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    void SwapChain::createOverlayRenderPass(VkAttachmentLoadOp loadOp, VkImageLayout initialLayout, VkRenderPass &outRenderPass) {
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = swapChainImageFormat;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = loadOp;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout = initialLayout;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-        VkSubpassDescription subpass1{};
-        subpass1.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpass1.colorAttachmentCount = 1;
-        subpass1.pColorAttachments = &colorRef1;
+        VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
 
-        VkSubpassDependency dep1{};
-        dep1.srcSubpass = VK_SUBPASS_EXTERNAL;
-        dep1.dstSubpass = 0;
-        dep1.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-        dep1.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        dep1.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        dep1.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorRef;
 
-        VkRenderPassCreateInfo info1{};
-        info1.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        info1.attachmentCount = 1;
-        info1.pAttachments = &colorAttachment1;
-        info1.subpassCount = 1;
-        info1.pSubpasses = &subpass1;
-        info1.dependencyCount = 1;
-        info1.pDependencies = &dep1;
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-        if (const auto result = vkCreateRenderPass(device.device(), &info1, nullptr, &imguiRenderPass); result != VK_SUCCESS) {
-            throw std::runtime_error("SwapChain: failed to create imgui render pass" + VK_ERROR_TO_STRING(result));
+        VkRenderPassCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        info.attachmentCount = 1;
+        info.pAttachments = &colorAttachment;
+        info.subpassCount = 1;
+        info.pSubpasses = &subpass;
+        info.dependencyCount = 1;
+        info.pDependencies = &dependency;
+
+        if (const auto result = vkCreateRenderPass(device.device(), &info, nullptr, &outRenderPass); result != VK_SUCCESS) {
+            throw std::runtime_error("SwapChain: failed to create overlay render pass" + VK_ERROR_TO_STRING(result));
         }
     }
 
@@ -328,20 +339,29 @@ namespace Atlas {
                 throw std::runtime_error("failed to create framebuffer!");
         }
 
-        imguiFramebuffers.resize(swapChainImageViews.size());
+        overlayFramebuffers.resize(swapChainImageViews.size());
+        overlayClearFramebuffers.resize(swapChainImageViews.size());
         for (size_t i = 0; i < swapChainImageViews.size(); i++) {
             VkExtent2D swapChainExtent = getSwapChainExtent();
-            VkFramebufferCreateInfo fbInfo{};
-            fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-            fbInfo.renderPass = imguiRenderPass;
-            fbInfo.attachmentCount = 1;
-            fbInfo.pAttachments = &swapChainImageViews[i];
-            fbInfo.width = swapChainExtent.width;
-            fbInfo.height = swapChainExtent.height;
-            fbInfo.layers = 1;
+            VkImageView attachment = swapChainImageViews[i];
 
-            if (vkCreateFramebuffer(device.device(), &fbInfo, nullptr, &imguiFramebuffers[i]) != VK_SUCCESS)
-                throw std::runtime_error("SwapChain: failed to create imgui framebuffer");
+            VkFramebufferCreateInfo overlayInfo{};
+            overlayInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            overlayInfo.renderPass = overlayRenderPass;
+            overlayInfo.attachmentCount = 1;
+            overlayInfo.pAttachments = &attachment;
+            overlayInfo.width = swapChainExtent.width;
+            overlayInfo.height = swapChainExtent.height;
+            overlayInfo.layers = 1;
+
+            if (vkCreateFramebuffer(device.device(), &overlayInfo, nullptr, &overlayFramebuffers[i]) != VK_SUCCESS)
+                throw std::runtime_error("SwapChain: failed to create overlay framebuffer");
+
+            VkFramebufferCreateInfo clearInfo = overlayInfo;
+            clearInfo.renderPass = overlayClearRenderPass;
+
+            if (vkCreateFramebuffer(device.device(), &clearInfo, nullptr, &overlayClearFramebuffers[i]) != VK_SUCCESS)
+                throw std::runtime_error("SwapChain: failed to create clear overlay framebuffer");
         }
     }
 

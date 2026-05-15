@@ -12,6 +12,11 @@
 #include <vk_mem_alloc.h>
 
 namespace Atlas {
+    RayTracingFunctions &RayTracingFunctions::get() {
+        static RayTracingFunctions instance;
+        return instance;
+    }
+
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
         const char *message = pCallbackData && pCallbackData->pMessage ? pCallbackData->pMessage : "(no message)";
 

@@ -10,7 +10,7 @@
 namespace Atlas {
     class PathTracingStage : public IRenderStage {
     public:
-        PathTracingStage(Device &device, const DescriptorSetLayout &globalSetLayout);
+        PathTracingStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout);
         ~PathTracingStage();
 
         void getDeclaredOutputs(std::vector<Resource::Description> &out) const override;
@@ -42,6 +42,7 @@ namespace Atlas {
         static constexpr uint32_t MAX_BOUNCES = 6;
 
         Device &device;
+        AssetManager &assets;
         const DescriptorSetLayout &globalSetLayout;
 
         GPUImage *outputImage = nullptr;

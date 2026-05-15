@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "entt/entity/entity.hpp"
+#include "entt/entity/registry.hpp"
 
 namespace Atlas {
     class ILoader {

@@ -22,6 +22,7 @@ namespace Atlas {
          * @return Path to the assets directory
          */
         [[nodiscard]] std::filesystem::path rootPath() const override;
+        void setRootPath(const std::filesystem::path &path) override;
 
     private:
         std::filesystem::path assetsPath;

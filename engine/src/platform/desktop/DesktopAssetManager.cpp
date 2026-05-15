@@ -13,6 +13,11 @@ namespace Atlas {
         return assetsPath;
     }
 
+    void DesktopAssetManager::setRootPath(const std::filesystem::path &path) {
+        assetsPath = path;
+        AT_INFO("Desktop AssetManager root changed to: {}", assetsPath.string());
+    }
+
 }
 
 #endif

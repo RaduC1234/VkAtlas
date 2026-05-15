@@ -21,9 +21,7 @@ namespace Atlas {
     public:
         static void init();
 
-        static std::shared_ptr<Log> &getCoreLogger() {
-            return coreLogger;
-        }
+        static std::shared_ptr<Log> &getCoreLogger();
 
         void setLogLevel(LogLevel level) {
             logLevel = level;

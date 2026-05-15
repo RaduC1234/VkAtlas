@@ -46,8 +46,9 @@ namespace Atlas {
 
     constexpr uint32_t MATERIAL_FLAG_ALPHA_MASKED = 1u << 0u;
 
-    PathTracingStage::PathTracingStage(Device &device, const DescriptorSetLayout &globalSetLayout) : IRenderStage(Queue::GRAPHICS), device(device), globalSetLayout(globalSetLayout) {
-        defaultWhiteHandle = AssetManager::get().createDefaultWhiteTexture();
+    PathTracingStage::PathTracingStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout)
+        : IRenderStage(Queue::GRAPHICS), device(device), assets(assets), globalSetLayout(globalSetLayout) {
+        defaultWhiteHandle = assets.createDefaultWhiteTexture();
 
         objectBuffer = std::make_unique<GPUBuffer>(
             GPUBuffer::simple(device)
@@ -160,7 +161,7 @@ namespace Atlas {
             if (material.transparent && !material.alphaMasked) continue;
 
             if (model.meshHandle == INVALID_ASSET_HANDLE) continue;
-            const auto mesh = AssetManager::get().getMesh(model.meshHandle);
+            const auto mesh = assets.getMesh(model.meshHandle);
             if (!mesh || !mesh->accelerationStructure().isValid()) continue;
 
             const uint32_t objectIndex = static_cast<uint32_t>(cpuObjects.size());
@@ -592,7 +593,7 @@ namespace Atlas {
             return 0;
         }
 
-        const auto texture = AssetManager::get().getTexture(handle);
+        const auto texture = assets.getTexture(handle);
         if (!texture) return 0;
 
         const uint32_t slot = nextTextureSlot++;

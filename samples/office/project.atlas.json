@@ -1,0 +1,11 @@
+{
+  "name": "Office Sample",
+  "engineVersion": "0.1",
+  "assetRoot": "../../assets",
+  "codeModule": "atlas_office_project.dll",
+  "startupScene": "OfficeScene",
+  "scenes": [
+    "OfficeScene",
+    "LookdevScene"
+  ]
+}

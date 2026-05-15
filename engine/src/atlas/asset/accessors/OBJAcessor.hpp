@@ -6,7 +6,7 @@
 namespace Atlas {
     class OBJAccessor : public ILoader {
     public:
-        explicit OBJAccessor(ExecutorService &service);
+        OBJAccessor(AssetManager &assets, ExecutorService &service);
         ~OBJAccessor() override = default;
 
         std::vector<std::string> extensions() const override { return {".obj"}; }
@@ -15,6 +15,7 @@ namespace Atlas {
         std::vector<std::byte> exportAsset(const std::vector<entt::entity> &entities, const entt::registry &registry) override;
 
     private:
+        AssetManager &assets;
         ExecutorService &executor;
     };
 }

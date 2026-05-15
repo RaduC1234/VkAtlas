@@ -11,11 +11,12 @@
 #include "renderer/abstraction/GPUBuffer.hpp"
 
 namespace Atlas {
-    GeometryStage::GeometryStage(Device &device, const DescriptorSetLayout &globalSetLayout) : IRenderStage(Queue::GRAPHICS), device(device), globalSetLayout(globalSetLayout) {
+    GeometryStage::GeometryStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout)
+        : IRenderStage(Queue::GRAPHICS), device(device), assets(assets), globalSetLayout(globalSetLayout) {
         createDescriptors();
         createGPUBuffers();
 
-        defaultWhiteHandle = AssetManager::get().createDefaultWhiteTexture();
+        defaultWhiteHandle = assets.createDefaultWhiteTexture();
         registerTexture(defaultWhiteHandle);
     }
 
@@ -58,9 +59,9 @@ namespace Atlas {
             }
 
             const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
-            const auto irradiance = AssetManager::get().getCubemap(skybox.irradianceHandle != INVALID_ASSET_HANDLE ? skybox.irradianceHandle : defaultWhiteHandle);
-            const auto prefilter = AssetManager::get().getCubemap(skybox.prefilterHandle != INVALID_ASSET_HANDLE ? skybox.prefilterHandle : defaultWhiteHandle);
-            const auto skyboxCubemap = AssetManager::get().getCubemap(skybox.skyboxHandle != INVALID_ASSET_HANDLE ? skybox.skyboxHandle : defaultWhiteHandle);
+            const auto irradiance = assets.getCubemap(skybox.irradianceHandle != INVALID_ASSET_HANDLE ? skybox.irradianceHandle : defaultWhiteHandle);
+            const auto prefilter = assets.getCubemap(skybox.prefilterHandle != INVALID_ASSET_HANDLE ? skybox.prefilterHandle : defaultWhiteHandle);
+            const auto skyboxCubemap = assets.getCubemap(skybox.skyboxHandle != INVALID_ASSET_HANDLE ? skybox.skyboxHandle : defaultWhiteHandle);
 
             VkDescriptorImageInfo irradianceInfo = {irradiance->getSampler(), irradiance->getImageView(), irradiance->getImageLayout()};
             VkDescriptorImageInfo prefilterInfo = {prefilter->getSampler(), prefilter->getImageView(), prefilter->getImageLayout()};
@@ -354,13 +355,13 @@ namespace Atlas {
             throw std::runtime_error("GeometryStage: failed to allocate skybox descriptor set");
         }
 
-        auto ltcMatHandle = AssetManager::get().loadTexture("engine/ltc_mat.bin", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-        auto ltcAmpHandle = AssetManager::get().loadTexture("engine/ltc_amp.bin", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-        auto brdfHandle = AssetManager::get().loadTexture("engine/brdf_lut.hdr", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        auto ltcMatHandle = assets.loadTexture("engine/ltc_mat.bin", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        auto ltcAmpHandle = assets.loadTexture("engine/ltc_amp.bin", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        auto brdfHandle = assets.loadTexture("engine/brdf_lut.hdr", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
 
-        auto ltcMatTexture = AssetManager::get().getTexture(ltcMatHandle);
-        auto ltcAmpTexture = AssetManager::get().getTexture(ltcAmpHandle);
-        auto brdfTexture = AssetManager::get().getTexture(brdfHandle);
+        auto ltcMatTexture = assets.getTexture(ltcMatHandle);
+        auto ltcAmpTexture = assets.getTexture(ltcAmpHandle);
+        auto brdfTexture = assets.getTexture(brdfHandle);
 
         VkDescriptorImageInfo matDesc{ltcMatTexture->getSampler(), ltcMatTexture->getImageView(), ltcMatTexture->getImageLayout()};
         VkDescriptorImageInfo ampDesc{ltcAmpTexture->getSampler(), ltcAmpTexture->getImageView(), ltcAmpTexture->getImageLayout()};
@@ -500,7 +501,7 @@ namespace Atlas {
             throw std::runtime_error("GeometryStage: exceeded maximum bindless texture count");
         }
 
-        const auto texture = AssetManager::get().getTexture(handle);
+        const auto texture = assets.getTexture(handle);
         if (!texture) { return 0; }
 
         const uint32_t slot = nextTextureSlot++;
@@ -530,7 +531,7 @@ namespace Atlas {
             return;
         }
 
-        const auto mesh = AssetManager::get().getMesh(handle);
+        const auto mesh = assets.getMesh(handle);
         if (!mesh) { return; }
 
         const auto &vertices = mesh->getVertices();

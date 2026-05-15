@@ -17,9 +17,6 @@
 namespace Atlas {
     /**
      * @brief Abstract base class for platform-agnostic asset management
-     *
-     * This class provides a singleton pattern for platform-specific
-     * asset manager implementations.
      */
 
     using AssetHandle = int32_t;
@@ -27,29 +24,7 @@ namespace Atlas {
 
     class AssetManager {
     public:
-#pragma region Class methods
         virtual ~AssetManager() = default;
-
-        /**
-         * @brief Create the singleton instance of AssetManager
-         * @param device Vulkan device reference
-         * @param nativeApp Platform-specific application handle (android_app* on Android, nullptr on desktop)
-         * @return Reference to the created AssetManager instance
-         */
-        static AssetManager &create(Device &device, void *nativeApp = nullptr);
-
-        /**
-         * @brief Get the singleton instance of AssetManager
-         * @return Reference to the AssetManager instance
-         */
-        static AssetManager &get();
-
-        /**
-         * @brief Reset and destroy the singleton instance
-         */
-        static void destroy();
-
-#pragma endregion
 
 #pragma region Loaders
         /**
@@ -198,9 +173,9 @@ namespace Atlas {
          *
          * Example usage:
          * @code
-         * AssetHandle texHandle = AssetManager::get().loadTexture("textures/old_texture.png");
+         * AssetHandle texHandle = assets.loadTexture("textures/old_texture.png");
          * // ... use texture ...
-         * if (AssetManager::get().freeTexture(texHandle)) {
+         * if (assets.freeTexture(texHandle)) {
          *     AT_INFO("Texture freed successfully");
          * }
          * @endcode
@@ -225,9 +200,9 @@ namespace Atlas {
          *
          * Example usage:
          * @code
-         * AssetHandle meshHandle = AssetManager::get().loadMesh("models/old_model.obj");
+         * AssetHandle meshHandle = assets.loadMesh("models/old_model.obj");
          * // ... use mesh ...
-         * if (AssetManager::get().freeMesh(meshHandle)) {
+         * if (assets.freeMesh(meshHandle)) {
          *     AT_INFO("Mesh freed successfully");
          * }
          * @endcode
@@ -257,7 +232,7 @@ namespace Atlas {
          * @code
          * // Free any asset without knowing its type
          * AssetHandle someHandle = getSomeAssetHandle();
-         * if (AssetManager::get().freeAsset(someHandle)) {
+         * if (assets.freeAsset(someHandle)) {
          *     AT_INFO("Asset freed successfully");
          * } else {
          *     AT_WARN("Failed to free asset or handle not found");
@@ -268,7 +243,6 @@ namespace Atlas {
 #pragma endregion
 
         std::vector<entt::entity> importAsset(const std::string &virtualPath, entt::registry &registry, entt::entity parentEntity);
-
 #pragma region non-coherent functions
         /**
          * @brief Load a text file from assets
@@ -287,6 +261,11 @@ namespace Atlas {
          */
         [[nodiscard]] virtual std::filesystem::path rootPath() const = 0;
 
+        /**
+         * @brief Override the asset root for the currently loaded project.
+         */
+        virtual void setRootPath(const std::filesystem::path &path) {}
+
     protected:
         /**
          * @brief Protected constructor for derived classes
@@ -302,11 +281,11 @@ namespace Atlas {
                 accessors.emplace(ext, loader);
         }
 
+        static std::filesystem::path resolveStaticAssetPath(const std::string &path);
+
         Device &device;
         void *nativeApp;
 
-        static std::shared_ptr<AssetManager> instance;
-        // AssetManager.hpp — change in protected section
         std::unordered_map<std::string, std::shared_ptr<ILoader> > accessors;
 
         // Handle generation

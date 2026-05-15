@@ -12,12 +12,6 @@
 #include "accessors/GLTFAccessor.hpp"
 #include "accessors/OBJAcessor.hpp"
 
-#if defined(ATLAS_PLATFORM_ANDROID)
-#include "android/AndroidAssetManager.hpp"
-#elif defined(ATLAS_PLATFORM_DESKTOP)
-#include "desktop/DesktopAssetManager.hpp"
-#endif
-
 namespace std {
     template<>
     struct hash<Atlas::Mesh::Vertex> {
@@ -35,41 +29,9 @@ namespace std {
 }
 
 namespace Atlas {
-    std::shared_ptr<AssetManager> AssetManager::instance = nullptr;
-
     AssetManager::AssetManager(Device &device, void *nativeApp) : device(device), nativeApp(nativeApp) {
-        registerLoader<GLTFAccessor>(device.executor());
-        registerLoader<OBJAccessor>(device.executor());
-    }
-
-    AssetManager &AssetManager::create(Device &device, void *nativeApp) {
-        if (instance) {
-            AT_WARN("AssetManager already exists. Returning existing instance.");
-            return *instance;
-        }
-
-
-#if defined(ATLAS_PLATFORM_ANDROID)
-        instance = std::shared_ptr<AndroidAssetManager>(new AndroidAssetManager(device, nativeApp));
-        AT_INFO("Created Android AssetManager instance");
-#elif defined(ATLAS_PLATFORM_DESKTOP)
-        instance = std::make_shared<DesktopAssetManager>(device, nativeApp);
-        AT_INFO("Created Desktop AssetManager instance");
-#else
-#error Unsupported platform for AssetManager
-#endif
-        return *instance;
-    }
-
-    AssetManager &AssetManager::get() {
-        assert(instance && "AssetManager::get() called before create()");
-
-        return *instance;
-    }
-
-    void AssetManager::destroy() {
-        instance.reset();
-        AT_INFO("AssetManager instance destroyed");
+        registerLoader<GLTFAccessor>(*this, device.executor());
+        registerLoader<OBJAccessor>(*this, device.executor());
     }
 
     AssetHandle AssetManager::loadTexture(const std::string &virtualPath, VkFormat format, VkSamplerAddressMode addressMode) {
@@ -455,7 +417,7 @@ namespace Atlas {
     }
 
     std::vector<char> AssetManager::loadFileAsU8(const std::string &path) {
-        std::filesystem::path filePath = get().rootPath() / path;
+        std::filesystem::path filePath = resolveStaticAssetPath(path);
 
         std::ifstream file(filePath, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
@@ -479,7 +441,7 @@ namespace Atlas {
 
     void AssetManager::saveFileAsU8(const std::vector<char> &data, const std::string &path) {
         try {
-            std::filesystem::path filePath = get().rootPath() / path;
+            std::filesystem::path filePath = resolveStaticAssetPath(path);
 
             std::ofstream out(filePath, std::ios::binary);
             if (!out.is_open()) {
@@ -586,5 +548,25 @@ namespace Atlas {
         }
 
         return it->second->importAsset(virtualPath, registry, parentEntity);
+    }
+
+    std::filesystem::path AssetManager::resolveStaticAssetPath(const std::string &path) {
+        std::filesystem::path filePath(path);
+        if (filePath.is_absolute()) {
+            return filePath;
+        }
+
+        for (auto directory = std::filesystem::current_path(); !directory.empty(); directory = directory.parent_path()) {
+            auto candidate = directory / "assets" / filePath;
+            if (std::filesystem::exists(candidate)) {
+                return candidate;
+            }
+
+            if (directory == directory.root_path()) {
+                break;
+            }
+        }
+
+        return std::filesystem::current_path() / "assets" / filePath;
     }
 }

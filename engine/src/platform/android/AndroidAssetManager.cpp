@@ -19,7 +19,7 @@ namespace Atlas {
         AT_INFO("Android AssetManager initialized");
     }
 
-    std::filesystem::path AndroidAssetManager::getAssetsPath() const {
+    std::filesystem::path AndroidAssetManager::rootPath() const {
         // Android uses AssetManager API, not filesystem paths
         // Return empty path as assets are accessed directly from APK
         return std::filesystem::path();

@@ -9,7 +9,7 @@
 namespace Atlas {
     class GLTFAccessor : public ILoader {
     public:
-        explicit GLTFAccessor(ExecutorService &service);
+        GLTFAccessor(AssetManager &assets, ExecutorService &service);
         ~GLTFAccessor() override = default;
 
         std::vector<std::string> extensions() const override { return {".gltf", ".glb"}; }
@@ -18,10 +18,11 @@ namespace Atlas {
         std::vector<std::byte> exportAsset(const std::vector<entt::entity> &entities, const entt::registry &registry) override;
 
     private:
+        AssetManager &assets;
         ExecutorService &executor;
 
         void processNode(entt::registry &registry, const tinygltf::Model &model, int32_t nodeIdx, const glm::mat4 &parentTransform, const std::string &virtualPath, std::vector<entt::entity> &outEntities);
-        static void handleSkybox(entt::registry &registry, entt::entity entity, const tinygltf::Model &model);
+        void handleSkybox(entt::registry &registry, entt::entity entity, const tinygltf::Model &model);
         static void handlePostProcessing(entt::registry &registry, entt::entity entity, const tinygltf::Model &model);
         static AssetHandle resolveTexture(const tinygltf::Model &model, int texIdx, const std::vector<AssetHandle> &imageHandles);
         static glm::mat4 getNodeTransform(const tinygltf::Node &node);

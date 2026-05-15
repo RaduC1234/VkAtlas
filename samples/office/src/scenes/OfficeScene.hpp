@@ -2,24 +2,23 @@
 
 #include <memory>
 
-#include "IScene.hpp"
-#include "renderer/Renderer.hpp"
-#include "system/CameraSystem.hpp"
-#include "system/RenderSystemV2.hpp"
+#include <Atlas.hpp>
 
 namespace Atlas {
+    class AssetManager;
 
     class OfficeScene : public IScene {
     public:
-        explicit OfficeScene(Renderer &renderer);
+        OfficeScene(Renderer &renderer, AssetManager &assets);
         ~OfficeScene() override = default;
 
-        void onLoad(entt::registry&& registry) override;
+        void onLoad(entt::registry &&registry) override;
         void onUpdate(float deltaTime) override;
         void onRender(FrameContext frameContext) override;
         void onDelete() override;
 
     protected:
+        AssetManager &assets;
         std::unique_ptr<CameraSystem> cameraSystem;
         std::unique_ptr<RenderSystemV2> renderSystem;
     };

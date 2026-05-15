@@ -1,10 +1,13 @@
 #pragma once
 
 #include "Device.hpp"
-#include "ImGuiLayer.hpp"
 
 #include "core/Window.hpp"
 #include "swapchain/SwapChain.hpp"
+
+#include <cassert>
+#include <memory>
+#include <vector>
 
 namespace Atlas {
     struct FrameContext {
@@ -15,10 +18,28 @@ namespace Atlas {
 
     class Renderer {
     public:
+        enum class SceneOutputTarget {
+            Swapchain,
+            Texture
+        };
+
+        enum class OverlayLoadOp {
+            Load,
+            Clear
+        };
+
+        struct SceneOutputImage {
+            VkImageView imageView = VK_NULL_HANDLE;
+            VkImageLayout imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            VkExtent2D extent{};
+
+            [[nodiscard]] bool valid() const { return imageView != VK_NULL_HANDLE; }
+        };
+
         struct Settings {
             Window::Settings windowSettings;
-            bool imguiWindowRenderTarget = false;
             bool enableRaytracing = false;
+            SceneOutputTarget sceneOutputTarget = SceneOutputTarget::Swapchain;
         };
 
         Renderer(const Settings &settings);
@@ -31,17 +52,27 @@ namespace Atlas {
         Device &device() const { return *device_; }
 
         VkRenderPass getSwapChainRenderPass() const { return swapChain_->getRenderPass(); }
+        VkRenderPass getOverlayRenderPass(OverlayLoadOp loadOp = OverlayLoadOp::Load) const {
+            return loadOp == OverlayLoadOp::Clear
+                ? swapChain_->getOverlayClearRenderPass()
+                : swapChain_->getOverlayRenderPass();
+        }
         float getAspectRatio() const;
         size_t getImageCount() const { return swapChain_->imageCount(); }
         VkImage getCurrentSwapchainImage() const { return swapChain_->getImage(currentImageIndex); }
         VkExtent2D getSwapchainExtent() const { return swapChain_->getSwapChainExtent(); }
-        ImGuiLayer &getImGuiLayer() { return *imGuiLayer_; }
+        const SceneOutputImage &getSceneOutputImage() const { return sceneOutputImage; }
+        VkCommandBuffer currentGraphicsCommandBuffer() const;
 
         FrameContext beginFrame();
         void endFrame();
 
         void beginSwapChainRenderPass(VkCommandBuffer);
         void endSwapChainRenderPass(VkCommandBuffer) const;
+        void beginOverlayRenderPass(VkCommandBuffer commandBuffer, OverlayLoadOp loadOp = OverlayLoadOp::Load);
+        void endOverlayRenderPass(VkCommandBuffer commandBuffer) const;
+        void setSceneOutputImage(VkImageView imageView, VkImageLayout imageLayout, VkExtent2D extent);
+        void setSceneViewportExtent(VkExtent2D extent) { sceneViewportExtent = extent; }
 
         Settings settings;
     private:
@@ -49,7 +80,6 @@ namespace Atlas {
         void freeCommandBuffers();
         void recreateSwapChain();
         void createComputeSyncObjects();
-        void createImGuiLayer();
 
         VkCommandBuffer getCurrentGraphicsCommandBuffer() const {
             assert(isFrameStarted && "Cannot get command buffer when frame is not in progress");
@@ -63,8 +93,9 @@ namespace Atlas {
 
         std::unique_ptr<Window> window_;
         std::unique_ptr<Device> device_;
-        std::unique_ptr<ImGuiLayer> imGuiLayer_;
         std::shared_ptr<SwapChain> swapChain_;
+        SceneOutputImage sceneOutputImage;
+        VkExtent2D sceneViewportExtent{};
         std::vector<VkCommandBuffer> graphicsCommandBuffers_;
 
         uint32_t currentImageIndex{};

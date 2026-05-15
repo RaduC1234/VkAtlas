@@ -41,10 +41,7 @@ if (!name) throw std::runtime_error("Failed to load " #name);
 #undef LOAD
         }
 
-        static RayTracingFunctions &get() {
-            static RayTracingFunctions instance;
-            return instance;
-        }
+        static RayTracingFunctions &get();
     };
 
     struct SwapChainSupportDetails {

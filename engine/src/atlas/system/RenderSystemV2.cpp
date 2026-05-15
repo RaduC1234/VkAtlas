@@ -10,18 +10,18 @@
 #include "renderer/stage/PostProcessingStage.hpp"
 
 namespace Atlas {
-    RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer) : device(device) {
+    RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer, AssetManager &assets) : device(device) {
         createGlobalUbo();
 
         auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
-            .addStage<GeometryStage>(device, *globalSetLayout)
+            .addStage<GeometryStage>(device, assets, *globalSetLayout)
             .addStage<PostProcessPass>(device, *globalSetLayout)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));
 
         auto rayTracingGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
-            .addStage<PathTracingStage>(device, *globalSetLayout)
+            .addStage<PathTracingStage>(device, assets, *globalSetLayout)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));

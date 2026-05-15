@@ -21,7 +21,7 @@ namespace Atlas {
          * @brief Get the Android assets path (returns empty path as Android uses AssetManager API)
          * @return Empty filesystem path
          */
-        [[nodiscard]] std::filesystem::path getAssetsPath() const override;
+        [[nodiscard]] std::filesystem::path rootPath() const override;
 
     private:
         AAssetManager* androidAssetManager;

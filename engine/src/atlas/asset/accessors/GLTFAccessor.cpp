@@ -1,8 +1,16 @@
 #include "GLTFAccessor.hpp"
 
 #define GLM_ENABLE_EXPERIMENTAL
+#include <algorithm>
+#include <cctype>
+#include <cstring>
+#include <filesystem>
 #include <numeric>
 #include <fstream>
+#include <limits>
+#include <sstream>
+#include <unordered_map>
+#include <unordered_set>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
@@ -11,7 +19,548 @@
 #include "entity/Object.hpp"
 
 namespace Atlas {
-    GLTFAccessor::GLTFAccessor(ExecutorService &service) : executor(service) {
+    namespace {
+        constexpr float DIRECTION_EPSILON = 1.0e-6f;
+
+        void addExtensionUsed(tinygltf::Model &model, const std::string &extension) {
+            if (std::ranges::find(model.extensionsUsed, extension) == model.extensionsUsed.end()) {
+                model.extensionsUsed.push_back(extension);
+            }
+        }
+
+        std::vector<std::byte> toBytes(const std::string &text) {
+            std::vector<std::byte> bytes;
+            bytes.reserve(text.size());
+            for (const char ch : text) {
+                bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(ch)));
+            }
+            return bytes;
+        }
+
+        std::string entityName(entt::entity entity, const entt::registry &registry, const std::string &fallbackPrefix) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && !node->name.empty()) {
+                return node->name;
+            }
+
+            return fallbackPrefix + "_" + std::to_string(entt::to_integral(entity));
+        }
+
+        void appendEntityTree(
+            entt::entity entity,
+            const entt::registry &registry,
+            std::vector<entt::entity> &outEntities,
+            std::unordered_set<entt::id_type> &visited) {
+            if (entity == entt::null || !registry.valid(entity)) {
+                return;
+            }
+
+            const entt::id_type id = entt::to_integral(entity);
+            if (!visited.insert(id).second) {
+                return;
+            }
+
+            outEntities.push_back(entity);
+
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity)) {
+                for (const entt::entity child : node->children) {
+                    appendEntityTree(child, registry, outEntities, visited);
+                }
+            }
+        }
+
+        void alignBuffer(tinygltf::Buffer &buffer) {
+            while (buffer.data.size() % 4 != 0) {
+                buffer.data.push_back(0);
+            }
+        }
+
+        template<typename T>
+        int appendAccessor(
+            tinygltf::Model &model,
+            tinygltf::Buffer &buffer,
+            const std::vector<T> &data,
+            const int target,
+            const int componentType,
+            const int type,
+            const size_t count,
+            const std::string &name,
+            const std::vector<double> &minValues = {},
+            const std::vector<double> &maxValues = {}) {
+            if (data.empty() || count == 0) {
+                return -1;
+            }
+
+            alignBuffer(buffer);
+
+            tinygltf::BufferView view;
+            view.name = name + "_view";
+            view.buffer = 0;
+            view.byteOffset = buffer.data.size();
+            view.byteLength = data.size() * sizeof(T);
+            view.target = target;
+
+            const auto *bytes = reinterpret_cast<const unsigned char *>(data.data());
+            buffer.data.insert(buffer.data.end(), bytes, bytes + view.byteLength);
+
+            const int viewIndex = static_cast<int>(model.bufferViews.size());
+            model.bufferViews.push_back(std::move(view));
+
+            tinygltf::Accessor accessor;
+            accessor.name = name;
+            accessor.bufferView = viewIndex;
+            accessor.byteOffset = 0;
+            accessor.componentType = componentType;
+            accessor.count = count;
+            accessor.type = type;
+            accessor.minValues = minValues;
+            accessor.maxValues = maxValues;
+
+            const int accessorIndex = static_cast<int>(model.accessors.size());
+            model.accessors.push_back(std::move(accessor));
+            return accessorIndex;
+        }
+
+        glm::vec3 safeNormalize(const glm::vec3 &value, const glm::vec3 &fallback) {
+            return glm::dot(value, value) > DIRECTION_EPSILON ? glm::normalize(value) : fallback;
+        }
+
+        glm::vec3 toGltfAxis(const glm::vec3 &value) {
+            return glm::vec3(-value.x, -value.y, value.z);
+        }
+
+        glm::vec2 toGltfUv(const glm::vec2 &value) {
+            return glm::vec2(value.x, 1.0f - value.y);
+        }
+
+        std::vector<double> toNumberArray(const glm::vec3 &value) {
+            return {
+                static_cast<double>(value.x),
+                static_cast<double>(value.y),
+                static_cast<double>(value.z)
+            };
+        }
+
+        tinygltf::Value toValueArray(const glm::vec3 &value) {
+            tinygltf::Value::Array array;
+            array.emplace_back(static_cast<double>(value.x));
+            array.emplace_back(static_cast<double>(value.y));
+            array.emplace_back(static_cast<double>(value.z));
+            return tinygltf::Value(std::move(array));
+        }
+
+        tinygltf::Value toValueArray(const glm::vec4 &value) {
+            tinygltf::Value::Array array;
+            array.emplace_back(static_cast<double>(value.x));
+            array.emplace_back(static_cast<double>(value.y));
+            array.emplace_back(static_cast<double>(value.z));
+            array.emplace_back(static_cast<double>(value.w));
+            return tinygltf::Value(std::move(array));
+        }
+
+        std::vector<double> toGltfMatrix(const TransformComponent &transform) {
+            const glm::mat4 matrix = transform.mat4();
+            const float *values = glm::value_ptr(matrix);
+
+            std::vector<double> result(16);
+            for (size_t index = 0; index < result.size(); ++index) {
+                result[index] = static_cast<double>(values[index]);
+            }
+
+            return result;
+        }
+
+        glm::quat rotationFromTransform(const TransformComponent *transform) {
+            if (!transform) {
+                return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+            }
+
+            glm::vec3 scale;
+            glm::quat rotation;
+            glm::vec3 translation;
+            glm::vec3 skew;
+            glm::vec4 perspective;
+            glm::decompose(transform->mat4(), scale, rotation, translation, skew, perspective);
+            return rotation;
+        }
+
+        std::string lowercaseExtension(const std::filesystem::path &path) {
+            std::string ext = path.extension().string();
+            std::ranges::transform(ext, ext.begin(), [](unsigned char ch) {
+                return static_cast<char>(std::tolower(ch));
+            });
+            return ext;
+        }
+
+        std::string mimeTypeForImage(const std::filesystem::path &path) {
+            const std::string ext = lowercaseExtension(path);
+            if (ext == ".png") {
+                return "image/png";
+            }
+            if (ext == ".jpg" || ext == ".jpeg") {
+                return "image/jpeg";
+            }
+            if (ext == ".bmp") {
+                return "image/bmp";
+            }
+            if (ext == ".gif") {
+                return "image/gif";
+            }
+            return {};
+        }
+
+        bool readBinaryFile(const std::filesystem::path &path, std::vector<unsigned char> &outBytes) {
+            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            if (!file.is_open()) {
+                return false;
+            }
+
+            const std::streamsize size = file.tellg();
+            if (size <= 0) {
+                return false;
+            }
+
+            outBytes.resize(static_cast<size_t>(size));
+            file.seekg(0, std::ios::beg);
+            return static_cast<bool>(file.read(reinterpret_cast<char *>(outBytes.data()), size));
+        }
+
+        int appendTexture(
+            tinygltf::Model &model,
+            std::unordered_map<AssetHandle, int> &textureCache,
+            AssetManager &assets,
+            const AssetHandle handle) {
+            if (handle == INVALID_ASSET_HANDLE) {
+                return -1;
+            }
+
+            if (const auto it = textureCache.find(handle); it != textureCache.end()) {
+                return it->second;
+            }
+
+            const std::string virtualPath = assets.getPath(handle);
+            if (virtualPath.empty() || virtualPath.find('#') != std::string::npos) {
+                return -1;
+            }
+
+            const std::filesystem::path fullPath = assets.rootPath() / virtualPath;
+            const std::string mimeType = mimeTypeForImage(fullPath);
+            if (mimeType.empty()) {
+                return -1;
+            }
+
+            std::vector<unsigned char> imageBytes;
+            if (!readBinaryFile(fullPath, imageBytes)) {
+                AT_WARN("GLTFAccessor: skipping texture export for missing image {}", virtualPath);
+                return -1;
+            }
+
+            tinygltf::Image image;
+            image.name = fullPath.stem().string();
+            image.mimeType = mimeType;
+            image.image = std::move(imageBytes);
+            image.as_is = true;
+
+            tinygltf::Texture texture;
+            texture.name = image.name;
+            texture.source = static_cast<int>(model.images.size());
+
+            model.images.push_back(std::move(image));
+
+            const int textureIndex = static_cast<int>(model.textures.size());
+            model.textures.push_back(std::move(texture));
+            textureCache.emplace(handle, textureIndex);
+            return textureIndex;
+        }
+
+        int appendMaterial(
+            tinygltf::Model &model,
+            std::unordered_map<AssetHandle, int> &textureCache,
+            AssetManager &assets,
+            const MaterialComponent *material,
+            const std::string &name) {
+            if (!material) {
+                return -1;
+            }
+
+            tinygltf::Material gltfMaterial;
+            gltfMaterial.name = name;
+            gltfMaterial.pbrMetallicRoughness.baseColorFactor = {
+                static_cast<double>(material->baseColor.r),
+                static_cast<double>(material->baseColor.g),
+                static_cast<double>(material->baseColor.b),
+                static_cast<double>(material->baseColor.a)
+            };
+
+            if (material->transparent || material->baseColor.a < 1.0f) {
+                gltfMaterial.alphaMode = "BLEND";
+            } else if (material->alphaMasked) {
+                gltfMaterial.alphaMode = "MASK";
+                gltfMaterial.alphaCutoff = 0.5;
+            }
+
+            const int albedoTexture = appendTexture(model, textureCache, assets, material->albedoTexture);
+            if (albedoTexture >= 0) {
+                gltfMaterial.pbrMetallicRoughness.baseColorTexture.index = albedoTexture;
+            }
+
+            const int normalTexture = appendTexture(model, textureCache, assets, material->normalMap);
+            if (normalTexture >= 0) {
+                gltfMaterial.normalTexture.index = normalTexture;
+            }
+
+            const int metallicRoughnessTexture = appendTexture(model, textureCache, assets, material->metallicRoughnessMap);
+            if (metallicRoughnessTexture >= 0) {
+                gltfMaterial.pbrMetallicRoughness.metallicRoughnessTexture.index = metallicRoughnessTexture;
+            }
+
+            const int occlusionTexture = appendTexture(model, textureCache, assets, material->ambientOcclusion);
+            if (occlusionTexture >= 0) {
+                gltfMaterial.occlusionTexture.index = occlusionTexture;
+            }
+
+            const int materialIndex = static_cast<int>(model.materials.size());
+            model.materials.push_back(std::move(gltfMaterial));
+            return materialIndex;
+        }
+
+        int appendMesh(
+            tinygltf::Model &model,
+            tinygltf::Buffer &buffer,
+            const std::shared_ptr<Mesh> &mesh,
+            const int materialIndex,
+            const std::string &name) {
+            const auto &vertices = mesh->getVertices();
+            if (vertices.empty()) {
+                return -1;
+            }
+
+            std::vector<float> positions;
+            std::vector<float> normals;
+            std::vector<float> texcoords;
+            std::vector<float> colors;
+            std::vector<float> tangents;
+            positions.reserve(vertices.size() * 3);
+            normals.reserve(vertices.size() * 3);
+            texcoords.reserve(vertices.size() * 2);
+            colors.reserve(vertices.size() * 3);
+            tangents.reserve(vertices.size() * 4);
+
+            glm::vec3 minPosition(std::numeric_limits<float>::max());
+            glm::vec3 maxPosition(std::numeric_limits<float>::lowest());
+
+            for (const auto &vertex : vertices) {
+                const glm::vec3 position = toGltfAxis(vertex.position);
+                minPosition = glm::min(minPosition, position);
+                maxPosition = glm::max(maxPosition, position);
+                positions.insert(positions.end(), {position.x, position.y, position.z});
+
+                const glm::vec3 normal = toGltfAxis(safeNormalize(vertex.normal, glm::vec3(0.0f, 1.0f, 0.0f)));
+                normals.insert(normals.end(), {normal.x, normal.y, normal.z});
+
+                const glm::vec2 uv = toGltfUv(vertex.uv);
+                texcoords.insert(texcoords.end(), {uv.x, uv.y});
+
+                colors.insert(colors.end(), {vertex.color.r, vertex.color.g, vertex.color.b});
+
+                const glm::vec3 tangentAxis = toGltfAxis(safeNormalize(glm::vec3(vertex.tangent), glm::vec3(1.0f, 0.0f, 0.0f)));
+                tangents.insert(tangents.end(), {tangentAxis.x, tangentAxis.y, tangentAxis.z, -vertex.tangent.w});
+            }
+
+            std::vector<uint32_t> indices = mesh->getIndices();
+            if (indices.empty()) {
+                indices.reserve(vertices.size());
+                for (uint32_t index = 0; index < static_cast<uint32_t>(vertices.size()); ++index) {
+                    indices.push_back(index);
+                }
+            }
+
+            tinygltf::Primitive primitive;
+            primitive.mode = TINYGLTF_MODE_TRIANGLES;
+            primitive.attributes["POSITION"] = appendAccessor(
+                model,
+                buffer,
+                positions,
+                TINYGLTF_TARGET_ARRAY_BUFFER,
+                TINYGLTF_COMPONENT_TYPE_FLOAT,
+                TINYGLTF_TYPE_VEC3,
+                vertices.size(),
+                name + "_positions",
+                toNumberArray(minPosition),
+                toNumberArray(maxPosition));
+            primitive.attributes["NORMAL"] = appendAccessor(
+                model,
+                buffer,
+                normals,
+                TINYGLTF_TARGET_ARRAY_BUFFER,
+                TINYGLTF_COMPONENT_TYPE_FLOAT,
+                TINYGLTF_TYPE_VEC3,
+                vertices.size(),
+                name + "_normals");
+            primitive.attributes["TEXCOORD_0"] = appendAccessor(
+                model,
+                buffer,
+                texcoords,
+                TINYGLTF_TARGET_ARRAY_BUFFER,
+                TINYGLTF_COMPONENT_TYPE_FLOAT,
+                TINYGLTF_TYPE_VEC2,
+                vertices.size(),
+                name + "_texcoords");
+            primitive.attributes["COLOR_0"] = appendAccessor(
+                model,
+                buffer,
+                colors,
+                TINYGLTF_TARGET_ARRAY_BUFFER,
+                TINYGLTF_COMPONENT_TYPE_FLOAT,
+                TINYGLTF_TYPE_VEC3,
+                vertices.size(),
+                name + "_colors");
+            primitive.attributes["TANGENT"] = appendAccessor(
+                model,
+                buffer,
+                tangents,
+                TINYGLTF_TARGET_ARRAY_BUFFER,
+                TINYGLTF_COMPONENT_TYPE_FLOAT,
+                TINYGLTF_TYPE_VEC4,
+                vertices.size(),
+                name + "_tangents");
+            primitive.indices = appendAccessor(
+                model,
+                buffer,
+                indices,
+                TINYGLTF_TARGET_ELEMENT_ARRAY_BUFFER,
+                TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT,
+                TINYGLTF_TYPE_SCALAR,
+                indices.size(),
+                name + "_indices");
+
+            if (materialIndex >= 0) {
+                primitive.material = materialIndex;
+            }
+
+            tinygltf::Mesh gltfMesh;
+            gltfMesh.name = name;
+            gltfMesh.primitives.push_back(std::move(primitive));
+
+            const int meshIndex = static_cast<int>(model.meshes.size());
+            model.meshes.push_back(std::move(gltfMesh));
+            return meshIndex;
+        }
+
+        std::string lightTypeName(const LightType type) {
+            switch (type) {
+                case LightType::POINT:
+                    return "point";
+                case LightType::SPOT:
+                    return "spot";
+                case LightType::DIRECTIONAL:
+                    return "directional";
+                default:
+                    return {};
+            }
+        }
+
+        int appendPunctualLight(tinygltf::Model &model, const LightComponent &light, const std::string &name) {
+            const std::string type = lightTypeName(light.type);
+            if (type.empty()) {
+                return -1;
+            }
+
+            tinygltf::Light gltfLight;
+            gltfLight.name = name;
+            gltfLight.type = type;
+            gltfLight.color = {
+                static_cast<double>(light.color.r),
+                static_cast<double>(light.color.g),
+                static_cast<double>(light.color.b)
+            };
+            gltfLight.intensity = light.intensity;
+            gltfLight.range = light.range;
+
+            if (light.type == LightType::SPOT) {
+                gltfLight.spot.innerConeAngle = light.innerConeAngle;
+                gltfLight.spot.outerConeAngle = light.outerConeAngle;
+            }
+
+            const int lightIndex = static_cast<int>(model.lights.size());
+            model.lights.push_back(std::move(gltfLight));
+            return lightIndex;
+        }
+
+        int appendAtlasRectLight(
+            tinygltf::Value::Array &atlasLights,
+            const LightComponent &light,
+            const TransformComponent *transform,
+            const std::string &name) {
+            const glm::quat rotation = rotationFromTransform(transform);
+            const glm::vec3 gltfDirection = toGltfAxis(safeNormalize(light.direction, glm::vec3(0.0f, 0.0f, -1.0f)));
+            const glm::vec3 localDirection = safeNormalize(glm::inverse(rotation) * gltfDirection, glm::vec3(0.0f, 0.0f, -1.0f));
+
+            tinygltf::Value::Object object;
+            object.emplace("name", tinygltf::Value(name));
+            object.emplace("type", tinygltf::Value("rect"));
+            object.emplace("color", toValueArray(light.color));
+            object.emplace("intensity", tinygltf::Value(static_cast<double>(light.intensity)));
+            object.emplace("width", tinygltf::Value(static_cast<double>(light.width)));
+            object.emplace("height", tinygltf::Value(static_cast<double>(light.height)));
+            object.emplace("direction", toValueArray(localDirection));
+
+            const int index = static_cast<int>(atlasLights.size());
+            atlasLights.emplace_back(tinygltf::Value(std::move(object)));
+            return index;
+        }
+
+        void exportSkyboxExtension(tinygltf::Model &model, const std::vector<entt::entity> &entities, const entt::registry &registry, AssetManager &assets) {
+            for (const entt::entity entity : entities) {
+                const auto *skybox = registry.try_get<SkyboxComponent>(entity);
+                if (!skybox) {
+                    continue;
+                }
+
+                tinygltf::Value::Object object;
+                auto appendPath = [&](const char *key, AssetHandle handle) {
+                    if (handle == INVALID_ASSET_HANDLE) {
+                        return;
+                    }
+
+                    const std::string path = assets.getPath(handle);
+                    if (!path.empty()) {
+                        object.emplace(key, tinygltf::Value(path));
+                    }
+                };
+
+                appendPath("skybox", skybox->skyboxHandle);
+                appendPath("irradiance", skybox->irradianceHandle);
+                appendPath("prefilter", skybox->prefilterHandle);
+
+                if (!object.empty()) {
+                    model.extensions["ATLAS_skybox"] = tinygltf::Value(std::move(object));
+                    addExtensionUsed(model, "ATLAS_skybox");
+                }
+                return;
+            }
+        }
+
+        void exportPostProcessingExtension(tinygltf::Model &model, const std::vector<entt::entity> &entities, const entt::registry &registry) {
+            for (const entt::entity entity : entities) {
+                const auto *postProcessing = registry.try_get<PostProcessingVolumeComponent>(entity);
+                if (!postProcessing) {
+                    continue;
+                }
+
+                tinygltf::Value::Object object;
+                object.emplace("exposure", tinygltf::Value(static_cast<double>(postProcessing->exposure)));
+                object.emplace("contrast", tinygltf::Value(static_cast<double>(postProcessing->contrast)));
+                object.emplace("saturation", tinygltf::Value(static_cast<double>(postProcessing->saturation)));
+                object.emplace("colorTint", toValueArray(postProcessing->colorTint));
+
+                model.extensions["ATLAS_post_processing"] = tinygltf::Value(std::move(object));
+                addExtensionUsed(model, "ATLAS_post_processing");
+                return;
+            }
+        }
+    }
+
+    GLTFAccessor::GLTFAccessor(AssetManager &assets, ExecutorService &service) : assets(assets), executor(service) {
     }
 
     std::vector<entt::entity> GLTFAccessor::importAsset(
@@ -20,7 +569,7 @@ namespace Atlas {
         entt::entity parentEntity) {
         std::vector<AssetHandle> allAssets;
 
-        std::filesystem::path fullPath = AssetManager::get().rootPath() / path;
+        std::filesystem::path fullPath = assets.rootPath() / path;
 
         std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
         size_t fileSize = file.tellg();
@@ -59,7 +608,7 @@ namespace Atlas {
         imageFutures.reserve(model.images.size());
 
         for (size_t imgIdx = 0; imgIdx < model.images.size(); ++imgIdx) {
-            imageFutures.push_back(executor.submit([&model, imgIdx, &imageHandles,&handleMutex, &path]() {
+            imageFutures.push_back(executor.submit([this, &model, imgIdx, &imageHandles, &handleMutex, &path]() {
                 const tinygltf::Image &image = model.images[imgIdx];
 
                 // Skip if no image data
@@ -166,7 +715,7 @@ namespace Atlas {
                 // Thread-safe creation (upload the decoded pixels)
                 {
                     std::lock_guard<std::mutex> lock(handleMutex);
-                    AssetHandle handle = AssetManager::get().getOrCreateTexture(pixelData, static_cast<uint32_t>(width), static_cast<uint32_t>(height), format, texturePath);
+                    AssetHandle handle = assets.getOrCreateTexture(pixelData, static_cast<uint32_t>(width), static_cast<uint32_t>(height), format, texturePath);
                     imageHandles[imgIdx] = handle;
                 }
 
@@ -383,7 +932,7 @@ namespace Atlas {
                     // Thread-safe mesh creation with hash-based deduplication
                     AssetHandle meshHandle; {
                         std::lock_guard<std::mutex> lock(handleMutex);
-                        meshHandle = AssetManager::get().getOrCreateMesh(vertices, indices, meshPath);
+                        meshHandle = assets.getOrCreateMesh(vertices, indices, meshPath);
                     }
 
                     primHandles.push_back(meshHandle);
@@ -466,7 +1015,111 @@ namespace Atlas {
     std::vector<std::byte> GLTFAccessor::exportAsset(
         const std::vector<entt::entity> &entities,
         const entt::registry &registry) {
-        return {};
+        tinygltf::Model model;
+        model.asset.version = "2.0";
+        model.asset.generator = "Atlas";
+        model.defaultScene = 0;
+
+        tinygltf::Scene scene;
+        scene.name = "AtlasScene";
+        model.scenes.push_back(std::move(scene));
+
+        model.buffers.emplace_back();
+        tinygltf::Buffer &buffer = model.buffers.front();
+        buffer.name = "AtlasBuffer";
+
+        std::vector<entt::entity> exportEntities;
+        std::unordered_set<entt::id_type> visited;
+        for (const entt::entity entity : entities) {
+            appendEntityTree(entity, registry, exportEntities, visited);
+        }
+
+        std::unordered_map<AssetHandle, int> textureCache;
+        tinygltf::Value::Array atlasSpecialLights;
+
+        for (const entt::entity entity : exportEntities) {
+            const auto *modelComponent = registry.try_get<ModelComponent>(entity);
+            const auto *lightComponent = registry.try_get<LightComponent>(entity);
+
+            if (!modelComponent && !lightComponent) {
+                continue;
+            }
+
+            const std::string name = entityName(entity, registry, "Node");
+            const auto *transform = registry.try_get<TransformComponent>(entity);
+            const auto *material = registry.try_get<MaterialComponent>(entity);
+
+            tinygltf::Node node;
+            node.name = name;
+
+            if (transform) {
+                node.matrix = toGltfMatrix(*transform);
+            }
+
+            if (modelComponent && modelComponent->meshHandle != INVALID_ASSET_HANDLE) {
+                const auto mesh = assets.getMesh(modelComponent->meshHandle);
+                if (mesh) {
+                    const int materialIndex = appendMaterial(model, textureCache, assets, material, name + "_Material");
+                    const int meshIndex = appendMesh(model, buffer, mesh, materialIndex, name + "_Mesh");
+                    if (meshIndex >= 0) {
+                        node.mesh = meshIndex;
+                    }
+                } else {
+                    AT_WARN("GLTFAccessor: mesh handle {} not found while exporting {}", modelComponent->meshHandle, name);
+                }
+            }
+
+            if (lightComponent) {
+                if (lightComponent->type == LightType::RECT) {
+                    const int atlasLightIndex = appendAtlasRectLight(atlasSpecialLights, *lightComponent, transform, name);
+
+                    tinygltf::Value::Object nodeExtension;
+                    nodeExtension.emplace("light", tinygltf::Value(atlasLightIndex));
+                    node.extensions["ATLAS_lights_special"] = tinygltf::Value(std::move(nodeExtension));
+                } else {
+                    const int lightIndex = appendPunctualLight(model, *lightComponent, name);
+                    if (lightIndex >= 0) {
+                        node.light = lightIndex;
+                    }
+                }
+            }
+
+            if (node.mesh < 0 && node.light < 0 && node.extensions.empty()) {
+                continue;
+            }
+
+            const int nodeIndex = static_cast<int>(model.nodes.size());
+            model.nodes.push_back(std::move(node));
+            model.scenes[model.defaultScene].nodes.push_back(nodeIndex);
+        }
+
+        if (!atlasSpecialLights.empty()) {
+            tinygltf::Value::Object atlasExtension;
+            atlasExtension.emplace("lights", tinygltf::Value(std::move(atlasSpecialLights)));
+            model.extensions["ATLAS_lights_special"] = tinygltf::Value(std::move(atlasExtension));
+            addExtensionUsed(model, "ATLAS_lights_special");
+        }
+
+        exportSkyboxExtension(model, exportEntities, registry, assets);
+        exportPostProcessingExtension(model, exportEntities, registry);
+
+        if (buffer.data.empty()) {
+            model.buffers.clear();
+        } else {
+            alignBuffer(buffer);
+        }
+
+        std::ostringstream stream;
+        tinygltf::TinyGLTF writer;
+        if (!writer.WriteGltfSceneToStream(&model, stream, true, false)) {
+            AT_ERROR("GLTFAccessor: failed to serialize glTF export");
+            return {};
+        }
+
+        AT_INFO("GLTFAccessor: exported {} nodes, {} meshes, {} punctual lights, {} Atlas special lights",
+                model.nodes.size(), model.meshes.size(), model.lights.size(), model.extensions.contains("ATLAS_lights_special") ? model.extensions["ATLAS_lights_special"].Get<tinygltf::Value::Object>().at("lights").ArrayLen() : 0);
+
+        return toBytes(stream.str());
     }
 
     void GLTFAccessor::processNode(
@@ -508,7 +1161,7 @@ namespace Atlas {
                 transform.scale       = wScale;
 
                 std::string meshPath = virtualPath + "#mesh" + std::to_string(node.mesh) + "_prim" + std::to_string(primIdx);
-                AssetHandle meshHandle = AssetManager::get().getHandle(meshPath);
+                AssetHandle meshHandle = assets.getHandle(meshPath);
                 if (meshHandle != INVALID_ASSET_HANDLE) {
                     auto &modelComp = registry.emplace<ModelComponent>(entity);
                     modelComp.meshHandle = meshHandle;
@@ -553,7 +1206,7 @@ namespace Atlas {
                                         imagePath = virtualPath + "#image" + std::to_string(imgIdx);
                                     }
 
-                                    AssetHandle texHandle = AssetManager::get().getHandle(imagePath);
+                                    AssetHandle texHandle = assets.getHandle(imagePath);
                                     if (texHandle != INVALID_ASSET_HANDLE) {
                                         material.albedoTexture = texHandle;
                                     }
@@ -577,7 +1230,7 @@ namespace Atlas {
                                         imagePath = virtualPath + "#image" + std::to_string(imgIdx);
                                     }
 
-                                    AssetHandle normHandle = AssetManager::get().getHandle(imagePath);
+                                    AssetHandle normHandle = assets.getHandle(imagePath);
                                     if (normHandle != INVALID_ASSET_HANDLE) {
                                         material.normalMap = normHandle;
                                     }
@@ -595,7 +1248,7 @@ namespace Atlas {
                                     std::string imagePath = !image.name.empty()
                                                                 ? virtualPath + "#" + image.name
                                                                 : virtualPath + "#image" + std::to_string(imgIdx);
-                                    AssetHandle mrHandle = AssetManager::get().getHandle(imagePath);
+                                    AssetHandle mrHandle = assets.getHandle(imagePath);
                                     if (mrHandle != INVALID_ASSET_HANDLE)
                                         material.metallicRoughnessMap = mrHandle;
                                 }
@@ -612,7 +1265,7 @@ namespace Atlas {
                                     std::string imagePath = !image.name.empty()
                                                                 ? virtualPath + "#" + image.name
                                                                 : virtualPath + "#image" + std::to_string(imgIdx);
-                                    AssetHandle aoHandle = AssetManager::get().getHandle(imagePath);
+                                    AssetHandle aoHandle = assets.getHandle(imagePath);
                                     if (aoHandle != INVALID_ASSET_HANDLE)
                                         material.ambientOcclusion = aoHandle;
                                 }
@@ -796,11 +1449,9 @@ namespace Atlas {
 
         const auto &ext = skyIt->second;
         auto &sky = registry.emplace<SkyboxComponent>(entity);
-        auto &am = AssetManager::get();
-
         auto loadCubemap = [&](const char *key) -> AssetHandle {
             if (ext.Has(key) && ext.Get(key).IsString())
-                return am.loadCubemap(ext.Get(key).Get<std::string>());
+                return assets.loadCubemap(ext.Get(key).Get<std::string>());
             return INVALID_ASSET_HANDLE;
         };
 

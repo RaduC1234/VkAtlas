@@ -29,8 +29,10 @@ namespace Atlas {
         VkRenderPass getRenderPass() const { return renderPass; }
         VkFramebuffer getFrameBuffer(int32_t index) const { return swapChainFramebuffers[index]; }
 
-        VkRenderPass getImGuiRenderPass() const { return imguiRenderPass; }
-        VkFramebuffer getImGuiFrameBuffer(uint32_t i) const { return imguiFramebuffers[i]; }
+        VkRenderPass getOverlayRenderPass() const { return overlayRenderPass; }
+        VkRenderPass getOverlayClearRenderPass() const { return overlayClearRenderPass; }
+        VkFramebuffer getOverlayFrameBuffer(uint32_t i) const { return overlayFramebuffers[i]; }
+        VkFramebuffer getOverlayClearFrameBuffer(uint32_t i) const { return overlayClearFramebuffers[i]; }
 
         bool compareSwapFormats(const SwapChain &swapChain) const {
             return swapChain.swapChainDepthFormat == swapChainDepthFormat &&
@@ -46,13 +48,13 @@ namespace Atlas {
         VkExtent2D windowExtent;
 
         std::vector<VkFramebuffer> swapChainFramebuffers;
-        VkRenderPass renderPass;
+        VkRenderPass renderPass = VK_NULL_HANDLE;
 
         std::vector<VkImage> depthImages;
         std::vector<VmaAllocation> depthImageAllocations;
         std::vector<VkImageView> depthImageViews;
 
-        VkSwapchainKHR swapChain;
+        VkSwapchainKHR swapChain = VK_NULL_HANDLE;
         std::shared_ptr<SwapChain> oldSwapChain;
 
         VkFormat swapChainImageFormat;
@@ -68,13 +70,16 @@ namespace Atlas {
         std::vector<VkFence> imagesInFlight;
         size_t currentFrame = 0;
 
-        VkRenderPass imguiRenderPass;
-        std::vector<VkFramebuffer> imguiFramebuffers;
+        VkRenderPass overlayRenderPass = VK_NULL_HANDLE;
+        VkRenderPass overlayClearRenderPass = VK_NULL_HANDLE;
+        std::vector<VkFramebuffer> overlayFramebuffers;
+        std::vector<VkFramebuffer> overlayClearFramebuffers;
 
         void init();
         void createSwapChain();
         void createImageViews();
         void createRenderPass();
+        void createOverlayRenderPass(VkAttachmentLoadOp loadOp, VkImageLayout initialLayout, VkRenderPass &outRenderPass);
         void createDepthResources();
         void createFramebuffers();
         void createSyncObjects();

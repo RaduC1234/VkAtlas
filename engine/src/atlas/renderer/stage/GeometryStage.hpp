@@ -11,15 +11,17 @@
 #include "utils/Storage.hpp"
 
 namespace Atlas {
+    class AssetManager;
+
     class GeometryStage : public IRenderStage {
     public:
         static constexpr uint32_t MAX_TEXTURES = 1024;
         static constexpr uint32_t MAX_OBJECTS = 10000;
         static constexpr uint32_t MAX_LIGHTS = 32;
-        static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 1'000'000;
-        static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
+        static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 2'000'000;
+        static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 10'000'000;
 
-        GeometryStage(Device &device, const DescriptorSetLayout &globalSetLayout);
+        GeometryStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout);
         ~GeometryStage() override;
 
         GeometryStage(const GeometryStage &) = delete;
@@ -66,6 +68,7 @@ namespace Atlas {
         };
 
         Device &device;
+        AssetManager &assets;
         const DescriptorSetLayout &globalSetLayout;
 
         const GPUImage *colorTarget = nullptr;

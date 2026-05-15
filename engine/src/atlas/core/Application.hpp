@@ -1,23 +1,33 @@
 #pragma once
 
-#include "Window.hpp"
-#include "renderer/Device.hpp"
+#include "core/LayerStack.hpp"
+#include "asset/AssetManager.hpp"
+#include "renderer/ImGuiLayer.hpp"
 #include "renderer/Renderer.hpp"
 
+#include <filesystem>
 #include <memory>
-
-#include "scene/IScene.hpp"
-
+#include <string>
+#include <utility>
 
 namespace Atlas {
+    struct ApplicationCommandLineArgs {
+        int count = 0;
+        char **values = nullptr;
+    };
+
     struct ApplicationSpecification {
-        std::string name = "Atlas Engine";
-        void *pNativeApp = nullptr;
+        std::string name = "Atlas";
+        std::filesystem::path projectManifest;
+        std::filesystem::path projectModule;
+        Renderer::Settings rendererSettings;
+        bool enableImGui = false;
+        bool enableDockspace = false;
     };
 
     class Application {
     public:
-        Application(const ApplicationSpecification &specification);
+        explicit Application(ApplicationSpecification specification);
         ~Application();
 
         Application(const Application &) = delete;
@@ -25,14 +35,29 @@ namespace Atlas {
 
         void run();
 
-    private:
-        ApplicationSpecification specification;
-        Renderer renderer{
-            {
-                .enableRaytracing = true
-            }
-        };
+        Renderer &renderer() { return renderer_; }
+        const Renderer &renderer() const { return renderer_; }
+        AssetManager &assets() { return *assetManager_; }
+        const AssetManager &assets() const { return *assetManager_; }
+        const ApplicationSpecification &specification() const { return specification_; }
 
-        std::unique_ptr<IScene> currentScene;
+        template<class T, class... Args>
+        T &pushLayer(Args &&... args) {
+            return static_cast<T &>(layers.pushLayer(std::make_unique<T>(std::forward<Args>(args)...)));
+        }
+
+        template<class T, class... Args>
+        T &pushOverlay(Args &&... args) {
+            return static_cast<T &>(layers.pushOverlay(std::make_unique<T>(std::forward<Args>(args)...)));
+        }
+
+    private:
+        ApplicationSpecification specification_;
+        Renderer renderer_;
+        std::unique_ptr<AssetManager> assetManager_;
+        LayerStack layers;
+        std::unique_ptr<ImGuiLayer> imguiLayer;
     };
+
+    extern Application *CreateApplication(ApplicationCommandLineArgs args);
 }

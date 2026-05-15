@@ -1,55 +1,94 @@
-#include "Application.hpp"
+#include "core/Application.hpp"
 
-// std
 #include <chrono>
 
-#include "asset/AssetManager.hpp"
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-
-#include "scene/OfficeScene.hpp"
+#if defined(ATLAS_PLATFORM_ANDROID)
+#include "android/AndroidAssetManager.hpp"
+#elif defined(ATLAS_PLATFORM_DESKTOP)
+#include "desktop/DesktopAssetManager.hpp"
+#endif
 
 namespace Atlas {
-    Application::Application(const ApplicationSpecification &specification) : specification(specification), renderer(Renderer::Settings{.windowSettings = Window::Settings{.title = specification.name}}) {
-        this->renderer.window().setWindowIcon("assets/icons/android_robot.png");
-        this->renderer.window().setTheme(Window::Theme::DARK);
+    Application::Application(ApplicationSpecification specification) : specification_(std::move(specification)), renderer_(specification_.rendererSettings) {
+#if defined(ATLAS_PLATFORM_ANDROID)
+        assetManager_ = std::make_unique<AndroidAssetManager>(
+            renderer_.device(),
+            specification_.rendererSettings.windowSettings.pNativeApp
+        );
+#elif defined(ATLAS_PLATFORM_DESKTOP)
+        assetManager_ = std::make_unique<DesktopAssetManager>(
+            renderer_.device(),
+            specification_.rendererSettings.windowSettings.pNativeApp
+        );
+#else
+#error Unsupported platform for AssetManager
+#endif
 
-        currentScene = std::make_unique<OfficeScene>(renderer);
+        renderer_.window().setWindowIcon("assets/icons/android_robot.png");
+        renderer_.window().setTheme(Window::Theme::DARK);
 
-        if (currentScene) {
-            currentScene->onLoad(NULL);
+        if (specification_.enableImGui) {
+            const auto overlayLoadOp = renderer_.settings.sceneOutputTarget == Renderer::SceneOutputTarget::Texture
+                                           ? Renderer::OverlayLoadOp::Clear
+                                           : Renderer::OverlayLoadOp::Load;
+            imguiLayer = std::make_unique<ImGuiLayer>(
+                renderer_.device(),
+                renderer_.window(),
+                renderer_.getOverlayRenderPass(overlayLoadOp),
+                static_cast<uint32_t>(renderer_.getImageCount())
+            );
         }
     }
 
     Application::~Application() {
-        if (currentScene) {
-            currentScene->onDelete();
-        }
+        layers.clear();
+        imguiLayer.reset();
     }
 
     void Application::run() {
         auto currentTime = std::chrono::high_resolution_clock::now();
 
-        while (!renderer.window().shouldClose()) {
-            renderer.window().pollEvents();
+        while (!renderer_.window().shouldClose()) {
+            renderer_.window().pollEvents();
 
             auto newTime = std::chrono::high_resolution_clock::now();
-            float deltaTime = std::chrono::duration_cast<std::chrono::duration<float> >(newTime - currentTime).count();
+            const float deltaTime = std::chrono::duration_cast<std::chrono::duration<float>>(newTime - currentTime).count();
             currentTime = newTime;
 
-            FrameContext frame = renderer.beginFrame();
-            if (frame.graphicsCommandBuffer == VK_NULL_HANDLE)
+            FrameContext frame = renderer_.beginFrame();
+            if (frame.graphicsCommandBuffer == VK_NULL_HANDLE) {
                 continue;
-
-            if (currentScene) {
-                currentScene->onUpdate(deltaTime);
-                currentScene->onRender(frame);
             }
 
-            renderer.endFrame();
+            if (imguiLayer) {
+                imguiLayer->beginFrame(specification_.enableDockspace);
+            }
+
+            for (const auto &layer: layers) {
+                layer->onUpdate(deltaTime);
+            }
+
+            for (const auto &layer: layers) {
+                layer->onRender(frame);
+            }
+
+            if (imguiLayer) {
+                for (const auto &layer: layers) {
+                    layer->onImGuiRender();
+                }
+
+                const auto overlayLoadOp = renderer_.settings.sceneOutputTarget == Renderer::SceneOutputTarget::Texture
+                                               ? Renderer::OverlayLoadOp::Clear
+                                               : Renderer::OverlayLoadOp::Load;
+                imguiLayer->endFrame();
+                renderer_.beginOverlayRenderPass(frame.graphicsCommandBuffer, overlayLoadOp);
+                imguiLayer->renderDrawData(frame.graphicsCommandBuffer);
+                renderer_.endOverlayRenderPass(frame.graphicsCommandBuffer);
+            }
+
+            renderer_.endFrame();
         }
 
-        vkDeviceWaitIdle(renderer.device().device());
+        vkDeviceWaitIdle(renderer_.device().device());
     }
-} // namespace
+}

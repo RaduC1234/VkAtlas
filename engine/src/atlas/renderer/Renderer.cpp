@@ -5,20 +5,17 @@
 #include <cassert>
 #include <stdexcept>
 
-#include <imgui_internal.h>
 #include "entity/Object.hpp"
 
 namespace Atlas {
     Renderer::Renderer(const Settings &settings) : settings(settings) {
         this->window_ = Window::create(settings.windowSettings);
         this->device_ = std::make_unique<Device>(*window_);
-        AssetManager::create(*device_, settings.windowSettings.pNativeApp);
         //this->sameFamily = device_->queueFamilyIndices().graphicsFamily.value() == device_->queueFamilyIndices().computeFamily.value();
 
         recreateSwapChain();
         createCommandBuffers();
         createComputeSyncObjects();
-        createImGuiLayer();
     }
 
     Renderer::~Renderer() {
@@ -28,16 +25,27 @@ namespace Atlas {
         }
 
         freeCommandBuffers();
-        AssetManager::destroy();
     }
 
     float Renderer::getAspectRatio() const {
-        if (settings.imguiWindowRenderTarget) {
-            if (ImGuiWindow *viewport = ImGui::FindWindowByName("Viewport")) {
-                return viewport->InnerRect.GetWidth() / viewport->InnerRect.GetHeight();
-            }
+        if (sceneViewportExtent.width > 0 &&
+            sceneViewportExtent.height > 0) {
+            return static_cast<float>(sceneViewportExtent.width) / static_cast<float>(sceneViewportExtent.height);
         }
+
         return swapChain_->extentAspectRatio();
+    }
+
+    VkCommandBuffer Renderer::currentGraphicsCommandBuffer() const {
+        return getCurrentGraphicsCommandBuffer();
+    }
+
+    void Renderer::setSceneOutputImage(VkImageView imageView, VkImageLayout imageLayout, VkExtent2D extent) {
+        sceneOutputImage = {
+            .imageView = imageView,
+            .imageLayout = imageLayout,
+            .extent = extent
+        };
     }
 
     FrameContext Renderer::beginFrame() {
@@ -70,8 +78,6 @@ namespace Atlas {
             throw std::runtime_error("failed to begin recording compute command buffer!");
         }
 
-        this->imGuiLayer_->beginFrame(settings.imguiWindowRenderTarget);
-
         return {
             .graphicsCommandBuffer = graphicsCommandBuffer,
             .computeCommandBuffer = computeCommandBuffer,
@@ -84,22 +90,6 @@ namespace Atlas {
 
         auto graphicsCommandBuffer = getCurrentGraphicsCommandBuffer();
         auto computeCommandBuffer = getCurrentComputeCommandBuffer();
-
-        VkClearValue clear{};
-        clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-
-        VkRenderPassBeginInfo rpInfo{};
-        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpInfo.renderPass = swapChain_->getImGuiRenderPass();
-        rpInfo.framebuffer = swapChain_->getImGuiFrameBuffer(currentImageIndex);
-        rpInfo.renderArea.offset = {0, 0};
-        rpInfo.renderArea.extent = swapChain_->getSwapChainExtent();
-        rpInfo.clearValueCount = 1;
-        rpInfo.pClearValues = &clear;
-
-        vkCmdBeginRenderPass(graphicsCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-        imGuiLayer_->endFrame(graphicsCommandBuffer);
-        vkCmdEndRenderPass(graphicsCommandBuffer);
 
         if (vkEndCommandBuffer(graphicsCommandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -158,7 +148,35 @@ namespace Atlas {
         assert(isFrameStarted && "Can't call endSwapChainRenderPass if frame is not in progress");
         assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't end render pass on command buffer from a different frame");
 
-        // imGuiLayer->endFrame(commandBuffer);
+        vkCmdEndRenderPass(commandBuffer);
+    }
+
+    void Renderer::beginOverlayRenderPass(VkCommandBuffer commandBuffer, OverlayLoadOp loadOp) {
+        assert(isFrameStarted && "Can't call beginOverlayRenderPass if frame is not in progress");
+        assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't begin overlay render pass on command buffer from a different frame");
+
+        VkClearValue clear{};
+        clear.color = {{0.005f, 0.006f, 0.008f, 1.0f}};
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        const bool clearOverlay = loadOp == OverlayLoadOp::Clear;
+        renderPassInfo.renderPass = getOverlayRenderPass(loadOp);
+        renderPassInfo.framebuffer = clearOverlay
+            ? swapChain_->getOverlayClearFrameBuffer(currentImageIndex)
+            : swapChain_->getOverlayFrameBuffer(currentImageIndex);
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = swapChain_->getSwapChainExtent();
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clear;
+
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    }
+
+    void Renderer::endOverlayRenderPass(VkCommandBuffer commandBuffer) const {
+        assert(isFrameStarted && "Can't call endOverlayRenderPass if frame is not in progress");
+        assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't end overlay render pass on command buffer from a different frame");
+
         vkCmdEndRenderPass(commandBuffer);
     }
 
@@ -243,12 +261,4 @@ namespace Atlas {
         }
     }
 
-    void Renderer::createImGuiLayer() {
-        this->imGuiLayer_ = std::make_unique<ImGuiLayer>(
-            *device_,
-            *window_,
-            swapChain_->getImGuiRenderPass(),
-            static_cast<uint32_t>(getImageCount())
-        );
-    }
 }

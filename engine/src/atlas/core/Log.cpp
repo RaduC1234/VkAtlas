@@ -18,6 +18,14 @@ namespace Atlas {
         }
     }
 
+    std::shared_ptr<Log> &Log::getCoreLogger() {
+        if (!coreLogger) {
+            init();
+        }
+
+        return coreLogger;
+    }
+
     std::string Log::getLogPrefix(LogLevel level) {
         switch (level) {
             case LogLevel::Trace: return "[TRACE]";
