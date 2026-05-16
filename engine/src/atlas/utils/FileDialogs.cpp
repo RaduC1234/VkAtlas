@@ -1,27 +1,27 @@
 #include "FileDialogs.hpp"
 
-#ifndef __ANDROID__
+#ifndef ATLAS_PLATFORM_ANDROID
 #include <GLFW/glfw3.h>
 
-#ifdef _WIN32
+#ifdef ATLAS_PLATFORM_DESKTOP
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <windows.h>
 #include <commdlg.h>
 
 #endif
 
-#ifdef __linux__
+#ifdef ATLAS_PLATFORM_LINUX
 #define GLFW_EXPOSE_NATIVE_X11
 #include <gtk/gtk.h>
 #endif
 
 #include <GLFW/glfw3native.h>
-#endif // __ANDROID__
+#endif // ATLAS_PLATFORM_ANDROID
 
 #include <stdexcept>
 #include <string>
 
-#ifdef __ANDROID__
+#ifdef ATLAS_PLATFORM_ANDROID
 // On Android provide stubs so this file can be compiled but the desktop dialogs are not used.
 std::string FileDialogs::openFile(const char *filter) {
     (void)filter;

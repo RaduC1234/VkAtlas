@@ -6,6 +6,7 @@
 #include "core/Layer.hpp"
 #include "core/LayerStack.hpp"
 #include "core/Log.hpp"
+#include "core/Core.hpp"
 
 #include "entity/Object.hpp"
 

@@ -13,14 +13,6 @@
 
 namespace Atlas {
     class AssetManager;
-
-    enum class ViewMode : uint32_t {
-        LIT,
-        UNLIT,
-        LIGHTING_ONLY,
-        PATH_TRACING
-    };
-
     struct alignas(16) DebugData {
         float irradianceMultiplier{1.0f};
         float exposureMultiplier{1.0f};

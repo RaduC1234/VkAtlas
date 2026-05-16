@@ -2,6 +2,7 @@
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <array>
 #include <ktx.h>
 #include <stb_image.h>
 #include <glm/ext/scalar_constants.hpp>

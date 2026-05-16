@@ -3,6 +3,7 @@
 #include <glm/vec2.hpp>
 
 #include "core/Keyboard.hpp"
+#include "core/Mouse.hpp"
 #include "core/Window.hpp"
 
 namespace Atlas {

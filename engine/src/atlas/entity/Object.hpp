@@ -1,9 +1,8 @@
 #pragma once
 
-#include "renderer/Camera.hpp"
 #include "asset/AssetManager.hpp"
-
-#include <glm/glm.hpp>
+#include "core/Core.hpp"
+#include "renderer/Camera.hpp"
 
 namespace Atlas {
     struct SceneNodeComponent {
@@ -79,6 +78,8 @@ namespace Atlas {
         }
     };
 
+    NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(TransformComponent, translation, scale, rotation);
+
     struct ModelComponent {
         AssetHandle meshHandle = INVALID_ASSET_HANDLE;
     };
@@ -110,6 +111,14 @@ namespace Atlas {
         DIRECTIONAL, // Uses KHR_punctual_lights
         RECT // Uses ATLAS_special_lights
     };
+
+    NLOHMANN_JSON_SERIALIZE_ENUM(LightType, {
+                                 {LightType::UNKNOWN, "Unknown"},
+                                 {LightType::POINT, "Point"},
+                                 {LightType::SPOT, "Spot"},
+                                 {LightType::DIRECTIONAL, "Directional"},
+                                 {LightType::RECT, "Rectangle"},
+                                 })
 
     struct LightComponent {
         LightType type{LightType::POINT};

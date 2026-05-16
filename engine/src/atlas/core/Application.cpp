@@ -9,26 +9,26 @@
 #endif
 
 namespace Atlas {
-    Application::Application(ApplicationSpecification specification) : specification_(std::move(specification)), renderer_(specification_.rendererSettings) {
+    Application::Application(const ApplicationCreateInfo& specification) : specification_(std::move(specification)), renderer_(specification_.rendererSettings) {
 #if defined(ATLAS_PLATFORM_ANDROID)
         assetManager_ = std::make_unique<AndroidAssetManager>(
             renderer_.device(),
-            specification_.rendererSettings.windowSettings.pNativeApp
+            specification_.rendererSettings.window.pNativeApp
         );
 #elif defined(ATLAS_PLATFORM_DESKTOP)
         assetManager_ = std::make_unique<DesktopAssetManager>(
             renderer_.device(),
-            specification_.rendererSettings.windowSettings.pNativeApp
+            specification_.rendererSettings.window.pNativeApp
         );
 #else
 #error Unsupported platform for AssetManager
 #endif
 
         renderer_.window().setWindowIcon("assets/icons/android_robot.png");
-        renderer_.window().setTheme(Window::Theme::DARK);
+        renderer_.window().setTheme(Window::Theme::Dark);
 
         if (specification_.enableImGui) {
-            const auto overlayLoadOp = renderer_.settings.sceneOutputTarget == Renderer::SceneOutputTarget::Texture
+            const auto overlayLoadOp = renderer_.createInfo.sceneOutputTarget == Renderer::SceneOutputTarget::Texture
                                            ? Renderer::OverlayLoadOp::Clear
                                            : Renderer::OverlayLoadOp::Load;
             imguiLayer = std::make_unique<ImGuiLayer>(
@@ -77,7 +77,7 @@ namespace Atlas {
                     layer->onImGuiRender();
                 }
 
-                const auto overlayLoadOp = renderer_.settings.sceneOutputTarget == Renderer::SceneOutputTarget::Texture
+                const auto overlayLoadOp = renderer_.createInfo.sceneOutputTarget == Renderer::SceneOutputTarget::Texture
                                                ? Renderer::OverlayLoadOp::Clear
                                                : Renderer::OverlayLoadOp::Load;
                 imguiLayer->endFrame();

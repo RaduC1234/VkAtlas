@@ -7,10 +7,6 @@ namespace Atlas {
         : IRenderStage(Queue::GRAPHICS), device(device), renderer(renderer) {
     }
 
-    bool OutputStage::isTextureTarget() const {
-        return renderer.settings.sceneOutputTarget == Renderer::SceneOutputTarget::Texture;
-    }
-
     void OutputStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
     }
 
@@ -33,7 +29,7 @@ namespace Atlas {
     void OutputStage::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {
         renderer.setSceneOutputImage(postColorSource->view(0), sourceLayout, postColorSource->extent());
 
-        if (isTextureTarget()) {
+        if (renderer.createInfo.sceneOutputTarget == Renderer::SceneOutputTarget::Texture) {
             recordToTexture(cmd);
         } else {
             recordToSwapChain(cmd);

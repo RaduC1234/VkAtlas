@@ -26,8 +26,7 @@ namespace Atlas {
         out.push_back("geometry_depth");
     }
 
-    void PostProcessPass::onResourcesCreated(
-        const Context &ctx) {
+    void PostProcessPass::onResourcesCreated(const Context &ctx) {
         const GPUImage &colorImage = ctx.resources.at("geometry_color").get().asImage();
         const GPUImage &depthImage = ctx.resources.at("geometry_depth").get().asImage();
         const GPUImage &outImage = ctx.resources.at("post_color").get().asImage();
@@ -42,9 +41,9 @@ namespace Atlas {
         createPipeline();
     }
 
-    // -------------------------------------------------------------------------
-    // Samplers
-    // -------------------------------------------------------------------------
+    void PostProcessPass::onUpdate(entt::registry &registry) {
+        IRenderStage::onUpdate(registry);
+    }
 
     void PostProcessPass::createSampler() {
         VkSamplerCreateInfo info{};
@@ -58,8 +57,9 @@ namespace Atlas {
         info.minLod = 0.0f;
         info.maxLod = 0.0f;
 
-        if (vkCreateSampler(device.device(), &info, nullptr, &colorSampler) != VK_SUCCESS)
+        if (vkCreateSampler(device.device(), &info, nullptr, &colorSampler) != VK_SUCCESS) {
             throw std::runtime_error("PostProcessPass: failed to create colorSampler");
+        }
 
         VkSamplerCreateInfo stencilInfo{};
         stencilInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;

@@ -8,10 +8,9 @@
 #include "entity/Object.hpp"
 
 namespace Atlas {
-    Renderer::Renderer(const Settings &settings) : settings(settings) {
-        this->window_ = Window::create(settings.windowSettings);
-        this->device_ = std::make_unique<Device>(*window_);
-        //this->sameFamily = device_->queueFamilyIndices().graphicsFamily.value() == device_->queueFamilyIndices().computeFamily.value();
+    Renderer::Renderer(const CreateInfo &createInfo) : createInfo(createInfo) {
+        this->window_ = Window::create(createInfo.window);
+        this->device_ = std::make_unique<Device>(*window_, createInfo.enableRaytracing);
 
         recreateSwapChain();
         createCommandBuffers();

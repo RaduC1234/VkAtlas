@@ -11,12 +11,22 @@ namespace Atlas {
     struct ProjectManifest;
 
 #ifndef ATLAS_PROJECT_API
-#if defined(_WIN32)
+#if defined(ATLAS_PLATFORM_WINDOWS)
 #define ATLAS_PROJECT_API __declspec(dllexport)
 #else
 #define ATLAS_PROJECT_API __attribute__((visibility("default")))
 #endif
 #endif
+
+#define ATLAS_PROJECT(x) \
+extern "C" ATLAS_PROJECT_API Atlas::IProjectModule* atlasCreateProjectModule() { \
+return new x(); \
+} \
+\
+extern "C" ATLAS_PROJECT_API void atlasDestroyProjectModule(Atlas::IProjectModule* module) { \
+delete module; \
+}
+
 
     struct ProjectContext {
         Renderer &renderer;
@@ -30,10 +40,14 @@ namespace Atlas {
     public:
         virtual ~IProjectModule() = default;
 
-        virtual void onProjectLoaded(ProjectContext &context) {}
+        virtual void onProjectLoaded(ProjectContext &context) {
+        }
+
         virtual IScene *createScene(ProjectContext &context, const std::string &sceneId) = 0;
         virtual void destroyScene(IScene *scene) { delete scene; }
-        virtual void onProjectUnloaded(ProjectContext &context) {}
+
+        virtual void onProjectUnloaded(ProjectContext &context) {
+        }
     };
 
     using CreateProjectModuleFn = IProjectModule *(*)();

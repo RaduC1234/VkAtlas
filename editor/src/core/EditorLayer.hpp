@@ -4,6 +4,7 @@
 
 #include <entt/entity/entity.hpp>
 #include <entt/entity/fwd.hpp>
+#include <imgui.h>
 #include <vulkan/vulkan.h>
 
 namespace Atlas {
@@ -23,8 +24,10 @@ namespace Atlas::Editor {
     private:
         void createViewportTexture();
         void destroyViewportTexture();
+        void drawTitleBar();
         void drawRenderSettings();
         void drawViewport();
+        void drawViewportGizmo(const ImVec2 &viewportMin, const ImVec2 &viewportSize);
         void drawSceneHierarchy();
         void drawEntityNode(entt::registry &registry, entt::entity entity);
         const char *entityName(entt::registry &registry, entt::entity entity) const;
@@ -32,6 +35,7 @@ namespace Atlas::Editor {
         ProjectLayer &projectLayer;
         float frameTime = 0.0f;
         entt::entity selectedEntity{entt::null};
+        int gizmoOperation = 0;
         VkImageView viewportImageView = VK_NULL_HANDLE;
         VkImageLayout viewportImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         VkDescriptorSet viewportTexture = VK_NULL_HANDLE;

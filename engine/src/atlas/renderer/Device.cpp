@@ -85,7 +85,7 @@ namespace Atlas {
         }
     }
 
-    Device::Device(Window &window) : window_{window} {
+    Device::Device(Window &window, bool enableRayTracing) : window_{window}, enableRayTracing{enableRayTracing} {
         createVkInstance();
         setupDebugMessenger();
         createSurface();

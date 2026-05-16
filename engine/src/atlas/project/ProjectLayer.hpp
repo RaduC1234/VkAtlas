@@ -17,10 +17,10 @@ namespace Atlas {
         void onUpdate(float deltaTime) override;
         void onRender(FrameContext frameContext) override;
 
-        [[nodiscard]] Renderer &getRenderer() { return renderer; }
-        [[nodiscard]] const Renderer &getRenderer() const { return renderer; }
-        [[nodiscard]] ProjectInstance &project() { return projectInstance; }
-        [[nodiscard]] const ProjectInstance &project() const { return projectInstance; }
+        Renderer &getRenderer() { return renderer; }
+        const Renderer &getRenderer() const { return renderer; }
+        ProjectInstance &project() { return projectInstance; }
+        const ProjectInstance &project() const { return projectInstance; }
 
     private:
         Renderer &renderer;

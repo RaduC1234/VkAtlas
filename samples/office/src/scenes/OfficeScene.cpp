@@ -1,12 +1,5 @@
 #include "OfficeScene.hpp"
 
-#include <utility>
-
-#include "asset/AssetManager.hpp"
-#include "entity/Object.hpp"
-#include "renderer/Renderer.hpp"
-#include "system/CameraSystem.hpp"
-#include "system/RenderSystemV2.hpp"
 
 namespace Atlas {
     OfficeScene::OfficeScene(Renderer &renderer, AssetManager &assets) : IScene(renderer), assets(assets) {
@@ -55,8 +48,7 @@ namespace Atlas {
         const auto cameraEntity = *cameraView.begin();
         const auto &camera = cameraView.get<CameraComponent>(cameraEntity).camera;
 
-        auto debugDt =  debugData();
-        debugDt.viewMode = ViewMode::PATH_TRACING;
+        auto debugDt = debugData();
         renderSystem->render(
             frameContext,
             camera.getData(),

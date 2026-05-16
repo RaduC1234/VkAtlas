@@ -24,11 +24,11 @@ namespace Atlas {
                                                      ? std::filesystem::path{}
                                                      : ATLAS_DEFAULT_PROJECT_MODULE;
 
-        ApplicationSpecification specification{};
+        ApplicationCreateInfo specification{};
         specification.name = "Atlas Runtime";
         specification.projectManifest = manifestPath;
         specification.projectModule = modulePath;
-        specification.rendererSettings.windowSettings.title = specification.name;
+        specification.rendererSettings.window.title = specification.name;
 #ifdef ATLAS_RUNTIME_ENABLE_IMGUI
         specification.enableImGui = true;
 #endif

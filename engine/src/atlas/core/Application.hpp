@@ -16,18 +16,18 @@ namespace Atlas {
         char **values = nullptr;
     };
 
-    struct ApplicationSpecification {
+    struct ApplicationCreateInfo {
         std::string name = "Atlas";
         std::filesystem::path projectManifest;
         std::filesystem::path projectModule;
-        Renderer::Settings rendererSettings;
+        Renderer::CreateInfo rendererSettings;
         bool enableImGui = false;
         bool enableDockspace = false;
     };
 
     class Application {
     public:
-        explicit Application(ApplicationSpecification specification);
+        explicit Application(const ApplicationCreateInfo& specification);
         ~Application();
 
         Application(const Application &) = delete;
@@ -39,7 +39,7 @@ namespace Atlas {
         const Renderer &renderer() const { return renderer_; }
         AssetManager &assets() { return *assetManager_; }
         const AssetManager &assets() const { return *assetManager_; }
-        const ApplicationSpecification &specification() const { return specification_; }
+        const ApplicationCreateInfo &specification() const { return specification_; }
 
         template<class T, class... Args>
         T &pushLayer(Args &&... args) {
@@ -52,7 +52,7 @@ namespace Atlas {
         }
 
     private:
-        ApplicationSpecification specification_;
+        ApplicationCreateInfo specification_;
         Renderer renderer_;
         std::unique_ptr<AssetManager> assetManager_;
         LayerStack layers;

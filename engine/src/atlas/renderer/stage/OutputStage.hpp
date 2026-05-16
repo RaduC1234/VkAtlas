@@ -20,7 +20,6 @@ namespace Atlas {
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 
     private:
-        bool isTextureTarget() const;
         void recordToSwapChain(VkCommandBuffer cmd);
         void recordToTexture(VkCommandBuffer cmd);
 

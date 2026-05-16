@@ -27,6 +27,7 @@ namespace Atlas {
         void setStyle();
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
-        VkDevice device = VK_NULL_HANDLE;
+        VkDevice         device         = VK_NULL_HANDLE;
+        void            *nativeWindow   = nullptr;
     };
 }

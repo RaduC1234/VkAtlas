@@ -6,6 +6,8 @@ Thumbs.db
 *.swp
 *~
 
+**/.cxx
+
 ehthumbs.db
 Icon
 Desktop.ini

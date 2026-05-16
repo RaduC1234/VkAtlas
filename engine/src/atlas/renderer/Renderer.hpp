@@ -16,6 +16,13 @@ namespace Atlas {
         uint32_t index;
     };
 
+    enum class ViewMode : uint32_t {
+        LIT,
+        UNLIT,
+        LIGHTING_ONLY,
+        PATH_TRACING
+    };
+
     class Renderer {
     public:
         enum class SceneOutputTarget {
@@ -33,16 +40,20 @@ namespace Atlas {
             VkImageLayout imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             VkExtent2D extent{};
 
-            [[nodiscard]] bool valid() const { return imageView != VK_NULL_HANDLE; }
+            bool valid() const { return imageView != VK_NULL_HANDLE; }
         };
 
-        struct Settings {
-            Window::Settings windowSettings;
+        struct CreateInfo {
+            Window::CreateInfo window;
             bool enableRaytracing = false;
             SceneOutputTarget sceneOutputTarget = SceneOutputTarget::Swapchain;
         };
 
-        Renderer(const Settings &settings);
+        struct Settings {
+            ViewMode viewMode = ViewMode::LIT;
+        };
+
+        Renderer(const CreateInfo &createInfo);
         ~Renderer();
 
         Renderer(const Renderer &) = delete;
@@ -74,7 +85,7 @@ namespace Atlas {
         void setSceneOutputImage(VkImageView imageView, VkImageLayout imageLayout, VkExtent2D extent);
         void setSceneViewportExtent(VkExtent2D extent) { sceneViewportExtent = extent; }
 
-        Settings settings;
+        CreateInfo createInfo;
     private:
         void createCommandBuffers();
         void freeCommandBuffers();

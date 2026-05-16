@@ -1,5 +1,6 @@
 #include "SwapChain.hpp"
 
+#include <array>
 #include <stdexcept>
 
 #include "core/Log.hpp"

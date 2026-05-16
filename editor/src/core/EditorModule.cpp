@@ -22,16 +22,16 @@ namespace Atlas {
                                                      ? std::filesystem::path{}
                                                      : ATLAS_DEFAULT_PROJECT_MODULE;
 
-        ApplicationSpecification specification{};
-        specification.name = "Atlas Editor";
-        specification.projectManifest = manifestPath;
-        specification.projectModule = modulePath;
-        specification.rendererSettings.windowSettings.title = specification.name;
-       // specification.rendererSettings.sceneOutputTarget = Renderer::SceneOutputTarget::Texture;
-        specification.enableImGui = true;
-        specification.enableDockspace = true;
+        ApplicationCreateInfo createInfo{};
+        createInfo.name = "Atlas Editor";
+        createInfo.projectManifest = manifestPath;
+        createInfo.projectModule = modulePath;
+        createInfo.rendererSettings.window.title = createInfo.name;
+        createInfo.rendererSettings.window.properties = Window::Properties::Decorated | Window::Properties::Resizeable | Window::Properties::CustomTitlebar;
+        createInfo.enableImGui = true;
+        createInfo.enableDockspace = true;
 
-        auto *application = new Application(std::move(specification));
+        auto *application = new Application(createInfo);
         auto &projectLayer = application->pushLayer<ProjectLayer>(application->renderer(), application->assets(), manifestPath, modulePath);
         application->pushOverlay<Editor::EditorLayer>(projectLayer);
 

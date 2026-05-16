@@ -8,7 +8,7 @@ set(ATLAS_OFFICE_SCENE_SOURCES
 )
 
 add_library(atlas_office_project SHARED
-        src/core/OfficeProjectModule.cpp
+        src/core/OfficeProject.cpp
         ${ATLAS_OFFICE_SCENE_SOURCES}
 )
 
