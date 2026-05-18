@@ -11,14 +11,12 @@
 #include "utils/Storage.hpp"
 
 namespace Atlas {
-    class AssetManager;
-
     class GeometryStage : public IRenderStage {
     public:
         static constexpr uint32_t MAX_TEXTURES = 1024;
         static constexpr uint32_t MAX_OBJECTS = 10000;
         static constexpr uint32_t MAX_LIGHTS = 32;
-        static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 2'000'000;
+        static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(GPUMesh::Vertex) * 2'000'000;
         static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 10'000'000;
 
         GeometryStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout);
@@ -90,8 +88,7 @@ namespace Atlas {
         std::unique_ptr<DescriptorSetLayout> textureSetLayout;
         VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
         uint32_t nextTextureSlot = 1;
-        std::unordered_map<AssetHandle, uint32_t> handleToTextureSlot;
-        AssetHandle defaultWhiteHandle = INVALID_ASSET_HANDLE;
+        std::unordered_map<AssetHandle<Texture>, uint32_t> handleToTextureSlot;
 
         std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
         Storage<GPUObjectData> opaqueObjectData;
@@ -106,13 +103,13 @@ namespace Atlas {
 
         std::unique_ptr<DescriptorSetLayout> skyboxSetLayout;
         VkDescriptorSet skyboxDescriptorSet = VK_NULL_HANDLE;
-        AssetHandle boundSkyboxHandle = INVALID_ASSET_HANDLE;
+        AssetHandle<Cubemap> boundSkyboxHandle;
 
         std::unique_ptr<GPUBuffer> mergedVertexBuffer;
         std::unique_ptr<GPUBuffer> mergedIndexBuffer;
         uint32_t nextVertex = 0;
         uint32_t nextIndex = 0;
-        std::unordered_map<AssetHandle, MeshAllocation> meshAllocations;
+        std::unordered_map<AssetHandle<Mesh>, MeshAllocation> meshAllocations;
 
         void begin(VkCommandBuffer cmd);
         void end(VkCommandBuffer cmd);
@@ -124,9 +121,9 @@ namespace Atlas {
         void createDescriptors();
         void createGPUBuffers();
 
-        uint32_t registerTexture(AssetHandle handle);
-        void registerMesh(AssetHandle handle);
-        uint32_t resolveTextureIndex(AssetHandle handle) const;
+        uint32_t registerTexture(AssetHandle<Texture> handle);
+        void registerMesh(AssetHandle<Mesh> handle);
+        uint32_t resolveTextureIndex(AssetHandle<Texture> handle) const;
 
         static VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
     };

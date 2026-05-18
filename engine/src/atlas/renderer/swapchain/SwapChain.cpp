@@ -86,7 +86,10 @@ namespace Atlas {
         return result;
     }
 
-    VkResult SwapChain::submitCommandBuffers(VkCommandBuffer graphicsCommandBuffer, std::optional<VkSemaphore> computeFinishedSemaphore /* ignoreForNow */, uint32_t *imageIndex) {
+    VkResult SwapChain::submitCommandBuffers(VkCommandBuffer graphicsCommandBuffer,
+                                             std::optional<VkSemaphore> computeFinishedSemaphore /* ignoreForNow */,
+                                             uint32_t *imageIndex,
+                                             std::optional<uint64_t> transferTimelineWaitValue) {
         if (imagesInFlight[*imageIndex] != VK_NULL_HANDLE) {
             vkWaitForFences(device.device(), 1, &imagesInFlight[*imageIndex], VK_TRUE, UINT64_MAX);
         }
@@ -102,8 +105,23 @@ namespace Atlas {
             waitStages.push_back(VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
         }
 
+        std::vector<uint64_t> waitValues;
+        VkTimelineSemaphoreSubmitInfo timelineInfo{};
+        if (transferTimelineWaitValue.has_value()) {
+            waitSemaphores.push_back(device.transferTimelineSemaphore());
+            waitStages.push_back(VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
+
+            waitValues.resize(waitSemaphores.size(), 0);
+            waitValues.back() = transferTimelineWaitValue.value();
+
+            timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+            timelineInfo.waitSemaphoreValueCount = static_cast<uint32_t>(waitValues.size());
+            timelineInfo.pWaitSemaphoreValues = waitValues.data();
+        }
+
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.pNext = transferTimelineWaitValue.has_value() ? &timelineInfo : nullptr;
         submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphores.size());
         submitInfo.pWaitSemaphores = waitSemaphores.data();
         submitInfo.pWaitDstStageMask = waitStages.data();

@@ -4,7 +4,7 @@
 #include "asset/AssetManager.hpp"
 
 namespace Atlas {
-    class OBJAccessor : public ILoader {
+    class OBJAccessor : public IAccessor {
     public:
         OBJAccessor(AssetManager &assets, ExecutorService &service);
         ~OBJAccessor() override = default;

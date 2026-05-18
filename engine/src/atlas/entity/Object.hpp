@@ -81,7 +81,7 @@ namespace Atlas {
     NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(TransformComponent, translation, scale, rotation);
 
     struct ModelComponent {
-        AssetHandle meshHandle = INVALID_ASSET_HANDLE;
+        AssetHandle<Mesh> meshHandle;
     };
 
     struct CameraComponent {
@@ -90,18 +90,18 @@ namespace Atlas {
 
     struct MaterialComponent {
         glm::vec4 baseColor = glm::vec4{1.0f};
-        AssetHandle albedoTexture = INVALID_ASSET_HANDLE;
-        AssetHandle normalMap = INVALID_ASSET_HANDLE;
-        AssetHandle metallicRoughnessMap = INVALID_ASSET_HANDLE;
-        AssetHandle ambientOcclusion = INVALID_ASSET_HANDLE;
+        AssetHandle<Texture> albedoTexture;
+        AssetHandle<Texture> normalMap;
+        AssetHandle<Texture> metallicRoughnessMap;
+        AssetHandle<Texture> ambientOcclusion;
         bool alphaMasked{false};
         bool transparent{false};
     };
 
     struct SkyboxComponent {
-        AssetHandle skyboxHandle = INVALID_ASSET_HANDLE;
-        AssetHandle irradianceHandle = INVALID_ASSET_HANDLE;
-        AssetHandle prefilterHandle = INVALID_ASSET_HANDLE;
+        AssetHandle<Cubemap> skyboxHandle;
+        AssetHandle<Cubemap> irradianceHandle;
+        AssetHandle<Cubemap> prefilterHandle;
     };
 
     enum class LightType : uint32_t {
@@ -143,9 +143,5 @@ namespace Atlas {
         float contrast{1.0f};
         float saturation{1.0};
         glm::vec3 colorTint = {1.0f, 1.0f, 1.0f};
-    };
-
-    struct DirtyTag {
-        bool dirty{false};
     };
 }

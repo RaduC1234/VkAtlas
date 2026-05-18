@@ -171,7 +171,7 @@ namespace Atlas {
     }
 
     void GPUBuffer::copy(Device &device, VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.beginGraphicsCommands();
 
         VkBufferCopy copyRegion{};
         copyRegion.srcOffset = srcOffset;
@@ -179,11 +179,11 @@ namespace Atlas {
         copyRegion.size = size;
         vkCmdCopyBuffer(commandBuffer, src, dst, 1, &copyRegion);
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.endGraphicsCommands(commandBuffer);
     }
 
     void GPUBuffer::copyToImage(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.beginGraphicsCommands();
 
         vkCmdCopyBufferToImage(
             commandBuffer,
@@ -194,7 +194,7 @@ namespace Atlas {
             regions.data()
         );
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.endGraphicsCommands(commandBuffer);
     }
 
     void GPUBuffer::copy(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {

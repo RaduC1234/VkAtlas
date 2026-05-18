@@ -48,8 +48,6 @@ namespace Atlas {
 
     PathTracingStage::PathTracingStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout)
         : IRenderStage(Queue::GRAPHICS), device(device), assets(assets), globalSetLayout(globalSetLayout) {
-        defaultWhiteHandle = assets.createDefaultWhiteTexture();
-
         objectBuffer = std::make_unique<GPUBuffer>(
             GPUBuffer::simple(device)
             .setSize(sizeof(PTObjectData) * MAX_OBJECTS)
@@ -72,7 +70,7 @@ namespace Atlas {
         // Placeholder 1-element buffers so descriptors are always valid at init.
         vertexBuffer = std::make_unique<GPUBuffer>(
             GPUBuffer::simple(device)
-            .setSize(sizeof(Mesh::Vertex))
+            .setSize(sizeof(GPUMesh::Vertex))
             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
             .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
             .build()
@@ -91,7 +89,16 @@ namespace Atlas {
         createPipeline();
         buildSBT();
 
-        registerTexture(defaultWhiteHandle);
+        VkDescriptorImageInfo defaultInfo = IGPUResource::default_<GPUTexture>().descriptor();
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = ptSet;
+        write.dstBinding = 6;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.descriptorCount = 1;
+        write.pImageInfo = &defaultInfo;
+        vkUpdateDescriptorSets(device.device(), 1, &write, 0, nullptr);
     }
 
     PathTracingStage::~PathTracingStage() {
@@ -160,9 +167,7 @@ namespace Atlas {
 
             if (material.transparent && !material.alphaMasked) continue;
 
-            if (model.meshHandle == INVALID_ASSET_HANDLE) continue;
-            const auto mesh = assets.getMesh(model.meshHandle);
-            if (!mesh || !mesh->accelerationStructure().isValid()) continue;
+            if (!model.meshHandle.valid() || !model.meshHandle.isReady()) continue;
 
             const uint32_t objectIndex = static_cast<uint32_t>(cpuObjects.size());
             const glm::mat4 m = transform.mat4();
@@ -174,16 +179,16 @@ namespace Atlas {
             instance.mask = 0xFF;
             instance.instanceShaderBindingTableRecordOffset = 0;
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-            instance.accelerationStructureReference = mesh->accelerationStructure().deviceAddress();
+            instance.accelerationStructureReference = model.meshHandle.blasAddress();
             tlasInstances.push_back(instance);
 
             const auto firstVertex = static_cast<uint32_t>(allVertices.size());
             const auto firstIndex = static_cast<uint32_t>(allIndices.size());
 
-            for (const auto &v: mesh->getVertices()) {
+            for (const auto &v: model.meshHandle->vertices()) {
                 allVertices.push_back(v);
             }
-            for (const auto i: mesh->getIndices()) {
+            for (const auto i: model.meshHandle->indices()) {
                 allIndices.push_back(i);
             }
 
@@ -191,14 +196,14 @@ namespace Atlas {
                 .modelMatrix = m,
                 .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
                 .textureIndices = glm::uvec4(
-                    registerTexture(material.albedoTexture != INVALID_ASSET_HANDLE ? material.albedoTexture : defaultWhiteHandle),
-                    material.normalMap != INVALID_ASSET_HANDLE ? registerTexture(material.normalMap) : 0u,
-                    material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? registerTexture(material.metallicRoughnessMap) : 0u,
-                    material.ambientOcclusion != INVALID_ASSET_HANDLE ? registerTexture(material.ambientOcclusion) : 0u
+                    registerTexture(material.albedoTexture),
+                    registerTexture(material.normalMap),
+                    registerTexture(material.metallicRoughnessMap),
+                    registerTexture(material.ambientOcclusion)
                 ),
                 .baseColor = material.baseColor,
                 .firstIndex = firstIndex,
-                .indexCount = static_cast<uint32_t>(mesh->getIndices().size()),
+                .indexCount = static_cast<uint32_t>(model.meshHandle->indices().size()),
                 .firstVertex = firstVertex,
                 .flags = material.alphaMasked ? MATERIAL_FLAG_ALPHA_MASKED : 0u,
             });
@@ -292,7 +297,7 @@ namespace Atlas {
     }
 
     void PathTracingStage::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
-        if (!active || !tlas_.isValid() || !outputImage || !accumulationImage) {
+        if (!outputImage || !accumulationImage) {
             return;
         }
 
@@ -325,6 +330,10 @@ namespace Atlas {
                                  VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                                  0, 0, nullptr, 0, nullptr,
                                  static_cast<uint32_t>(barriers.size()), barriers.data());
+        }
+
+        if (!active || !tlas_.isValid()) {
+            return;
         }
 
         pipeline->bind(cmd);
@@ -497,11 +506,11 @@ namespace Atlas {
             .build()
         );
 
-        VkCommandBuffer cmd = device.beginSingleTimeCommands();
+        VkCommandBuffer cmd = device.beginGraphicsCommands();
         VkBufferCopy region{};
         region.size = sbtSize;
         vkCmdCopyBuffer(cmd, stagingBuffer.get(), sbtBuffer->get(), 1, &region);
-        device.endSingleTimeCommands(cmd);
+        device.endGraphicsCommands(cmd);
 
         VkBufferDeviceAddressInfo addrInfo{};
         addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -582,8 +591,8 @@ namespace Atlas {
         return false;
     }
 
-    uint32_t PathTracingStage::registerTexture(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) return 0;
+    uint32_t PathTracingStage::registerTexture(AssetHandle<Texture> handle) {
+        if (!handle.valid()) return 0;
 
         auto [it, inserted] = handleToSlot.emplace(handle, nextTextureSlot);
         if (!inserted) return it->second;
@@ -593,18 +602,10 @@ namespace Atlas {
             return 0;
         }
 
-        const auto texture = assets.getTexture(handle);
-        if (!texture) return 0;
-
         const uint32_t slot = nextTextureSlot++;
         it->second = slot;
 
-        VkDescriptorImageInfo info{
-            .sampler = texture->getSampler(),
-            .imageView = texture->getImageView(),
-            .imageLayout = texture->getImageLayout(),
-        };
-
+        VkDescriptorImageInfo info = handle.descriptor();
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = ptSet;

@@ -15,7 +15,10 @@ namespace Atlas {
         SwapChain &operator=(const SwapChain &) = delete;
 
         VkResult acquireNextImage(uint32_t *imageIndex) const;
-        VkResult submitCommandBuffers(VkCommandBuffer graphicsCommandBuffer, std::optional<VkSemaphore> computeFinishedSemaphore, uint32_t *imageIndex);
+        VkResult submitCommandBuffers(VkCommandBuffer graphicsCommandBuffer,
+                                      std::optional<VkSemaphore> computeFinishedSemaphore,
+                                      uint32_t *imageIndex,
+                                      std::optional<uint64_t> transferTimelineWaitValue = std::nullopt);
 
         VkFormat findDepthFormat();
         VkFormat getSwapChainImageFormat() const { return swapChainImageFormat; }

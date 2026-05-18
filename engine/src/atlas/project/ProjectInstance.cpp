@@ -106,7 +106,7 @@ namespace Atlas {
                                     ? projectRelativePath(projectRoot, projectManifest.codeModule)
                                     : absolutePath(moduleOverride);
 
-            assets.setRootPath(assetRoot);
+            assets.overwriteRootPath(assetRoot);
 
             projectLibrary = openLibrary(projectModulePath);
             const auto createProjectModule = reinterpret_cast<CreateProjectModuleFn>(loadSymbol(projectLibrary, CREATE_PROJECT_MODULE_SYMBOL, projectModulePath));

@@ -6,9 +6,9 @@
 #include "entt/entity/registry.hpp"
 
 namespace Atlas {
-    class ILoader {
+    class IAccessor {
     public:
-        virtual ~ILoader() = default;
+        virtual ~IAccessor() = default;
         virtual std::vector<std::string> extensions() const = 0;
 
         // parentEntity = entt::null means attach to scene root

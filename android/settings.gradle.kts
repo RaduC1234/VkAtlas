@@ -19,5 +19,4 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Atlas"
-include(":android")
+rootProject.name = "AtlasAndroid"

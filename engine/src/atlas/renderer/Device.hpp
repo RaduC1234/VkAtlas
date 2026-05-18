@@ -1,9 +1,10 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <vector>
-
 #include <vk_mem_alloc.h>
+
 #include "core/Window.hpp"
 #include "utils/ExecutorService.hpp"
 
@@ -14,6 +15,7 @@ namespace Atlas {
     constexpr bool enableValidationLayers = true;
 #endif
 
+#pragma region RayTracingFunctions
     struct RayTracingFunctions {
         PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
         PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
@@ -43,6 +45,7 @@ if (!name) throw std::runtime_error("Failed to load " #name);
 
         static RayTracingFunctions &get();
     };
+#pragma endregion
 
     struct SwapChainSupportDetails {
         VkSurfaceCapabilitiesKHR capabilities{};
@@ -79,6 +82,8 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         VkQueue transferQueue() const { return transferQueue_; }
         VkCommandPool getGraphicsCommandPool() const { return graphicsCommandPool_; }
         VkCommandPool getComputeCommandPool() const { return computeCommandPool_; }
+        VkCommandPool getTransferCommandPool() const { return transferCommandPool_; }
+        VkSemaphore transferTimelineSemaphore() const { return transferTimelineSemaphore_; }
         const VkInstance &getInstance() const { return vkInstance_; }
         const VkPhysicalDevice &getPhysicalDevice() const { return physicalDevice_; }
         const VmaAllocator &allocator() const { return allocator_; }
@@ -94,10 +99,25 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 
-        VkCommandBuffer beginSingleTimeCommands();
-        void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
+        // Single time commands — synchronous, graphics queue
+        VkCommandBuffer beginGraphicsCommands();
+        void endGraphicsCommands(VkCommandBuffer commandBuffer) const;
+
+        // Transfer commands — async, transfer queue, one at a time
+        struct TransferCmd {
+            VkCommandBuffer buffer;
+        };
+
+        TransferCmd beginTransferCommands();
+        uint64_t endTransferCommands(TransferCmd cmd,
+                                     std::function<void(uint64_t)> onComplete = nullptr);
+
+        bool isTransferComplete(uint64_t timelineValue) const;
+        void pollTransferCallbacks();
+        uint64_t currentTransferTimelineValue() const { return nextTransferTimelineValue_ - 1; }
 
         static const char *vkResultToString(VkResult result);
+
     private:
         static constexpr uint32_t APPLICATION_VERSION = VK_MAKE_VERSION(1, 0, 0);
         static constexpr const char *APPLICATION_NAME = "Atlas Engine";
@@ -109,6 +129,8 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         void createLogicalDevice();
         void createVmaAllocator();
         void createCommandPools();
+        void createTransferCommandBuffer();
+        void createTransferTimelineSemaphore();
 
         bool checkValidationLayerSupport();
         std::vector<const char *> getRequiredInstanceExtensions() const;
@@ -134,6 +156,17 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         QueueFamilyIndices queueFamilyIndices_;
         VkCommandPool graphicsCommandPool_ = VK_NULL_HANDLE;
         VkCommandPool computeCommandPool_ = VK_NULL_HANDLE;
+        VkCommandPool transferCommandPool_ = VK_NULL_HANDLE;
+
+        // Single transfer command buffer — reset and reused each update()
+        VkCommandBuffer transferCommandBuffer_ = VK_NULL_HANDLE;
+        uint64_t lastTransferTimelineValue_ = 0;
+        VkSemaphore transferTimelineSemaphore_ = VK_NULL_HANDLE;
+        uint64_t nextTransferTimelineValue_ = 1;
+
+        std::function<void(uint64_t)> pendingTransferCallback_;
+        uint64_t pendingTransferSignalValue_ = 0;
+
         VmaAllocator allocator_ = VK_NULL_HANDLE;
 
         VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtPipelineProperties_{};

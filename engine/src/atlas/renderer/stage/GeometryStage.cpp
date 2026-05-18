@@ -16,8 +16,16 @@ namespace Atlas {
         createDescriptors();
         createGPUBuffers();
 
-        defaultWhiteHandle = assets.createDefaultWhiteTexture();
-        registerTexture(defaultWhiteHandle);
+        VkDescriptorImageInfo defaultInfo = IGPUResource::default_<GPUTexture>().descriptor();
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = bindlessTextureSet;
+        write.dstBinding = 0;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.descriptorCount = 1;
+        write.pImageInfo = &defaultInfo;
+        vkUpdateDescriptorSets(device.device(), 1, &write, 0, nullptr);
     }
 
     GeometryStage::~GeometryStage() {
@@ -59,13 +67,18 @@ namespace Atlas {
             }
 
             const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
-            const auto irradiance = assets.getCubemap(skybox.irradianceHandle != INVALID_ASSET_HANDLE ? skybox.irradianceHandle : defaultWhiteHandle);
-            const auto prefilter = assets.getCubemap(skybox.prefilterHandle != INVALID_ASSET_HANDLE ? skybox.prefilterHandle : defaultWhiteHandle);
-            const auto skyboxCubemap = assets.getCubemap(skybox.skyboxHandle != INVALID_ASSET_HANDLE ? skybox.skyboxHandle : defaultWhiteHandle);
 
-            VkDescriptorImageInfo irradianceInfo = {irradiance->getSampler(), irradiance->getImageView(), irradiance->getImageLayout()};
-            VkDescriptorImageInfo prefilterInfo = {prefilter->getSampler(), prefilter->getImageView(), prefilter->getImageLayout()};
-            VkDescriptorImageInfo skyboxInfo = {skyboxCubemap->getSampler(), skyboxCubemap->getImageView(), skyboxCubemap->getImageLayout()};
+            VkDescriptorImageInfo irradianceInfo = skybox.irradianceHandle.valid()
+                ? skybox.irradianceHandle.descriptor()
+                : IGPUResource::default_<GPUCubemap>().descriptor();
+
+            VkDescriptorImageInfo prefilterInfo = skybox.prefilterHandle.valid()
+                ? skybox.prefilterHandle.descriptor()
+                : IGPUResource::default_<GPUCubemap>().descriptor();
+
+            VkDescriptorImageInfo skyboxInfo = skybox.skyboxHandle.valid()
+                ? skybox.skyboxHandle.descriptor()
+                : IGPUResource::default_<GPUCubemap>().descriptor();
 
             VkWriteDescriptorSet wIrradiance{};
             wIrradiance.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -116,10 +129,10 @@ namespace Atlas {
                 .modelMatrix = model4,
                 .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(model4))),
                 .textureIndices = glm::uvec4(
-                    resolveTextureIndex(material.albedoTexture != INVALID_ASSET_HANDLE ? material.albedoTexture : defaultWhiteHandle),
-                    resolveTextureIndex(material.normalMap != INVALID_ASSET_HANDLE ? material.normalMap : defaultWhiteHandle),
-                    resolveTextureIndex(material.metallicRoughnessMap != INVALID_ASSET_HANDLE ? material.metallicRoughnessMap : defaultWhiteHandle),
-                    resolveTextureIndex(material.ambientOcclusion != INVALID_ASSET_HANDLE ? material.ambientOcclusion : defaultWhiteHandle)
+                    resolveTextureIndex(material.albedoTexture),
+                    resolveTextureIndex(material.normalMap),
+                    resolveTextureIndex(material.metallicRoughnessMap),
+                    resolveTextureIndex(material.ambientOcclusion)
                 ),
                 .baseColor = material.baseColor,
             };
@@ -220,7 +233,7 @@ namespace Atlas {
                                      sizeof(VkDrawIndexedIndirectCommand));
         }
 
-        if (boundSkyboxHandle != INVALID_ASSET_HANDLE && skyboxPipeline) {
+        if (boundSkyboxHandle && skyboxPipeline) {
             skyboxPipeline->bind(cmd);
 
             const VkDescriptorSet sets[] = {globalSet, skyboxDescriptorSet};
@@ -355,17 +368,9 @@ namespace Atlas {
             throw std::runtime_error("GeometryStage: failed to allocate skybox descriptor set");
         }
 
-        auto ltcMatHandle = assets.loadTexture("engine/ltc_mat.bin", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-        auto ltcAmpHandle = assets.loadTexture("engine/ltc_amp.bin", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-        auto brdfHandle = assets.loadTexture("engine/brdf_lut.hdr", VK_FORMAT_R32G32B32A32_SFLOAT, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-
-        auto ltcMatTexture = assets.getTexture(ltcMatHandle);
-        auto ltcAmpTexture = assets.getTexture(ltcAmpHandle);
-        auto brdfTexture = assets.getTexture(brdfHandle);
-
-        VkDescriptorImageInfo matDesc{ltcMatTexture->getSampler(), ltcMatTexture->getImageView(), ltcMatTexture->getImageLayout()};
-        VkDescriptorImageInfo ampDesc{ltcAmpTexture->getSampler(), ltcAmpTexture->getImageView(), ltcAmpTexture->getImageLayout()};
-        VkDescriptorImageInfo brdfDesc{brdfTexture->getSampler(), brdfTexture->getImageView(), brdfTexture->getImageLayout()};
+        VkDescriptorImageInfo matDesc = IGPUResource::default_<GPUTexture>().descriptor();
+        VkDescriptorImageInfo ampDesc = IGPUResource::default_<GPUTexture>().descriptor();
+        VkDescriptorImageInfo brdfDesc = IGPUResource::default_<GPUTexture>().descriptor();
 
         VkWriteDescriptorSet wMat{};
         wMat.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -413,8 +418,8 @@ namespace Atlas {
 
         GraphicsPipelineConfigInfo cfg{};
         Pipeline::defaultGraphicsPipelineConfigInfo(cfg);
-        cfg.bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
-        cfg.attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
+        cfg.bindingDescriptions = GPUMesh::Vertex::getBindingDescriptions();
+        cfg.attributeDescriptions = GPUMesh::Vertex::getAttributeDescriptions();
         cfg.renderPass = renderPass;
         cfg.pipelineLayout = pipelineLayout;
         cfg.depthStencilInfo = makeStencilWrite(1);
@@ -491,28 +496,32 @@ namespace Atlas {
                 .overwrite(lightSet);
     }
 
-    uint32_t GeometryStage::registerTexture(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) { return 0; }
+    uint32_t GeometryStage::registerTexture(AssetHandle<Texture> handle) {
+        if (!handle.valid()) { return 0; }
 
         auto [it, inserted] = handleToTextureSlot.emplace(handle, nextTextureSlot);
-        if (!inserted) { return it->second; }
+        if (!inserted) {
+            VkDescriptorImageInfo imageInfo = handle.descriptor();
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = bindlessTextureSet;
+            write.dstBinding = 0;
+            write.dstArrayElement = it->second;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.descriptorCount = 1;
+            write.pImageInfo = &imageInfo;
+            vkUpdateDescriptorSets(device.device(), 1, &write, 0, nullptr);
+            return it->second;
+        }
 
         if (nextTextureSlot >= MAX_TEXTURES) {
             throw std::runtime_error("GeometryStage: exceeded maximum bindless texture count");
         }
 
-        const auto texture = assets.getTexture(handle);
-        if (!texture) { return 0; }
-
         const uint32_t slot = nextTextureSlot++;
         it->second = slot;
 
-        const VkDescriptorImageInfo imageInfo{
-            .sampler = texture->getSampler(),
-            .imageView = texture->getImageView(),
-            .imageLayout = texture->getImageLayout(),
-        };
-
+        VkDescriptorImageInfo imageInfo = handle.descriptor();
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstSet = bindlessTextureSet;
@@ -526,18 +535,15 @@ namespace Atlas {
         return slot;
     }
 
-    void GeometryStage::registerMesh(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE || meshAllocations.contains(handle)) {
+    void GeometryStage::registerMesh(AssetHandle<Mesh> handle) {
+        if (!handle.valid() || !handle.isReady() || meshAllocations.contains(handle)) {
             return;
         }
 
-        const auto mesh = assets.getMesh(handle);
-        if (!mesh) { return; }
+        const auto &vertices = handle->vertices();
+        const auto &indices = handle->indices();
 
-        const auto &vertices = mesh->getVertices();
-        const auto &indices = mesh->getIndices();
-
-        if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(Mesh::Vertex)) {
+        if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(GPUMesh::Vertex)) {
             throw std::runtime_error("GeometryStage: merged vertex buffer out of space");
         }
         if (nextIndex + indices.size() > INDEX_BUDGET / sizeof(uint32_t)) {
@@ -550,10 +556,10 @@ namespace Atlas {
         };
         meshAllocations[handle] = alloc;
 
-        const VkDeviceSize vSize = vertices.size() * sizeof(Mesh::Vertex);
+        const VkDeviceSize vSize = vertices.size() * sizeof(GPUMesh::Vertex);
         GPUBuffer vStaging(device, vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
         vStaging.uploadData(vertices.data(), vSize);
-        GPUBuffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, nextVertex * sizeof(Mesh::Vertex));
+        GPUBuffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, nextVertex * sizeof(GPUMesh::Vertex));
 
         const VkDeviceSize iSize = indices.size() * sizeof(uint32_t);
         GPUBuffer iStaging(device, iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
@@ -564,8 +570,8 @@ namespace Atlas {
         nextIndex += alloc.indexCount;
     }
 
-    uint32_t GeometryStage::resolveTextureIndex(AssetHandle handle) const {
-        if (handle == INVALID_ASSET_HANDLE) { return 0; }
+    uint32_t GeometryStage::resolveTextureIndex(AssetHandle<Texture> handle) const {
+        if (!handle.valid()) { return 0; }
         const auto it = handleToTextureSlot.find(handle);
         return it != handleToTextureSlot.end() ? it->second : 0;
     }

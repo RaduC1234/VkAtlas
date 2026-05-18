@@ -1,423 +1,183 @@
 #include "AssetManager.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <exception>
+#include <filesystem>
 #include <fstream>
+
 #include "core/Log.hpp"
-
-#define GLM_ENABLE_EXPERIMENTAL
-#include <stb_image.h>
-
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtx/hash.hpp>
-
 #include "accessors/GLTFAccessor.hpp"
-#include "accessors/OBJAcessor.hpp"
-
-namespace std {
-    template<>
-    struct hash<Atlas::Mesh::Vertex> {
-        size_t operator()(const Atlas::Mesh::Vertex &vertex) const noexcept {
-            size_t seed = 0;
-            std::hash<glm::vec3> hasher;
-            std::hash<glm::vec2> hasher2;
-            seed ^= hasher(vertex.position) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= hasher(vertex.color) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= hasher(vertex.normal) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= hasher2(vertex.uv) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            return seed;
-        }
-    };
-}
+#include "accessors/OBJAccessor.hpp"
+#include "renderer/ResourceManager.hpp"
+#include "renderer/resources/GPUCubemap.hpp"
 
 namespace Atlas {
-    AssetManager::AssetManager(Device &device, void *nativeApp) : device(device), nativeApp(nativeApp) {
-        registerLoader<GLTFAccessor>(*this, device.executor());
-        registerLoader<OBJAccessor>(*this, device.executor());
-    }
-
-    AssetHandle AssetManager::loadTexture(const std::string &virtualPath, VkFormat format, VkSamplerAddressMode addressMode) {
-        auto it = pathToHandle.find(virtualPath);
-        if (it != pathToHandle.end()) {
-            AT_TRACE("Texture already loaded: {} (handle: {})", virtualPath, it->second);
-            return it->second;
+    std::filesystem::path resolveFilePath(const std::string &path) {
+        std::filesystem::path filePath(path);
+        if (filePath.is_absolute()) {
+            return filePath;
         }
 
-        std::filesystem::path fullPath = rootPath() / virtualPath;
-        std::string ext = fullPath.extension().string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-
-        int width, height, channels;
-        void *pixels = nullptr;
-        bool isHDR = false;
-
-        stbi_set_flip_vertically_on_load(true);
-
-        if (ext == ".hdr") {
-            pixels = stbi_loadf(fullPath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
-            isHDR = true;
-            // Override format for HDR if caller left it as default LDR format
-            if (format == VK_FORMAT_R8G8B8_SRGB || format == VK_FORMAT_R8G8B8A8_SRGB) {
-                format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            }
-        } else if (ext == ".bin") {
-            std::ifstream file(fullPath, std::ios::binary | std::ios::ate);
-            if (!file) {
-                AT_ERROR("Failed tp open {}", fullPath.generic_string())
-                return INVALID_ASSET_HANDLE;
+        for (auto directory = std::filesystem::current_path(); !directory.empty(); directory = directory.parent_path()) {
+            const auto candidate = directory / "assets" / filePath;
+            if (std::filesystem::exists(candidate)) {
+                return candidate;
             }
 
-            auto size = file.tellg();
-            file.seekg(0, std::ios::beg);
-
-            int texels = size / (4 * sizeof(float)); // RGBA32F
-            width = 64;
-            height = texels / 64;
-            channels = 4;
-
-            pixels = malloc(size);
-            file.read(static_cast<char*>(pixels), size);
-        } else {
-            pixels = stbi_load(fullPath.string().c_str(), &width, &height, &channels, STBI_rgb_alpha);
-        }
-
-        if (!pixels) {
-            AT_ERROR("Failed to load texture: {}", fullPath.string());
-            return INVALID_ASSET_HANDLE;
-        }
-
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
-
-        auto sampler = Sampler::create(device, pixels, static_cast<uint32_t>(width), static_cast<uint32_t>(height), format, addressMode);
-        texturePool[handle] = sampler;
-
-        stbi_image_free(pixels);
-
-        AT_TRACE("Loaded texture: {} (handle: {}, {}x{}, hdr: {})", virtualPath, handle, width, height, isHDR);
-        return handle;
-    }
-
-    AssetHandle AssetManager::loadCubemap(const std::string &virtualPath) {
-        auto it = pathToHandle.find(virtualPath);
-        if (it != pathToHandle.end()) {
-            AT_TRACE("Cubemap already loaded: {} (handle: {})", virtualPath, it->second);
-            return it->second;
-        }
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
-
-        std::filesystem::path fullPath = rootPath() / virtualPath;
-
-        // Check if file exists
-        if (!std::filesystem::exists(fullPath)) {
-            AT_ERROR("Cubemap file not found: {}", fullPath.string());
-            pathToHandle.erase(virtualPath);
-            handleToPath.erase(handle);
-            return INVALID_ASSET_HANDLE;
-        }
-
-        // Determine if this is an HDR file or a regular cubemap texture
-        std::string extension = fullPath.extension().string();
-        std::ranges::transform(extension, extension.begin(), ::tolower);
-
-        try {
-            std::shared_ptr<Cubemap> cubemap;
-
-            if (extension == ".hdr" || extension == ".ktx2") {
-                // Load HDR equirectangular and convert to cubemap
-                cubemap = Cubemap::create(device, fullPath.string());
-            } else {
-                // For non-HDR files, we need 6 face images
-                // This path should use the 6-face overload instead
-                AT_ERROR("Single texture cubemap loading requires HDR format. Use loadCubemap with 6 faces for other formats: {}", fullPath.string());
-                pathToHandle.erase(virtualPath);
-                handleToPath.erase(handle);
-                return INVALID_ASSET_HANDLE;
+            if (directory == directory.root_path()) {
+                break;
             }
-
-            cubemapPool[handle] = cubemap;
-            AT_TRACE("Loaded cubemap: {} (handle: {})", virtualPath, handle);
-            return handle;
-        } catch (const std::exception &e) {
-            AT_ERROR("Failed to load cubemap: {} - {}", fullPath.string(), e.what());
-            pathToHandle.erase(virtualPath);
-            handleToPath.erase(handle);
-            return INVALID_ASSET_HANDLE;
         }
+
+        return std::filesystem::current_path() / "assets" / filePath;
     }
 
-    AssetHandle AssetManager::loadCubemap(const std::string &right, const std::string &left,
-                                          const std::string &top, const std::string &bottom,
-                                          const std::string &front, const std::string &back) {
-        // Create a composite virtual path for the cubemap
-        std::string virtualPath = "cubemap://" + right + "|" + left + "|" + top + "|" + bottom + "|" + front + "|" + back;
+    AssetManager::AssetManager(ResourceManager &resourceManager, ExecutorService &executorService) : resourceManager_(resourceManager) {
+        registerLoader<GLTFAccessor>(*this, executorService);
+        registerLoader<OBJAccessor>(*this, executorService);
+    }
 
-        auto it = pathToHandle.find(virtualPath);
-        if (it != pathToHandle.end()) {
-            AT_TRACE("Cubemap already loaded: {} (handle: {})", virtualPath, it->second);
-            return it->second;
+    std::vector<entt::entity> AssetManager::importAsset(const std::string &virtualPath, entt::registry &registry, entt::entity parentEntity) {
+        std::string ext = std::filesystem::path(virtualPath).extension().string();
+        std::ranges::transform(ext, ext.begin(), ::tolower);
+
+        auto it = accessors_.find(ext);
+        if (it == accessors_.end()) {
+            AT_ERROR("No loader registered for extension: {}", ext);
+            return {};
         }
 
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
+        return it->second->importAsset(virtualPath, registry, parentEntity);
+    }
 
-        try {
-            // Resolve all face paths to full filesystem paths
-            std::array<std::string, 6> facePaths = {
-                (rootPath() / right).string(),
-                (rootPath() / left).string(),
-                (rootPath() / top).string(),
-                (rootPath() / bottom).string(),
-                (rootPath() / front).string(),
-                (rootPath() / back).string()
-            };
+    std::filesystem::path AssetManager::rootPath() const {
+        return rootPath_;
+    }
 
-            // Verify all files exist
-            for (size_t i = 0; i < facePaths.size(); ++i) {
-                if (!std::filesystem::exists(facePaths[i])) {
-                    AT_ERROR("Cubemap face file not found: {}", facePaths[i]);
-                    pathToHandle.erase(virtualPath);
-                    handleToPath.erase(handle);
-                    return INVALID_ASSET_HANDLE;
-                }
+    void AssetManager::overwriteRootPath(const std::filesystem::path &path) {
+        rootPath_ = path;
+    }
+
+    AssetHandle<Texture> AssetManager::createTexture(std::vector<std::byte> pixels, uint32_t width, uint32_t height, VkFormat format, VkSamplerAddressMode addressMode) {
+        auto asset = std::make_shared<Texture>(std::move(pixels), width, height, format, addressMode);
+        const uint64_t hash = asset->getHash();
+
+        std::lock_guard lock(pendingMutex_);
+
+        if (auto it = textureByHash_.find(hash); it != textureByHash_.end()) {
+            if (auto state = it->second.lock()) {
+                AT_TRACE("Texture dedup hit (hash: {})", hash);
+                return AssetHandle<Texture>(state);
             }
-
-            // Create the cubemap using the 6-face method
-            auto cubemap = Cubemap::create(device, facePaths);
-            cubemapPool[handle] = cubemap;
-
-            AT_TRACE("Loaded 6-face cubemap (handle: {})", handle);
-            return handle;
-        } catch (const std::exception &e) {
-            AT_ERROR("Failed to load 6-face cubemap: {}", e.what());
-            pathToHandle.erase(virtualPath);
-            handleToPath.erase(handle);
-            return INVALID_ASSET_HANDLE;
         }
+
+        // New asset — create state, cache weak_ptr, queue GPU upload
+        auto state = std::make_shared<typename AssetHandle<Texture>::State>();
+        state->asset = std::move(asset);
+        state->gpu = nullptr; // filled by update()
+
+        textureByHash_[hash] = state;
+        pendingTextures_.push_back(state);
+
+        AT_TRACE("Created texture (hash: {}, {}x{})", hash, width, height);
+        return AssetHandle<Texture>(state);
     }
 
-    AssetHandle AssetManager::createSphere(float radius, uint32_t segments, uint32_t rings) {
-        std::string virtualPath = "procedural://sphere_r" + std::to_string(radius) +
-                                  "_s" + std::to_string(segments) +
-                                  "_r" + std::to_string(rings);
+    AssetHandle<Mesh> AssetManager::createMesh(std::vector<Mesh::Vertex> vertices, std::vector<uint32_t> indices) {
+        auto asset = std::make_shared<Mesh>(std::move(vertices), std::move(indices));
+        const uint64_t hash = asset->getHash();
 
-        auto it = pathToHandle.find(virtualPath);
-        if (it != pathToHandle.end()) {
-            AT_TRACE("Sphere mesh already created: {} (handle: {})", virtualPath, it->second);
-            return it->second;
+        std::lock_guard lock(pendingMutex_);
+
+        if (auto it = meshByHash_.find(hash); it != meshByHash_.end()) {
+            if (auto state = it->second.lock()) {
+                AT_TRACE("Mesh dedup hit (hash: {})", hash);
+                return AssetHandle<Mesh>(state);
+            }
         }
 
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
+        auto state = std::make_shared<typename AssetHandle<Mesh>::State>();
+        state->asset = std::move(asset);
+        state->gpu = nullptr;
 
-        auto mesh = Mesh::createSphere(device, radius, segments, rings);
-        meshPool[handle] = std::move(mesh);
+        meshByHash_[hash] = state;
+        pendingMeshes_.push_back(state);
 
-        AT_TRACE("Created procedural sphere mesh (handle: {}, radius: {}, segments: {}, rings: {})",
-                 handle, radius, segments, rings);
-        return handle;
+        AT_TRACE("Created mesh (hash: {}, {} verts, {} indices)", hash, state->asset->vertices().size(), state->asset->indices().size());
+        return AssetHandle<Mesh>(state);
     }
 
-    AssetHandle AssetManager::createCube(float size) {
-        std::string virtualPath = "procedural://cube_s" + std::to_string(size);
+    AssetHandle<Cubemap> AssetManager::createCubemap(std::vector<std::byte> pixels, uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, std::vector<VkBufferImageCopy> copyRegions) {
+        auto asset = std::make_shared<Cubemap>(std::move(pixels), width, height, mipLevels, format, std::move(copyRegions));
+        const uint64_t hash = asset->getHash();
 
-        auto it = pathToHandle.find(virtualPath);
-        if (it != pathToHandle.end()) {
-            AT_TRACE("Cube mesh already created: {} (handle: {})", virtualPath, it->second);
-            return it->second;
+        std::lock_guard lock(pendingMutex_);
+
+        if (auto it = cubemapByHash_.find(hash); it != cubemapByHash_.end()) {
+            if (auto state = it->second.lock()) {
+                AT_TRACE("Cubemap dedup hit (hash: {})", hash);
+                return AssetHandle<Cubemap>(state);
+            }
         }
 
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
+        auto state = std::make_shared<typename AssetHandle<Cubemap>::State>();
+        state->asset = std::move(asset);
+        state->gpu = nullptr;
 
-        auto mesh = Mesh::createCube(device, size);
-        meshPool[handle] = std::move(mesh);
+        cubemapByHash_[hash] = state;
+        pendingCubemaps_.push_back(state);
 
-        AT_TRACE("Created procedural cube mesh (handle: {}, size: {})", handle, size);
-        return handle;
+        AT_TRACE("Created cubemap (hash: {}, {}x{})", hash, width, height);
+        return AssetHandle<Cubemap>(state);
     }
 
-    AssetHandle AssetManager::createPlane(float width, float height) {
-        std::string virtualPath = "procedural://plane_wh" + std::to_string(width) + "_" + std::to_string(height);
+    void AssetManager::update() {  // update — batches all pending GPU uploads into one vkQueueSubmit
+        std::vector<WeakState<Texture> > textures;
+        std::vector<WeakState<Mesh> > meshes;
+        std::vector<WeakState<Cubemap> > cubemaps;
 
-        auto it = pathToHandle.find(virtualPath);
-        if (it != pathToHandle.end()) {
-            AT_TRACE("Plane mesh already created: {} (handle: {})", virtualPath, it->second);
+        {
+            std::lock_guard lock(pendingMutex_);
+            textures = std::move(pendingTextures_);
+            meshes = std::move(pendingMeshes_);
+            cubemaps = std::move(pendingCubemaps_);
         }
 
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
-
-        auto mesh = Mesh::createPlane(device, width, height);
-        meshPool[handle] = std::move(mesh);
-
-        AT_TRACE("Created procedural plane mesh (handle: {}, size: {} {})", handle, width, height);
-        return handle;
-    }
-
-    AssetHandle AssetManager::createDefaultWhiteTexture() {
-        std::string virtualPath = "procedural://white_1x1";
-
-        auto it = pathToHandle.find(virtualPath);
-        if (it != pathToHandle.end()) {
-            AT_TRACE("Default white texture already created: {} (handle: {})", virtualPath, it->second);
-            return it->second;
+        for (auto &weak: textures) {
+            auto state = weak.lock();
+            if (!state) continue; // all handles dropped before upload — skip
+            auto gpu = resourceManager_.add(state->asset);
+            state->gpu = gpu;
         }
 
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
-
-        constexpr unsigned char pixels[4] = {255, 255, 255, 255};
-        const auto texture = Sampler::create(device, pixels, 1, 1);
-        texturePool[handle] = texture;
-
-        AT_TRACE("Created default white texture (handle: {})", handle);
-        return handle;
-    }
-
-    std::shared_ptr<Sampler> AssetManager::getTexture(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) return nullptr;
-
-        auto it = texturePool.find(handle);
-        return it != texturePool.end() ? it->second : nullptr;
-    }
-
-    std::shared_ptr<Mesh> AssetManager::getMesh(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) return nullptr;
-
-        auto it = meshPool.find(handle);
-        return it != meshPool.end() ? it->second : nullptr;
-    }
-
-    std::shared_ptr<Cubemap> AssetManager::getCubemap(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) return nullptr;
-
-        auto it = cubemapPool.find(handle);
-        return it != cubemapPool.end() ? it->second : nullptr;
-    }
-
-    std::string AssetManager::getPath(AssetHandle handle) const {
-        auto it = handleToPath.find(handle);
-        return it != handleToPath.end() ? it->second : "";
-    }
-
-    AssetHandle AssetManager::getHandle(const std::string &virtualPath) const {
-        auto it = pathToHandle.find(virtualPath);
-        return it != pathToHandle.end() ? it->second : INVALID_ASSET_HANDLE;
-    }
-
-    bool AssetManager::freeTexture(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) {
-            return false;
+        for (auto &weak: meshes) {
+            auto state = weak.lock();
+            if (!state) continue;
+            auto gpu = resourceManager_.add(state->asset);
+            state->gpu = gpu;
         }
 
-        auto it = texturePool.find(handle);
-        if (it == texturePool.end()) {
-            return false;
+        for (auto &weak: cubemaps) {
+            auto state = weak.lock();
+            if (!state) continue;
+            auto gpu = resourceManager_.add(state->asset);
+            state->gpu = gpu;
         }
 
-        // Get the path before removing from handleToPath
-        std::string path = getPath(handle);
+        resourceManager_.update();
 
-        // Get the texture's hash to remove from hashToHandle
-        size_t textureHash = it->second->getHash();
-
-        // Remove from all internal maps
-        texturePool.erase(it);
-        handleToPath.erase(handle);
-        if (!path.empty()) {
-            pathToHandle.erase(path);
-        }
-
-        // Remove from hash-based lookup if this handle owns the hash
-        auto hashIt = hashToHandle.find(textureHash);
-        if (hashIt != hashToHandle.end() && hashIt->second == handle) {
-            hashToHandle.erase(hashIt);
-        }
-
-        AT_TRACE("Freed texture asset: {} (handle: {})", path, handle);
-        return true;
-    }
-
-    bool AssetManager::freeMesh(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) {
-            return false;
-        }
-
-        auto it = meshPool.find(handle);
-        if (it == meshPool.end()) {
-            return false;
-        }
-
-        // Get the path before removing from handleToPath
-        std::string path = getPath(handle);
-
-        // Get the mesh's hash to remove from hashToHandle
-        size_t meshHash = it->second->getHash();
-
-        // Remove from all internal maps
-        meshPool.erase(it);
-        handleToPath.erase(handle);
-        if (!path.empty()) {
-            pathToHandle.erase(path);
-        }
-
-        // Remove from hash-based lookup if this handle owns the hash
-        auto hashIt = hashToHandle.find(meshHash);
-        if (hashIt != hashToHandle.end() && hashIt->second == handle) {
-            hashToHandle.erase(hashIt);
-        }
-
-        AT_TRACE("Freed mesh asset: {} (handle: {})", path, handle);
-        return true;
-    }
-
-    bool AssetManager::freeCubemap(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) {
-            return false;
-        }
-
-        auto it = cubemapPool.find(handle);
-        if (it == cubemapPool.end()) {
-            return false;
-        }
-
-        // Get the path before removing from handleToPath
-        std::string path = getPath(handle);
-
-        // Remove from all internal maps
-        cubemapPool.erase(it);
-        handleToPath.erase(handle);
-        if (!path.empty()) {
-            pathToHandle.erase(path);
-        }
-
-        AT_TRACE("Freed cubemap asset: {} (handle: {})", path, handle);
-        return true;
-    }
-
-    bool AssetManager::freeAsset(AssetHandle handle) {
-        if (handle == INVALID_ASSET_HANDLE) {
-            return false;
-        }
-
-        // Try to free from each pool
-        if (freeTexture(handle)) return true;
-        if (freeMesh(handle)) return true;
-        if (freeCubemap(handle)) return true;
-
-        AT_WARN("Asset handle {} not found in any pool", handle);
-        return false;
+        // Prune expired weak_ptrs from dedup caches
+        std::erase_if(textureByHash_, [](const auto &kv) { return kv.second.expired(); });
+        std::erase_if(meshByHash_, [](const auto &kv) { return kv.second.expired(); });
+        std::erase_if(cubemapByHash_, [](const auto &kv) { return kv.second.expired(); });
+        std::erase_if(textureByPath_, [](const auto &kv) { return kv.second.expired(); });
+        std::erase_if(meshByPath_, [](const auto &kv) { return kv.second.expired(); });
+        std::erase_if(cubemapByPath_, [](const auto &kv) { return kv.second.expired(); });
     }
 
     std::vector<char> AssetManager::loadFileAsU8(const std::string &path) {
-        std::filesystem::path filePath = resolveStaticAssetPath(path);
+        const std::filesystem::path filePath = resolveFilePath(path);
 
         std::ifstream file(filePath, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
@@ -425,23 +185,31 @@ namespace Atlas {
             return {};
         }
 
-        std::streamsize size = file.tellg();
+        const std::streamsize size = file.tellg();
+        if (size < 0) {
+            AT_ERROR("Failed to determine file size: {}", filePath.string());
+            return {};
+        }
+
         file.seekg(0, std::ios::beg);
 
-        std::vector<char> buffer(size);
-        if (!file.read(buffer.data(), size)) {
+        std::vector<char> buffer(static_cast<size_t>(size));
+        if (size > 0 && !file.read(buffer.data(), size)) {
             AT_ERROR("Failed to read file: {}", filePath.string());
             return {};
         }
 
-        file.close();
         AT_TRACE("Loaded file: {} ({} bytes)", path, size);
         return buffer;
     }
 
     void AssetManager::saveFileAsU8(const std::vector<char> &data, const std::string &path) {
         try {
-            std::filesystem::path filePath = resolveStaticAssetPath(path);
+            const std::filesystem::path filePath = resolveFilePath(path);
+
+            if (filePath.has_parent_path()) {
+                std::filesystem::create_directories(filePath.parent_path());
+            }
 
             std::ofstream out(filePath, std::ios::binary);
             if (!out.is_open()) {
@@ -457,7 +225,6 @@ namespace Atlas {
                 }
             }
 
-            out.close();
             AT_TRACE("Saved {} bytes to {}", data.size(), filePath.string());
         } catch (const std::exception &e) {
             AT_ERROR("Exception while saving file: {}", e.what());
@@ -473,100 +240,4 @@ namespace Atlas {
         const std::vector bytes(data.begin(), data.end());
         saveFileAsU8(bytes, path);
     }
-
-    AssetHandle AssetManager::getOrCreateMesh(const std::vector<Mesh::Vertex> &vertices, const std::vector<uint32_t> &indices, const std::string &virtualPath) {
-        size_t meshHash = Mesh::computeHash(vertices, indices);
-
-        // Check if we already have this asset loaded (by hash)
-        auto hashIt = hashToHandle.find(meshHash);
-        if (hashIt != hashToHandle.end()) {
-            AT_TRACE("Mesh already loaded (hash match): {} -> handle {}", virtualPath, hashIt->second);
-            // Create an alias in pathToHandle for this virtual path
-            pathToHandle[virtualPath] = hashIt->second;
-            return hashIt->second;
-        }
-
-        // Create new mesh
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
-
-        // Create the mesh and set its hash
-        Mesh::Builder builder;
-        builder.vertices = vertices;
-        builder.indices = indices;
-        auto meshPtr = std::make_unique<Mesh>(device, builder);
-        meshPtr->setHash(meshHash);
-
-        meshPool[handle] = std::move(meshPtr);
-        hashToHandle[meshHash] = handle;
-
-        AT_TRACE("Created new mesh: {} (handle: {}, hash: {})", virtualPath, handle, meshHash);
-        return handle;
-    }
-
-    AssetHandle AssetManager::getOrCreateTexture(const unsigned char *pixels, uint32_t width, uint32_t height, const VkFormat format, const std::string &virtualPath) {
-        // Compute hash for this texture
-        uint32_t bytesPerPixel = 4; // Assuming RGBA
-        VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * bytesPerPixel;
-        size_t textureHash = Sampler::computeHash(pixels, imageSize);
-
-        // Check if we already have this asset loaded (by hash)
-        auto hashIt = hashToHandle.find(textureHash);
-        if (hashIt != hashToHandle.end()) {
-            AT_TRACE("Texture already loaded (hash match): {} -> handle {}", virtualPath, hashIt->second);
-            // Create an alias in pathToHandle for this virtual path
-            pathToHandle[virtualPath] = hashIt->second;
-            return hashIt->second;
-        }
-
-        // Create new texture
-        AssetHandle handle = nextHandle++;
-        pathToHandle[virtualPath] = handle;
-        handleToPath[handle] = virtualPath;
-
-        auto sampler = Sampler::create(device, pixels, width, height, format);
-        sampler->setHash(textureHash);
-
-        texturePool[handle] = sampler;
-        hashToHandle[textureHash] = handle;
-
-        AT_TRACE("Created new texture: {} (handle: {}, hash: {}, {}x{})",
-                 virtualPath, handle, textureHash, width, height);
-        return handle;
-    }
-
-    std::vector<entt::entity> AssetManager::importAsset(const std::string& virtualPath, entt::registry& registry, entt::entity parentEntity)
-    {
-        std::string ext = std::filesystem::path(virtualPath).extension().string();
-        std::ranges::transform(ext, ext.begin(), ::tolower);
-
-        auto it = accessors.find(ext);
-        if (it == accessors.end()) {
-            AT_ERROR("No loader registered for extension: {}", ext);
-            return {};
-        }
-
-        return it->second->importAsset(virtualPath, registry, parentEntity);
-    }
-
-    std::filesystem::path AssetManager::resolveStaticAssetPath(const std::string &path) {
-        std::filesystem::path filePath(path);
-        if (filePath.is_absolute()) {
-            return filePath;
-        }
-
-        for (auto directory = std::filesystem::current_path(); !directory.empty(); directory = directory.parent_path()) {
-            auto candidate = directory / "assets" / filePath;
-            if (std::filesystem::exists(candidate)) {
-                return candidate;
-            }
-
-            if (directory == directory.root_path()) {
-                break;
-            }
-        }
-
-        return std::filesystem::current_path() / "assets" / filePath;
-    }
-}
+} // namespace Atlas

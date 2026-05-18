@@ -19,5 +19,6 @@ namespace Atlas {
         AssetManager &assets;
         std::unique_ptr<CameraSystem> cameraSystem;
         std::unique_ptr<RenderSystemV2> renderSystem;
+        bool renderGraphReady{false};
     };
 }

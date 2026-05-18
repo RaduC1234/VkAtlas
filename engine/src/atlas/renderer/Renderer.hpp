@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Device.hpp"
+#include "ResourceManager.hpp"
 
 #include "core/Window.hpp"
 #include "swapchain/SwapChain.hpp"
@@ -61,6 +62,8 @@ namespace Atlas {
 
         Window &window() const { return *window_; }
         Device &device() const { return *device_; }
+        ResourceManager &resourceManager() { return *resourceManager_; }
+        const ResourceManager &resourceManager() const { return *resourceManager_; }
 
         VkRenderPass getSwapChainRenderPass() const { return swapChain_->getRenderPass(); }
         VkRenderPass getOverlayRenderPass(OverlayLoadOp loadOp = OverlayLoadOp::Load) const {
@@ -105,6 +108,8 @@ namespace Atlas {
         std::unique_ptr<Window> window_;
         std::unique_ptr<Device> device_;
         std::shared_ptr<SwapChain> swapChain_;
+        std::unique_ptr<ResourceManager> resourceManager_;
+
         SceneOutputImage sceneOutputImage;
         VkExtent2D sceneViewportExtent{};
         std::vector<VkCommandBuffer> graphicsCommandBuffers_;

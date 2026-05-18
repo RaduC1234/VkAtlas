@@ -31,7 +31,7 @@ namespace Atlas {
         void onCameraUpdated(entt::registry &registry, entt::entity entity);
         void onCameraDestroyed(entt::registry &registry, entt::entity entity);
 
-        uint32_t registerTexture(AssetHandle handle);
+        uint32_t registerTexture(AssetHandle<Texture> handle);
         static bool cameraDataChanged(const Camera::Data &lhs, const Camera::Data &rhs);
 
         uint32_t alignUp(uint32_t size, uint32_t alignment) const;
@@ -57,7 +57,7 @@ namespace Atlas {
         std::unique_ptr<DescriptorSetLayout> ptSetLayout;
         std::unique_ptr<DescriptorPool> ptPool;
         VkDescriptorSet ptSet = VK_NULL_HANDLE;
-        VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE; // alias for ptSet
+        VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
 
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         std::unique_ptr<Pipeline> pipeline;
@@ -79,9 +79,7 @@ namespace Atlas {
         entt::scoped_connection cameraUpdateConnection;
         entt::scoped_connection cameraDestroyConnection;
 
-        // Texture registry
-        std::unordered_map<AssetHandle, uint32_t> handleToSlot;
+        std::unordered_map<AssetHandle<Texture>, uint32_t> handleToSlot;
         uint32_t nextTextureSlot = 1;
-        AssetHandle defaultWhiteHandle = INVALID_ASSET_HANDLE;
     };
 }

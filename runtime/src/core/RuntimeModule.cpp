@@ -28,7 +28,7 @@ namespace Atlas {
         specification.name = "Atlas Runtime";
         specification.projectManifest = manifestPath;
         specification.projectModule = modulePath;
-        specification.rendererSettings.window.title = specification.name;
+        specification.rendererCreateInfo.window.title = specification.name;
 #ifdef ATLAS_RUNTIME_ENABLE_IMGUI
         specification.enableImGui = true;
 #endif

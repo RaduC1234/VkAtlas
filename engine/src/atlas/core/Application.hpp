@@ -20,14 +20,14 @@ namespace Atlas {
         std::string name = "Atlas";
         std::filesystem::path projectManifest;
         std::filesystem::path projectModule;
-        Renderer::CreateInfo rendererSettings;
+        Renderer::CreateInfo rendererCreateInfo;
         bool enableImGui = false;
         bool enableDockspace = false;
     };
 
     class Application {
     public:
-        explicit Application(const ApplicationCreateInfo& specification);
+        Application(const ApplicationCreateInfo& specification);
         ~Application();
 
         Application(const Application &) = delete;
@@ -37,8 +37,8 @@ namespace Atlas {
 
         Renderer &renderer() { return renderer_; }
         const Renderer &renderer() const { return renderer_; }
-        AssetManager &assets() { return *assetManager_; }
-        const AssetManager &assets() const { return *assetManager_; }
+        AssetManager &assets() { return assetManager_; }
+        const AssetManager &assets() const { return assetManager_; }
         const ApplicationCreateInfo &specification() const { return specification_; }
 
         template<class T, class... Args>
@@ -54,7 +54,7 @@ namespace Atlas {
     private:
         ApplicationCreateInfo specification_;
         Renderer renderer_;
-        std::unique_ptr<AssetManager> assetManager_;
+        AssetManager assetManager_;
         LayerStack layers;
         std::unique_ptr<ImGuiLayer> imguiLayer;
     };

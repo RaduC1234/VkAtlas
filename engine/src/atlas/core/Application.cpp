@@ -1,29 +1,8 @@
 #include "core/Application.hpp"
 
-#include <chrono>
-
-#if defined(ATLAS_PLATFORM_ANDROID)
-#include "android/AndroidAssetManager.hpp"
-#elif defined(ATLAS_PLATFORM_DESKTOP)
-#include "desktop/DesktopAssetManager.hpp"
-#endif
 
 namespace Atlas {
-    Application::Application(const ApplicationCreateInfo& specification) : specification_(std::move(specification)), renderer_(specification_.rendererSettings) {
-#if defined(ATLAS_PLATFORM_ANDROID)
-        assetManager_ = std::make_unique<AndroidAssetManager>(
-            renderer_.device(),
-            specification_.rendererSettings.window.pNativeApp
-        );
-#elif defined(ATLAS_PLATFORM_DESKTOP)
-        assetManager_ = std::make_unique<DesktopAssetManager>(
-            renderer_.device(),
-            specification_.rendererSettings.window.pNativeApp
-        );
-#else
-#error Unsupported platform for AssetManager
-#endif
-
+    Application::Application(const ApplicationCreateInfo& specification) : specification_(std::move(specification)), renderer_(specification_.rendererCreateInfo), assetManager_(renderer_.resourceManager(), renderer_.device().executor()) {
         renderer_.window().setWindowIcon("assets/icons/android_robot.png");
         renderer_.window().setTheme(Window::Theme::Dark);
 
@@ -54,6 +33,8 @@ namespace Atlas {
             auto newTime = std::chrono::high_resolution_clock::now();
             const float deltaTime = std::chrono::duration_cast<std::chrono::duration<float>>(newTime - currentTime).count();
             currentTime = newTime;
+
+            assetManager_.update();
 
             FrameContext frame = renderer_.beginFrame();
             if (frame.graphicsCommandBuffer == VK_NULL_HANDLE) {

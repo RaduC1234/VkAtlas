@@ -9,9 +9,9 @@
 namespace Atlas {
     class LayerStack {
     public:
-        ~LayerStack();
-
         LayerStack() = default;
+        ~LayerStack();
+        
         LayerStack(const LayerStack &) = delete;
         LayerStack &operator=(const LayerStack &) = delete;
 

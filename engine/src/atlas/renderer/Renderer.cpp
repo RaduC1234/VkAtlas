@@ -11,6 +11,7 @@ namespace Atlas {
     Renderer::Renderer(const CreateInfo &createInfo) : createInfo(createInfo) {
         this->window_ = Window::create(createInfo.window);
         this->device_ = std::make_unique<Device>(*window_, createInfo.enableRaytracing);
+        this->resourceManager_ = std::make_unique<ResourceManager>(*device_);
 
         recreateSwapChain();
         createCommandBuffers();
@@ -18,6 +19,8 @@ namespace Atlas {
     }
 
     Renderer::~Renderer() {
+        vkDeviceWaitIdle(device_->device());
+
         for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroyFence(device_->device(), computeInFlightFences[i], nullptr);
             vkDestroySemaphore(device_->device(), computeFinishedSemaphores[i], nullptr); // missing
@@ -70,6 +73,7 @@ namespace Atlas {
         if (vkBeginCommandBuffer(graphicsCommandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
+        resourceManager_->recordPendingAcquires(graphicsCommandBuffer);
 
         auto computeCommandBuffer = getCurrentComputeCommandBuffer();
         vkResetCommandBuffer(computeCommandBuffer, 0);
@@ -99,7 +103,14 @@ namespace Atlas {
             throw std::runtime_error("failed to record compute command buffer!");
         }
 
-        auto result = swapChain_->submitCommandBuffers(graphicsCommandBuffer, {}, &currentImageIndex);
+        std::optional<uint64_t> transferWait;
+        uint64_t transferWaitValue = 0;
+        if (resourceManager_->consumePendingWait(transferWaitValue))
+            transferWait = transferWaitValue;
+
+        auto result = swapChain_->submitCommandBuffers(graphicsCommandBuffer, {}, &currentImageIndex, transferWait);
+        resourceManager_->markAcquiredReady();
+
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_->wasWindowResized()) {
             window_->resetWindowResizedFlag();
             recreateSwapChain();

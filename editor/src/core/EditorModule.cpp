@@ -26,8 +26,8 @@ namespace Atlas {
         createInfo.name = "Atlas Editor";
         createInfo.projectManifest = manifestPath;
         createInfo.projectModule = modulePath;
-        createInfo.rendererSettings.window.title = createInfo.name;
-        createInfo.rendererSettings.window.properties = Window::Properties::Decorated | Window::Properties::Resizeable | Window::Properties::CustomTitlebar;
+        createInfo.rendererCreateInfo.window.title = createInfo.name;
+        createInfo.rendererCreateInfo.window.properties = Window::Properties::Decorated | Window::Properties::Resizeable | Window::Properties::CustomTitlebar;
         createInfo.enableImGui = true;
         createInfo.enableDockspace = true;
 
