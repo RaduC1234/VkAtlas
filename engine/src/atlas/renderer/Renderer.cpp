@@ -73,7 +73,6 @@ namespace Atlas {
         if (vkBeginCommandBuffer(graphicsCommandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
-        resourceManager_->recordPendingAcquires(graphicsCommandBuffer);
 
         auto computeCommandBuffer = getCurrentComputeCommandBuffer();
         vkResetCommandBuffer(computeCommandBuffer, 0);
@@ -103,13 +102,7 @@ namespace Atlas {
             throw std::runtime_error("failed to record compute command buffer!");
         }
 
-        std::optional<uint64_t> transferWait;
-        uint64_t transferWaitValue = 0;
-        if (resourceManager_->consumePendingWait(transferWaitValue))
-            transferWait = transferWaitValue;
-
-        auto result = swapChain_->submitCommandBuffers(graphicsCommandBuffer, {}, &currentImageIndex, transferWait);
-        resourceManager_->markAcquiredReady();
+        auto result = swapChain_->submitCommandBuffers(graphicsCommandBuffer, {}, &currentImageIndex);
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_->wasWindowResized()) {
             window_->resetWindowResizedFlag();

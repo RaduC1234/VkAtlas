@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <optional>
 #include <vector>
 #include <vulkan/vulkan.h>
 #include <vk_mem_alloc.h>
@@ -20,9 +19,8 @@ namespace Atlas {
         GPUCubemap(const GPUCubemap &) = delete;
         GPUCubemap &operator=(const GPUCubemap &) = delete;
 
-        void recordTransfer(VkCommandBuffer cmd) override;
-        void onTransferComplete() override;
-        void recordOwnershipAcquire(VkCommandBuffer cmd) override;
+        void recordUpload(VkCommandBuffer cmd) override;
+        void onUploadComplete() override;
         void updateBindlessSlot() override;
 
         VkImageView getImageView() const { return imageView_; }
@@ -52,7 +50,6 @@ namespace Atlas {
 
         void recordTransition(VkCommandBuffer cmd, VkImageLayout oldLayout, VkImageLayout newLayout);
         void recordCopyBufferToImage(VkCommandBuffer cmd);
-        void recordOwnershipRelease(VkCommandBuffer cmd);
 
         Device &device_;
 
@@ -77,6 +74,6 @@ namespace Atlas {
             uint32_t arrayElement;
         };
 
-        std::optional<BindlessSlot> bindlessSlot_;
+        std::vector<BindlessSlot> bindlessSlots_;
     };
 } // namespace Atlas

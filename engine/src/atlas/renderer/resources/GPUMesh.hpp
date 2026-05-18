@@ -32,24 +32,20 @@ namespace Atlas {
         };
 
         // Phase 1 — pure CPU, no command recording
-        // Allocates vertex/index buffers, fills staging buffers,
-        // allocates BLAS handle + scratch buffer.
+        // Allocates vertex/index buffers and fills staging buffers.
         GPUMesh(Device &device, const Mesh &mesh);
         ~GPUMesh() override;
 
         GPUMesh(const GPUMesh &) = delete;
         GPUMesh &operator=(const GPUMesh &) = delete;
 
-        // Phase 2 — records copy + BLAS build into shared transfer cmd buffer
-        void recordTransfer(VkCommandBuffer cmd) override;
+        // Phase 2 — records vertex/index copy into a graphics-compatible command buffer
+        void recordUpload(VkCommandBuffer cmd) override;
 
-        // Phase 3 — transfer completion callback, frees staging + scratch buffers
-        void onTransferComplete() override;
+        // Phase 3 — upload completion, frees staging buffers
+        void onUploadComplete() override;
 
-        // Phase 4 — records ownership acquire barrier for vertex + index buffers
-        void recordOwnershipAcquire(VkCommandBuffer cmd) override;
-
-        // Phase 5 — no-op, meshes are not in the bindless texture array
+        // Meshes are not in the bindless texture array
         void updateBindlessSlot() override {
         }
 
@@ -65,13 +61,13 @@ namespace Atlas {
         VkDeviceAddress indexBufferAddress() const;
 
         const AccelerationStructure &accelerationStructure() const { return blas_; }
+        bool hasAccelerationStructure() const { return blas_.isValid(); }
+        void buildAccelerationStructure();
 
         static std::unique_ptr<GPUMesh> createDefault(Device &device);
 
     private:
         explicit GPUMesh(Device &device);
-
-        void recordOwnershipRelease(VkCommandBuffer cmd);
 
         Device &device_;
         uint32_t vertexCount_ = 0;

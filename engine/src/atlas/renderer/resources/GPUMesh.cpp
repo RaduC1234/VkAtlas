@@ -77,16 +77,6 @@ namespace Atlas {
         indexStaging_->uploadData(mesh.indices().data(), indexSize);
         indexStaging_->unmap();
 
-        // Allocate BLAS handle + scratch buffer — device queries only, no cmds
-        // Buffer addresses are valid immediately after vmaCreateBuffer
-        blas_ = AccelerationStructure::allocateBLAS(
-            device_,
-            vertexBufferAddress(),
-            indexBufferAddress(),
-            vertexCount_,
-            indexCount_,
-            sizeof(Mesh::Vertex));
-
         setStatus(Status::PENDING_UPLOAD);
     }
 
@@ -98,10 +88,10 @@ namespace Atlas {
     }
 
     // -------------------------------------------------------------------------
-    // Phase 2 — record into shared transfer cmd buffer
+    // Phase 2 — record into upload command buffer
     // -------------------------------------------------------------------------
 
-    void GPUMesh::recordTransfer(VkCommandBuffer cmd) {
+    void GPUMesh::recordUpload(VkCommandBuffer cmd) {
         if (vertexCount_ == 0) return;
 
         // Copy vertex data: staging → device-local
@@ -114,69 +104,42 @@ namespace Atlas {
         indexCopy.size = sizeof(uint32_t) * indexCount_;
         vkCmdCopyBuffer(cmd, indexStaging_->get(), indexBuffer_->get(), 1, &indexCopy);
 
-        // Barrier — copy must complete before BLAS build reads the buffers
-        VkMemoryBarrier copyBarrier{};
-        copyBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        copyBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        copyBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                             0, 1, &copyBarrier, 0, nullptr, 0, nullptr);
-
-        // Record BLAS build into same cmd buffer — no submit
-        blas_.recordBuild(cmd);
-
-    }
-
-    // -------------------------------------------------------------------------
-    // Phase 3 — transfer completion callback, no GPU calls
-    // -------------------------------------------------------------------------
-
-    void GPUMesh::onTransferComplete() {
-        vertexStaging_.reset(); // CPU vertex data freed
-        indexStaging_.reset(); // CPU index data freed
-        blas_.onBuildComplete(); // scratch buffer freed
-        // Status set to READY by ResourceManager::markAcquiredReady()
-        // after the acquire barrier executes on the graphics queue
-    }
-
-    // -------------------------------------------------------------------------
-    // Phase 4 — ownership acquire barrier, graphics queue, frame start
-    // -------------------------------------------------------------------------
-
-    void GPUMesh::recordOwnershipAcquire(VkCommandBuffer cmd) {
-        if (vertexCount_ == 0) return;
-
-        const auto &f = device_.queueFamilyIndices();
-
-        // Both vertex and index buffer barriers in one call
         VkBufferMemoryBarrier barriers[2]{};
-        for (auto &b: barriers) {
-            b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            b.srcAccessMask = 0;
-            b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT
-                              | VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT
-                              | VK_ACCESS_INDEX_READ_BIT;
-            // Same family → srcQueueFamilyIndex == dstQueueFamilyIndex
-            // driver treats as plain memory barrier, no QFOT performed
-            b.srcQueueFamilyIndex = f.transferFamily.value();
-            b.dstQueueFamilyIndex = f.graphicsFamily.value();
-            b.offset = 0;
-            b.size = VK_WHOLE_SIZE;
+        for (auto &barrier: barriers) {
+            barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
+                                    VK_ACCESS_INDEX_READ_BIT |
+                                    VK_ACCESS_SHADER_READ_BIT;
+            barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            barrier.offset = 0;
+            barrier.size = VK_WHOLE_SIZE;
         }
+
         barriers[0].buffer = vertexBuffer_->get();
         barriers[1].buffer = indexBuffer_->get();
 
         vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
-                             | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT
-                             | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                             VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                              0,
                              0, nullptr,
                              2, barriers,
                              0, nullptr);
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 3 — upload completion, no GPU calls
+    // -------------------------------------------------------------------------
+
+    void GPUMesh::onUploadComplete() {
+        vertexStaging_.reset(); // CPU vertex data freed
+        indexStaging_.reset(); // CPU index data freed
+        // Status set to READY by ResourceManager::update() after upload completion
     }
 
     void GPUMesh::bind(VkCommandBuffer cmd) const {
@@ -213,31 +176,43 @@ namespace Atlas {
         return vkGetBufferDeviceAddress(device_.device(), &info);
     }
 
-    void GPUMesh::recordOwnershipRelease(VkCommandBuffer cmd) {
-        if (vertexCount_ == 0) return;
-
-        const auto &f = device_.queueFamilyIndices();
-
-        VkBufferMemoryBarrier barriers[2]{};
-        for (auto &b: barriers) {
-            b.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-            b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            b.dstAccessMask = 0;
-            b.srcQueueFamilyIndex = f.transferFamily.value();
-            b.dstQueueFamilyIndex = f.graphicsFamily.value();
-            b.offset = 0;
-            b.size = VK_WHOLE_SIZE;
+    void GPUMesh::buildAccelerationStructure() {
+        if (vertexCount_ == 0 || blas_.isValid()) {
+            return;
         }
-        barriers[0].buffer = vertexBuffer_->get();
-        barriers[1].buffer = indexBuffer_->get();
+
+        blas_ = AccelerationStructure::allocateBLAS(
+            device_,
+            vertexBufferAddress(),
+            indexBufferAddress(),
+            vertexCount_,
+            indexCount_,
+            sizeof(Mesh::Vertex));
+
+        VkCommandBuffer cmd = device_.beginGraphicsCommands();
+
+        VkMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT |
+                                VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
+                                VK_ACCESS_INDEX_READ_BIT |
+                                VK_ACCESS_SHADER_READ_BIT;
+        barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
 
         vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT |
+                             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                             VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
                              0,
+                             1, &barrier,
                              0, nullptr,
-                             2, barriers,
                              0, nullptr);
+
+        blas_.recordBuild(cmd);
+        device_.endGraphicsCommands(cmd);
+        blas_.onBuildComplete();
     }
 
     std::vector<VkVertexInputBindingDescription> GPUMesh::Vertex::getBindingDescriptions() {

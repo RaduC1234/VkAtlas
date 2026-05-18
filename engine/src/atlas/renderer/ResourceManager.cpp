@@ -1,6 +1,8 @@
 #include "ResourceManager.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <stdexcept>
 
 #include "asset/Texture.hpp"
 #include "resources/GPUTexture.hpp"
@@ -12,10 +14,15 @@ namespace Atlas {
     }
 
     ResourceManager::~ResourceManager() {
+        if (inFlightUpload_) {
+            vkWaitForFences(device_.device(), 1, &inFlightUpload_->fence, VK_TRUE, UINT64_MAX);
+            device_.freeGraphicsCommandBuffer(inFlightUpload_->commandBuffer);
+            vkDestroyFence(device_.device(), inFlightUpload_->fence, nullptr);
+            inFlightUpload_.reset();
+        }
+
         uploadQueue_.clear();
         destroyQueue_.clear();
-        pendingAcquires_.clear();
-        readyOnSubmit_.clear();
         GPUResource::destroyDefaults();
     }
 
@@ -24,7 +31,7 @@ namespace Atlas {
     // -------------------------------------------------------------------------
 
     void ResourceManager::createDefaults() {
-        // Defaults are blocking startup uploads only; runtime uploads stay async.
+        // Defaults are blocking startup uploads.
         GPUResource::createDefault<GPUTexture>(device_);
         GPUResource::createDefault<GPUCubemap>(device_);
         GPUResource::createDefault<GPUMesh>(device_);
@@ -39,11 +46,10 @@ namespace Atlas {
 
         resource->setStatus(IGPUResource::Status::PENDING_DESTROY);
 
-        // Still in upload queue — erase before recordTransfer() ever runs.
-        // VkImage/VkImageView/VkSampler exist but no transfer was submitted,
-        // so no timeline value to wait on. Destruct immediately.
-        auto it = std::find_if(uploadQueue_.begin(), uploadQueue_.end(),
-                               [&](const UploadEntry &e) { return e.resource == resource; });
+        // Still in upload queue — erase before recordUpload() ever runs.
+        // VkImage/VkImageView/VkSampler exist, but no commands were submitted.
+        auto it = std::ranges::find_if(uploadQueue_,
+                                       [&](const UploadEntry &e) { return e.resource == resource; });
 
         if (it != uploadQueue_.end()) {
             uploadQueue_.erase(it);
@@ -52,7 +58,7 @@ namespace Atlas {
             return;
         }
 
-        // READY or in-flight — defer GPU destruction until timeline confirms idle
+        // READY or in-flight — defer destruction until update() retires it.
         destroyQueue_.push_back({
             std::move(resource),
             device_.currentTransferTimelineValue()
@@ -60,94 +66,72 @@ namespace Atlas {
     }
 
     // -------------------------------------------------------------------------
-    // update() — AssetManager thread, every few seconds
+    // update() — AssetManager thread
     // -------------------------------------------------------------------------
 
     void ResourceManager::update() {
-        if (!uploadQueue_.empty()) {
-            std::vector<UploadEntry> batch = std::move(uploadQueue_);
+        pollUpload();
+
+        if (!inFlightUpload_ && !uploadQueue_.empty()) {
+            constexpr size_t maxUploadsPerBatch = 1;
+
+            std::vector<UploadEntry> batch;
+            const size_t count = std::min(maxUploadsPerBatch, uploadQueue_.size());
+            batch.reserve(count);
+
+            for (size_t i = 0; i < count; ++i) {
+                batch.push_back(std::move(uploadQueue_[i]));
+            }
+
+            uploadQueue_.erase(uploadQueue_.begin(), uploadQueue_.begin() + static_cast<std::ptrdiff_t>(count));
 
             VkCommandBuffer cmd = device_.beginGraphicsCommands();
-
             for (auto &entry: batch) {
-                entry.resource->recordTransfer(cmd);
+                entry.resource->recordUpload(cmd);
             }
 
-            device_.endGraphicsCommands(cmd);
+            VkFenceCreateInfo fenceInfo{};
+            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 
-            for (auto &entry: batch) {
-                entry.resource->onTransferComplete();
-                entry.capturedAsset.reset();
-                entry.resource->setStatus(IGPUResource::Status::READY);
-                entry.resource->updateBindlessSlot();
+            VkFence fence = VK_NULL_HANDLE;
+            if (vkCreateFence(device_.device(), &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
+                throw std::runtime_error("ResourceManager: failed to create upload fence");
             }
+
+            device_.submitGraphicsCommands(cmd, fence);
+            inFlightUpload_ = InFlightUpload{cmd, fence, std::move(batch)};
         }
 
         retirePendingDestroys();
     }
 
-    // -------------------------------------------------------------------------
-    // recordPendingAcquires() — render thread, start of beginFrame()
-    // -------------------------------------------------------------------------
-
-    void ResourceManager::recordPendingAcquires(VkCommandBuffer cmd) {
-        device_.pollTransferCallbacks();
-
-        assert(readyOnSubmit_.empty() &&
-            "markAcquiredReady() was not called after last frame's submit");
-
-        std::lock_guard lock(acquireMutex_);
-        if (pendingAcquires_.empty()) return;
-
-        for (auto &a: pendingAcquires_) {
-            // Skip resources swept by GC before this frame processed them
-            if (a.resource->status() == IGPUResource::Status::PENDING_DESTROY)
-                continue;
-
-            a.resource->recordOwnershipAcquire(cmd);
-            pendingWaitValue_ = std::max(pendingWaitValue_, a.transferSignalValue);
-            readyOnSubmit_.push_back(a);
+    void ResourceManager::pollUpload() {
+        if (!inFlightUpload_) {
+            return;
         }
 
-        hasPendingWait_ = !readyOnSubmit_.empty();
-        pendingAcquires_.clear();
-    }
-
-    // -------------------------------------------------------------------------
-    // consumePendingWait() — render thread, before vkQueueSubmit
-    // -------------------------------------------------------------------------
-
-    bool ResourceManager::consumePendingWait(uint64_t &outValue) {
-        if (!hasPendingWait_) return false;
-        outValue = pendingWaitValue_;
-        pendingWaitValue_ = 0;
-        hasPendingWait_ = false;
-        return true;
-    }
-
-    // -------------------------------------------------------------------------
-    // markAcquiredReady() — render thread, immediately after vkQueueSubmit
-    // -------------------------------------------------------------------------
-
-    void ResourceManager::markAcquiredReady() {
-        for (auto &a: readyOnSubmit_) {
-            // Status READY — getCurrentImageView() now returns real VkImageView
-            a.resource->setStatus(IGPUResource::Status::READY);
-
-            // Update bindless slot from default → real VkImageView
-            // One vkUpdateDescriptorSets per texture, once, never again
-            a.resource->updateBindlessSlot();
+        const VkResult result = vkGetFenceStatus(device_.device(), inFlightUpload_->fence);
+        if (result == VK_NOT_READY) {
+            return;
         }
-        readyOnSubmit_.clear();
-    }
 
-    // -------------------------------------------------------------------------
-    // retirePendingDestroys() — AssetManager thread, called from update()
-    // -------------------------------------------------------------------------
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("ResourceManager: failed to poll upload fence");
+        }
+
+        for (auto &entry: inFlightUpload_->batch) {
+            entry.resource->onUploadComplete();
+            entry.capturedAsset.reset();
+            entry.resource->setStatus(IGPUResource::Status::READY);
+            entry.resource->updateBindlessSlot();
+        }
+
+        device_.freeGraphicsCommandBuffer(inFlightUpload_->commandBuffer);
+        vkDestroyFence(device_.device(), inFlightUpload_->fence, nullptr);
+        inFlightUpload_.reset();
+    }
 
     void ResourceManager::retirePendingDestroys() {
-        // Erase when GPU has moved past the timeline value
-        // shared_ptr destructs on erase — ~GPUTexture frees VkImage/VkImageView/VkSampler
         std::erase_if(destroyQueue_, [this](const PendingDestroy &pd) {
             return device_.isTransferComplete(pd.timelineValue);
         });

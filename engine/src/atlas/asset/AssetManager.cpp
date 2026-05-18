@@ -84,6 +84,32 @@ namespace Atlas {
         return AssetHandle<Texture>(state);
     }
 
+    AssetHandle<Texture> AssetManager::createTexturePlaceholder() {
+        auto state = std::make_shared<typename AssetHandle<Texture>::State>();
+        return AssetHandle<Texture>(std::move(state));
+    }
+
+    void AssetManager::fulfillTexture(AssetHandle<Texture> handle, std::vector<std::byte> pixels, uint32_t width, uint32_t height, VkFormat format, VkSamplerAddressMode addressMode) {
+        if (!handle.state_ || pixels.empty() || width == 0 || height == 0) {
+            return;
+        }
+
+        auto asset = std::make_shared<Texture>(std::move(pixels), width, height, format, addressMode);
+        const uint64_t hash = asset->getHash();
+
+        std::lock_guard lock(pendingMutex_);
+
+        if (handle.state_->asset || handle.state_->gpu) {
+            return;
+        }
+
+        handle.state_->asset = std::move(asset);
+        textureByHash_[hash] = handle.state_;
+        pendingTextures_.push_back(handle.state_);
+
+        AT_TRACE("Created texture (hash: {}, {}x{})", hash, width, height);
+    }
+
     AssetHandle<Mesh> AssetManager::createMesh(std::vector<Mesh::Vertex> vertices, std::vector<uint32_t> indices) {
         auto asset = std::make_shared<Mesh>(std::move(vertices), std::move(indices));
         const uint64_t hash = asset->getHash();
@@ -132,37 +158,55 @@ namespace Atlas {
         return AssetHandle<Cubemap>(state);
     }
 
-    void AssetManager::update() {  // update — batches all pending GPU uploads into one vkQueueSubmit
+    void AssetManager::update() {
+        constexpr size_t maxGpuCreatesPerFrame = 1;
+
         std::vector<WeakState<Texture> > textures;
         std::vector<WeakState<Mesh> > meshes;
         std::vector<WeakState<Cubemap> > cubemaps;
 
         {
             std::lock_guard lock(pendingMutex_);
-            textures = std::move(pendingTextures_);
-            meshes = std::move(pendingMeshes_);
-            cubemaps = std::move(pendingCubemaps_);
-        }
+            size_t remaining = maxGpuCreatesPerFrame;
 
-        for (auto &weak: textures) {
-            auto state = weak.lock();
-            if (!state) continue; // all handles dropped before upload — skip
-            auto gpu = resourceManager_.add(state->asset);
-            state->gpu = gpu;
+            auto takePending = [&remaining](auto &source, auto &destination) {
+                while (remaining > 0 && !source.empty()) {
+                    destination.push_back(std::move(source.back()));
+                    source.pop_back();
+                    --remaining;
+                }
+            };
+
+            takePending(pendingMeshes_, meshes);
+            takePending(pendingTextures_, textures);
+            takePending(pendingCubemaps_, cubemaps);
         }
 
         for (auto &weak: meshes) {
             auto state = weak.lock();
-            if (!state) continue;
+            if (!state || !state->asset) continue;
             auto gpu = resourceManager_.add(state->asset);
             state->gpu = gpu;
         }
 
-        for (auto &weak: cubemaps) {
+        for (auto &weak: textures) {
             auto state = weak.lock();
-            if (!state) continue;
+            if (!state || !state->asset) continue; // all handles dropped before upload — skip
             auto gpu = resourceManager_.add(state->asset);
             state->gpu = gpu;
+            for (const auto &slot: state->bindlessSlots) {
+                static_cast<GPUTexture &>(*state->gpu).registerBindlessSlot(slot.device, slot.set, slot.binding, slot.arrayElement);
+            }
+        }
+
+        for (auto &weak: cubemaps) {
+            auto state = weak.lock();
+            if (!state || !state->asset) continue;
+            auto gpu = resourceManager_.add(state->asset);
+            state->gpu = gpu;
+            for (const auto &slot: state->bindlessSlots) {
+                static_cast<GPUCubemap &>(*state->gpu).registerBindlessSlot(slot.device, slot.set, slot.binding, slot.arrayElement);
+            }
         }
 
         resourceManager_.update();

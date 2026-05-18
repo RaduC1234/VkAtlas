@@ -1,5 +1,6 @@
 #include "GPUTexture.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -8,7 +9,7 @@
 
 namespace Atlas {
     GPUTexture::GPUTexture(Device &device, const Texture &texture) : IGPUResource(Type::TEXTURE), device_(device), width_(texture.width()), height_(texture.height()), format_(resolveFormat(texture.format())) {
-        mipLevels_ = static_cast<uint32_t>(std::floor(std::log2(std::max(width_, height_)))) + 1;
+        mipLevels_ = 1;
 
         const VkDeviceSize size = static_cast<VkDeviceSize>(width_) * height_ * bytesPerPixel(format_);
 
@@ -27,55 +28,44 @@ namespace Atlas {
         if (image_ != VK_NULL_HANDLE) vmaDestroyImage(device_.allocator(), image_, memory_);
     }
 
-    void GPUTexture::recordTransfer(VkCommandBuffer cmd) {
+    void GPUTexture::recordUpload(VkCommandBuffer cmd) {
         recordTransition(cmd, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
         recordCopyBufferToImage(cmd);
         recordGenerateMipmaps(cmd);
     }
 
-    void GPUTexture::onTransferComplete() {
+    void GPUTexture::onUploadComplete() {
         stagingBuffer_.reset();
         imageLayout_ = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
 
-    void GPUTexture::recordOwnershipAcquire(VkCommandBuffer cmd) {
-        const auto &f = device_.queueFamilyIndices();
-
-        VkImageMemoryBarrier acquire{};
-        acquire.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        acquire.srcAccessMask = 0;
-        acquire.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        acquire.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        acquire.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        acquire.srcQueueFamilyIndex = f.transferFamily.value();
-        acquire.dstQueueFamilyIndex = f.graphicsFamily.value();
-        acquire.image = image_;
-        acquire.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels_, 0, 1};
-
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                             0, 0, nullptr, 0, nullptr, 1, &acquire);
-    }
-
     void GPUTexture::updateBindlessSlot() {
-        if (!bindlessSlot_) return;
-
         VkDescriptorImageInfo info = descriptor();
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = bindlessSlot_->set;
-        write.dstBinding = bindlessSlot_->binding;
-        write.dstArrayElement = bindlessSlot_->arrayElement;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &info;
+        for (const auto &slot: bindlessSlots_) {
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dstSet = slot.set;
+            write.dstBinding = slot.binding;
+            write.dstArrayElement = slot.arrayElement;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.descriptorCount = 1;
+            write.pImageInfo = &info;
 
-        vkUpdateDescriptorSets(bindlessSlot_->device, 1, &write, 0, nullptr);
+            vkUpdateDescriptorSets(slot.device, 1, &write, 0, nullptr);
+        }
     }
 
     void GPUTexture::registerBindlessSlot(VkDevice device, VkDescriptorSet set, uint32_t binding, uint32_t arrayElement) {
-        bindlessSlot_ = {device, set, binding, arrayElement};
+        const auto it = std::ranges::find_if(bindlessSlots_, [&](const BindlessSlot &slot) {
+            return slot.device == device &&
+                   slot.set == set &&
+                   slot.binding == binding &&
+                   slot.arrayElement == arrayElement;
+        });
+
+        if (it == bindlessSlots_.end()) {
+            bindlessSlots_.push_back({device, set, binding, arrayElement});
+        }
     }
 
     std::unique_ptr<GPUTexture> GPUTexture::createDefault(Device &device) {
@@ -93,7 +83,7 @@ namespace Atlas {
         resource->recordGenerateMipmaps(cmd);
         device.endGraphicsCommands(cmd);
 
-        resource->onTransferComplete();
+        resource->onUploadComplete();
         resource->setStatus(Status::READY);
 
         return resource;
@@ -256,26 +246,6 @@ namespace Atlas {
         vkCmdPipelineBarrier(cmd,
                              VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                              0, 0, nullptr, 0, nullptr, 1, &barrier);
-    }
-
-    void GPUTexture::recordOwnershipRelease(VkCommandBuffer cmd) {
-        const auto &f = device_.queueFamilyIndices();
-
-        VkImageMemoryBarrier release{};
-        release.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        release.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        release.dstAccessMask = 0;
-        release.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        release.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        release.srcQueueFamilyIndex = f.transferFamily.value();
-        release.dstQueueFamilyIndex = f.graphicsFamily.value();
-        release.image = image_;
-        release.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mipLevels_, 0, 1};
-
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-                             0, 0, nullptr, 0, nullptr, 1, &release);
     }
 
     VkFormat GPUTexture::resolveFormat(VkFormat requested) {

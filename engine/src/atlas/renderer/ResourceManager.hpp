@@ -2,7 +2,7 @@
 
 #include <concepts>
 #include <memory>
-#include <mutex>
+#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -11,6 +11,8 @@
 #include "asset/Texture.hpp"
 #include "resources/IGPUResource.hpp"
 #include "renderer/Device.hpp"
+#include "resources/GPUCubemap.hpp"
+#include "resources/GPUMesh.hpp"
 #include "resources/GPUTexture.hpp"
 
 namespace Atlas {
@@ -39,40 +41,17 @@ namespace Atlas {
         template<GPUUploadable T>
         std::shared_ptr<IGPUResource> add(std::shared_ptr<T> asset);
 
-        // Marks PENDING_DESTROY, defers GPU destruction until timeline confirms idle.
-        // If still in uploadQueue — removed immediately, no timeline wait needed.
+        // Marks PENDING_DESTROY and defers GPU destruction until update().
+        // If still in uploadQueue — removed immediately.
         void remove(std::shared_ptr<IGPUResource> resource);
 
-        // Batches all pending uploads into one vkQueueSubmit.
-        // Retires pending destroys whose timeline value has passed.
-        // Called every few seconds — not every frame.
+        // Uploads pending resources and retires pending destroys.
         void update();
-
-        // -------------------------------------------------------------------------
-        // Renderer interface — called on render thread
-        // -------------------------------------------------------------------------
-
-        // Records ownership acquire barriers for all resources uploaded since last frame.
-        // Call at START of beginFrame() into the frame command buffer.
-        void recordPendingAcquires(VkCommandBuffer cmd);
-
-        // Returns true + value if frame submit must wait on transfer timeline.
-        // Call before vkQueueSubmit. Resets state — call exactly once per frame.
-        bool consumePendingWait(uint64_t &outValue);
-
-        // Sets acquired resources to READY and updates their bindless slots.
-        // Call immediately after vkQueueSubmit.
-        void markAcquiredReady();
 
     private:
         struct UploadEntry {
             std::shared_ptr<IGPUResource> resource;
-            std::shared_ptr<void> capturedAsset; // Ref<T> as void — keeps CPU alive
-        };
-
-        struct PendingAcquire {
-            std::shared_ptr<IGPUResource> resource;
-            uint64_t transferSignalValue;
+            std::shared_ptr<void> capturedAsset; // keeps CPU asset alive until upload finishes
         };
 
         struct PendingDestroy {
@@ -80,27 +59,23 @@ namespace Atlas {
             uint64_t timelineValue;
         };
 
+        struct InFlightUpload {
+            VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+            VkFence fence = VK_NULL_HANDLE;
+            std::vector<UploadEntry> batch;
+        };
+
+        void pollUpload();
         void retirePendingDestroys();
 
         Device &device_;
 
         // Upload queue — AssetManager thread only, no mutex needed
         std::vector<UploadEntry> uploadQueue_;
+        std::optional<InFlightUpload> inFlightUpload_;
 
         // Destroy queue — AssetManager thread only, no mutex needed
         std::vector<PendingDestroy> destroyQueue_;
-
-        // Acquire queue — written by transfer completion callback, read by render thread
-        std::mutex acquireMutex_;
-        std::vector<PendingAcquire> pendingAcquires_;
-
-        // Set between recordPendingAcquires() and markAcquiredReady()
-        std::vector<PendingAcquire> readyOnSubmit_;
-        uint64_t pendingWaitValue_ = 0;
-        bool hasPendingWait_ = false;
-
-        // Default texture — owns the VkImage/VkImageView/VkSampler for the 1x1 white
-        std::unique_ptr<GPUTexture> defaultTexture_;
     };
 
     // -------------------------------------------------------------------------
@@ -119,8 +94,8 @@ namespace Atlas {
             resource = std::make_shared<GPUCubemap>(device_, *asset);
         }
 
-        // Ref<T> captured as shared_ptr<void> — keeps CPU pixel/vertex data alive
-        // until the transfer callback fires and resets capturedAsset
+        // Captured as shared_ptr<void> — keeps CPU pixel/vertex data alive
+        // until update() records and completes the upload.
         uploadQueue_.push_back({resource, asset});
         return resource;
     }

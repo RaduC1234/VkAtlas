@@ -619,6 +619,12 @@ namespace Atlas {
     }
 
     void Device::endGraphicsCommands(VkCommandBuffer commandBuffer) const {
+        submitGraphicsCommands(commandBuffer, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue_);
+        freeGraphicsCommandBuffer(commandBuffer);
+    }
+
+    void Device::submitGraphicsCommands(VkCommandBuffer commandBuffer, VkFence fence) const {
         vkEndCommandBuffer(commandBuffer);
 
         VkSubmitInfo submitInfo{};
@@ -626,9 +632,12 @@ namespace Atlas {
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
 
-        vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(graphicsQueue_);
+        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, fence) != VK_SUCCESS) {
+            throw std::runtime_error("failed to submit graphics command buffer!");
+        }
+    }
 
+    void Device::freeGraphicsCommandBuffer(VkCommandBuffer commandBuffer) const {
         vkFreeCommandBuffers(device_, graphicsCommandPool_, 1, &commandBuffer);
     }
 

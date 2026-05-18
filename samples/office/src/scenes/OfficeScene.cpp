@@ -1,5 +1,10 @@
 #include "OfficeScene.hpp"
 
+#include <chrono>
+#include <exception>
+
+#include "core/Log.hpp"
+
 
 namespace Atlas {
     OfficeScene::OfficeScene(Renderer &renderer, AssetManager &assets) : IScene(renderer), assets(assets) {
@@ -10,7 +15,9 @@ namespace Atlas {
     void OfficeScene::onLoad(entt::registry &&loadedRegistry) {
         IScene::onLoad(std::move(loadedRegistry));
 
-        assets.importAsset("models/Cabinet_with_light3.glb", this->registry, entt::null);
+        importComplete = false;
+
+        AT_INFO("OfficeScene: queued async import");
 
         auto cameraEntity = registry.create();
         auto &cameraTransform = registry.emplace<TransformComponent>(cameraEntity);
@@ -26,7 +33,14 @@ namespace Atlas {
         auto skyboxEntity = registry.create();
         registry.emplace<SkyboxComponent>(skyboxEntity, skybox, irradiance, prefilter);
 
-        renderSystem->build(registry);
+        renderSystem->build(registry, debugData().viewMode);
+
+        AssetManager *assetManager = &assets;
+        importFuture = renderer.device().executor().submit([assetManager] {
+            entt::registry importedRegistry;
+            assetManager->importAsset("models/Cabinet_with_light3.glb", importedRegistry, entt::null);
+            return importedRegistry;
+        });
     }
 
     void OfficeScene::onUpdate(float deltaTime) {
@@ -45,53 +59,43 @@ namespace Atlas {
             });
         }
 
-        bool resourcesReady = true;
-
-        for (auto entity: registry.view<ModelComponent>()) {
-            const auto &model = registry.get<ModelComponent>(entity);
-            if (model.meshHandle.valid() && !model.meshHandle.isReady()) {
-                resourcesReady = false;
-                break;
+        if (!importComplete) {
+            if (!importFuture.valid() || importFuture.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+                renderSystem->build(registry, debugData().viewMode);
+                return;
             }
-        }
 
-        if (resourcesReady) {
-            auto textureReady = [](const AssetHandle<Texture> &handle) {
-                return !handle.valid() || handle.isReady();
-            };
+            try {
+                auto importedRegistry = importFuture.get();
 
-            for (auto entity: registry.view<MaterialComponent>()) {
-                const auto &material = registry.get<MaterialComponent>(entity);
-                if (!textureReady(material.albedoTexture) ||
-                    !textureReady(material.normalMap) ||
-                    !textureReady(material.metallicRoughnessMap) ||
-                    !textureReady(material.ambientOcclusion)) {
-                    resourcesReady = false;
-                    break;
+                auto cameraView = registry.view<TransformComponent, CameraComponent>();
+                if (cameraView.begin() != cameraView.end()) {
+                    const auto cameraEntity = *cameraView.begin();
+                    const auto &cameraTransform = registry.get<TransformComponent>(cameraEntity);
+                    auto &camera = registry.get<CameraComponent>(cameraEntity);
+
+                    const auto newCameraEntity = importedRegistry.create();
+                    importedRegistry.emplace<TransformComponent>(newCameraEntity, cameraTransform);
+                    importedRegistry.emplace<CameraComponent>(newCameraEntity, camera);
                 }
-            }
-        }
 
-        if (resourcesReady) {
-            auto cubemapReady = [](const AssetHandle<Cubemap> &handle) {
-                return !handle.valid() || handle.isReady();
-            };
-
-            for (auto entity: registry.view<SkyboxComponent>()) {
-                const auto &skybox = registry.get<SkyboxComponent>(entity);
-                if (!cubemapReady(skybox.skyboxHandle) ||
-                    !cubemapReady(skybox.irradianceHandle) ||
-                    !cubemapReady(skybox.prefilterHandle)) {
-                    resourcesReady = false;
-                    break;
+                auto skyboxView = registry.view<SkyboxComponent>();
+                if (!skyboxView.empty()) {
+                    importedRegistry.emplace<SkyboxComponent>(importedRegistry.create(), registry.get<SkyboxComponent>(*skyboxView.begin()));
                 }
+
+                registry = std::move(importedRegistry);
+            } catch (const std::exception &e) {
+                AT_ERROR("OfficeScene: import failed: {}", e.what());
+                importComplete = true;
+                return;
             }
+
+            importComplete = true;
+            AT_INFO("OfficeScene: async import completed");
         }
 
-        if (!renderGraphReady || !resourcesReady) {
-            renderSystem->build(registry);
-            renderGraphReady = resourcesReady;
-        }
+        renderSystem->build(registry, debugData().viewMode);
     }
 
     void OfficeScene::onRender(FrameContext frameContext) {
@@ -107,11 +111,15 @@ namespace Atlas {
         renderSystem->render(
             frameContext,
             camera.getData(),
-          debugDt
+            debugDt
         );
     }
 
     void OfficeScene::onDelete() {
+        if (importFuture.valid()) {
+            importFuture.wait();
+        }
+
         IScene::onDelete();
     }
 }

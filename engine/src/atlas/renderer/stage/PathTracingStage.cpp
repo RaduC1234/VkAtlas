@@ -168,6 +168,8 @@ namespace Atlas {
             if (material.transparent && !material.alphaMasked) continue;
 
             if (!model.meshHandle.valid() || !model.meshHandle.isReady()) continue;
+            model.meshHandle.buildAccelerationStructure();
+            if (model.meshHandle.blasAddress() == 0) continue;
 
             const uint32_t objectIndex = static_cast<uint32_t>(cpuObjects.size());
             const glm::mat4 m = transform.mat4();
@@ -595,7 +597,10 @@ namespace Atlas {
         if (!handle.valid()) return 0;
 
         auto [it, inserted] = handleToSlot.emplace(handle, nextTextureSlot);
-        if (!inserted) return it->second;
+        if (!inserted) {
+            handle.registerBindlessSlot(device.device(), ptSet, 6, it->second);
+            return it->second;
+        }
 
         if (nextTextureSlot >= MAX_TEXTURES) {
             AT_WARN("PathTracingStage: MAX_TEXTURES exceeded");
@@ -604,6 +609,7 @@ namespace Atlas {
 
         const uint32_t slot = nextTextureSlot++;
         it->second = slot;
+        handle.registerBindlessSlot(device.device(), ptSet, 6, slot);
 
         VkDescriptorImageInfo info = handle.descriptor();
         VkWriteDescriptorSet write{};

@@ -18,9 +18,8 @@ namespace Atlas {
 
         virtual ~IGPUResource() = default;
 
-        virtual void recordTransfer(VkCommandBuffer cmd) = 0;
-        virtual void onTransferComplete() = 0;
-        virtual void recordOwnershipAcquire(VkCommandBuffer cmd) = 0;
+        virtual void recordUpload(VkCommandBuffer cmd) = 0;
+        virtual void onUploadComplete() = 0;
         virtual void updateBindlessSlot() = 0;
 
         Type type() const { return type_; }

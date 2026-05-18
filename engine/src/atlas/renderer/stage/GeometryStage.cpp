@@ -56,57 +56,23 @@ namespace Atlas {
 
     void GeometryStage::onUpdate(entt::registry &registry) {
         opaqueObjectData.clear();
+        opaqueDraws.clear();
         lights.clear();
 
         auto skyboxView = registry.view<SkyboxComponent>();
         if (skyboxView.empty()) {
             AT_WARN("GeometryStage: no skybox entity found, IBL and skybox will be unavailable");
+            if (boundIrradianceHandle.valid() || boundPrefilterHandle.valid() || boundSkyboxHandle.valid()) {
+                updateSkyboxDescriptors({});
+            }
         } else {
             if (skyboxView.size() > 1) {
                 AT_WARN("GeometryStage: multiple skyboxes detected, using the first one");
             }
 
             const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
-
-            VkDescriptorImageInfo irradianceInfo = skybox.irradianceHandle.valid()
-                ? skybox.irradianceHandle.descriptor()
-                : IGPUResource::default_<GPUCubemap>().descriptor();
-
-            VkDescriptorImageInfo prefilterInfo = skybox.prefilterHandle.valid()
-                ? skybox.prefilterHandle.descriptor()
-                : IGPUResource::default_<GPUCubemap>().descriptor();
-
-            VkDescriptorImageInfo skyboxInfo = skybox.skyboxHandle.valid()
-                ? skybox.skyboxHandle.descriptor()
-                : IGPUResource::default_<GPUCubemap>().descriptor();
-
-            VkWriteDescriptorSet wIrradiance{};
-            wIrradiance.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            wIrradiance.dstSet = environmentSet;
-            wIrradiance.dstBinding = 0;
-            wIrradiance.descriptorCount = 1;
-            wIrradiance.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            wIrradiance.pImageInfo = &irradianceInfo;
-
-            VkWriteDescriptorSet wPrefilter = wIrradiance;
-            wPrefilter.dstBinding = 1;
-            wPrefilter.pImageInfo = &prefilterInfo;
-
-            VkWriteDescriptorSet wSkybox{};
-            wSkybox.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            wSkybox.dstSet = skyboxDescriptorSet;
-            wSkybox.dstBinding = 0;
-            wSkybox.descriptorCount = 1;
-            wSkybox.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            wSkybox.pImageInfo = &skyboxInfo;
-            boundSkyboxHandle = skybox.skyboxHandle;
-
-            VkWriteDescriptorSet writes[] = {wIrradiance, wPrefilter, wSkybox};
-            vkUpdateDescriptorSets(device.device(), std::size(writes), writes, 0, nullptr);
+            updateSkyboxDescriptors(skybox);
         }
-
-        auto *opaqueDrawCmds = static_cast<VkDrawIndexedIndirectCommand *>(
-            opaqueIndirectCommandBuffer->getMapped());
 
         for (auto entity: registry.view<TransformComponent, MaterialComponent, ModelComponent>()) {
             auto &transform = registry.get<TransformComponent>(entity);
@@ -117,12 +83,11 @@ namespace Atlas {
             registerTexture(material.normalMap);
             registerTexture(material.metallicRoughnessMap);
             registerTexture(material.ambientOcclusion);
-            registerMesh(model.meshHandle);
 
-            const auto allocIt = meshAllocations.find(model.meshHandle);
-            if (allocIt == meshAllocations.end()) { continue; }
+            if (!model.meshHandle.valid() || !model.meshHandle.isReady()) {
+                continue;
+            }
 
-            const MeshAllocation &alloc = allocIt->second;
             const glm::mat4 model4 = transform.mat4();
 
             const GPUObjectData data{
@@ -140,13 +105,7 @@ namespace Atlas {
             if (material.baseColor.w >= 1.0f) {
                 const auto idx = static_cast<uint32_t>(opaqueObjectData.size());
                 opaqueObjectData.emplace(entity, data);
-                opaqueDrawCmds[idx] = {
-                    .indexCount = alloc.indexCount,
-                    .instanceCount = 1,
-                    .firstIndex = alloc.firstIndex,
-                    .vertexOffset = static_cast<int32_t>(alloc.firstVertex),
-                    .firstInstance = idx,
-                };
+                opaqueDraws.push_back({model.meshHandle, idx});
             }
         }
 
@@ -222,15 +181,16 @@ namespace Atlas {
             };
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, std::size(sets), sets, 0, nullptr);
 
-            VkBuffer vb = mergedVertexBuffer->get();
-            VkDeviceSize offset = 0;
-            vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &offset);
-            vkCmdBindIndexBuffer(cmd, mergedIndexBuffer->get(), 0, VK_INDEX_TYPE_UINT32);
-
-            vkCmdDrawIndexedIndirect(cmd,
-                                     opaqueIndirectCommandBuffer->get(), 0,
-                                     static_cast<uint32_t>(opaqueObjectData.size()),
-                                     sizeof(VkDrawIndexedIndirectCommand));
+            for (const OpaqueDraw &draw: opaqueDraws) {
+                draw.mesh.bind(cmd);
+                vkCmdDrawIndexed(
+                    cmd,
+                    static_cast<uint32_t>(draw.mesh->indices().size()),
+                    1,
+                    0,
+                    0,
+                    draw.firstInstance);
+            }
         }
 
         if (boundSkyboxHandle && skyboxPipeline) {
@@ -324,6 +284,9 @@ namespace Atlas {
                 .addBinding(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // ltcMat
                 .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // ltcAmp
                 .addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // BRDF LUT
+                .setBindingFlags(0, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
+                .setBindingFlags(1, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
+                .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
                 .build();
 
         textureSetLayout = DescriptorSetLayout::Builder(device)
@@ -343,11 +306,13 @@ namespace Atlas {
 
         skyboxSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT)
+                .setBindingFlags(0, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
+                .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
                 .build();
 
         pool = DescriptorPool::Builder(device)
                 .setMaxSets(6)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES + 3)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES + 6)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2)
                 .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                 .build();
@@ -368,9 +333,29 @@ namespace Atlas {
             throw std::runtime_error("GeometryStage: failed to allocate skybox descriptor set");
         }
 
+        VkDescriptorImageInfo irradianceDesc = IGPUResource::default_<GPUCubemap>().descriptor();
+        VkDescriptorImageInfo prefilterDesc = IGPUResource::default_<GPUCubemap>().descriptor();
+        VkDescriptorImageInfo skyboxDesc = IGPUResource::default_<GPUCubemap>().descriptor();
         VkDescriptorImageInfo matDesc = IGPUResource::default_<GPUTexture>().descriptor();
         VkDescriptorImageInfo ampDesc = IGPUResource::default_<GPUTexture>().descriptor();
         VkDescriptorImageInfo brdfDesc = IGPUResource::default_<GPUTexture>().descriptor();
+
+        VkWriteDescriptorSet wIrradiance{};
+        wIrradiance.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        wIrradiance.dstSet = environmentSet;
+        wIrradiance.dstBinding = 0;
+        wIrradiance.descriptorCount = 1;
+        wIrradiance.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        wIrradiance.pImageInfo = &irradianceDesc;
+
+        VkWriteDescriptorSet wPrefilter = wIrradiance;
+        wPrefilter.dstBinding = 1;
+        wPrefilter.pImageInfo = &prefilterDesc;
+
+        VkWriteDescriptorSet wSkybox = wIrradiance;
+        wSkybox.dstSet = skyboxDescriptorSet;
+        wSkybox.dstBinding = 0;
+        wSkybox.pImageInfo = &skyboxDesc;
 
         VkWriteDescriptorSet wMat{};
         wMat.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -388,7 +373,7 @@ namespace Atlas {
         wBRDF.dstBinding = 4;
         wBRDF.pImageInfo = &brdfDesc;
 
-        VkWriteDescriptorSet wArray[] = {wMat, wAmp, wBRDF};
+        VkWriteDescriptorSet wArray[] = {wIrradiance, wPrefilter, wSkybox, wMat, wAmp, wBRDF};
         vkUpdateDescriptorSets(device.device(), std::size(wArray), wArray, 0, nullptr);
     }
 
@@ -449,27 +434,6 @@ namespace Atlas {
     }
 
     void GeometryStage::createGPUBuffers() {
-        mergedVertexBuffer = std::make_unique<GPUBuffer>(
-            device, VERTEX_BUDGET,
-            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-        );
-
-        mergedIndexBuffer = std::make_unique<GPUBuffer>(
-            device, INDEX_BUDGET,
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE
-        );
-
-        opaqueIndirectCommandBuffer = std::make_unique<GPUBuffer>(
-            device,
-            sizeof(VkDrawIndexedIndirectCommand) * MAX_OBJECTS,
-            VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-            VMA_MEMORY_USAGE_AUTO,
-            VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
-        );
-        opaqueIndirectCommandBuffer->map();
-
         objectDataBuffer = std::make_unique<GPUBuffer>(
             device, sizeof(GPUObjectData) * MAX_OBJECTS,
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -501,16 +465,7 @@ namespace Atlas {
 
         auto [it, inserted] = handleToTextureSlot.emplace(handle, nextTextureSlot);
         if (!inserted) {
-            VkDescriptorImageInfo imageInfo = handle.descriptor();
-            VkWriteDescriptorSet write{};
-            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write.dstSet = bindlessTextureSet;
-            write.dstBinding = 0;
-            write.dstArrayElement = it->second;
-            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            write.descriptorCount = 1;
-            write.pImageInfo = &imageInfo;
-            vkUpdateDescriptorSets(device.device(), 1, &write, 0, nullptr);
+            handle.registerBindlessSlot(device.device(), bindlessTextureSet, 0, it->second);
             return it->second;
         }
 
@@ -520,6 +475,7 @@ namespace Atlas {
 
         const uint32_t slot = nextTextureSlot++;
         it->second = slot;
+        handle.registerBindlessSlot(device.device(), bindlessTextureSet, 0, slot);
 
         VkDescriptorImageInfo imageInfo = handle.descriptor();
         VkWriteDescriptorSet write{};
@@ -535,45 +491,82 @@ namespace Atlas {
         return slot;
     }
 
-    void GeometryStage::registerMesh(AssetHandle<Mesh> handle) {
-        if (!handle.valid() || !handle.isReady() || meshAllocations.contains(handle)) {
-            return;
-        }
-
-        const auto &vertices = handle->vertices();
-        const auto &indices = handle->indices();
-
-        if (nextVertex + vertices.size() > VERTEX_BUDGET / sizeof(GPUMesh::Vertex)) {
-            throw std::runtime_error("GeometryStage: merged vertex buffer out of space");
-        }
-        if (nextIndex + indices.size() > INDEX_BUDGET / sizeof(uint32_t)) {
-            throw std::runtime_error("GeometryStage: merged index buffer out of space");
-        }
-
-        const MeshAllocation alloc{
-            nextVertex, static_cast<uint32_t>(vertices.size()),
-            nextIndex, static_cast<uint32_t>(indices.size()),
-        };
-        meshAllocations[handle] = alloc;
-
-        const VkDeviceSize vSize = vertices.size() * sizeof(GPUMesh::Vertex);
-        GPUBuffer vStaging(device, vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-        vStaging.uploadData(vertices.data(), vSize);
-        GPUBuffer::copy(device, vStaging.get(), mergedVertexBuffer->get(), vSize, 0, nextVertex * sizeof(GPUMesh::Vertex));
-
-        const VkDeviceSize iSize = indices.size() * sizeof(uint32_t);
-        GPUBuffer iStaging(device, iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
-        iStaging.uploadData(indices.data(), iSize);
-        GPUBuffer::copy(device, iStaging.get(), mergedIndexBuffer->get(), iSize, 0, nextIndex * sizeof(uint32_t));
-
-        nextVertex += alloc.vertexCount;
-        nextIndex += alloc.indexCount;
-    }
-
     uint32_t GeometryStage::resolveTextureIndex(AssetHandle<Texture> handle) const {
         if (!handle.valid()) { return 0; }
         const auto it = handleToTextureSlot.find(handle);
         return it != handleToTextureSlot.end() ? it->second : 0;
+    }
+
+    void GeometryStage::updateSkyboxDescriptors(const SkyboxComponent &skybox) {
+        const bool irradianceReady = skybox.irradianceHandle.valid() && skybox.irradianceHandle.isReady();
+        const bool prefilterReady = skybox.prefilterHandle.valid() && skybox.prefilterHandle.isReady();
+        const bool skyboxReady = skybox.skyboxHandle.valid() && skybox.skyboxHandle.isReady();
+
+        const bool updateEnvironment =
+                skybox.irradianceHandle != boundIrradianceHandle ||
+                irradianceReady != boundIrradianceReady ||
+                skybox.prefilterHandle != boundPrefilterHandle ||
+                prefilterReady != boundPrefilterReady;
+        const bool updateSkybox =
+                skybox.skyboxHandle != boundSkyboxHandle ||
+                skyboxReady != boundSkyboxReady;
+
+        VkDescriptorImageInfo irradianceInfo{};
+        VkDescriptorImageInfo prefilterInfo{};
+        VkDescriptorImageInfo skyboxInfo{};
+        VkWriteDescriptorSet writes[3]{};
+        uint32_t writeCount = 0;
+
+        if (updateEnvironment) {
+            irradianceInfo = skybox.irradianceHandle.valid()
+                ? skybox.irradianceHandle.descriptor()
+                : IGPUResource::default_<GPUCubemap>().descriptor();
+            prefilterInfo = skybox.prefilterHandle.valid()
+                ? skybox.prefilterHandle.descriptor()
+                : IGPUResource::default_<GPUCubemap>().descriptor();
+
+            VkWriteDescriptorSet wIrradiance{};
+            wIrradiance.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            wIrradiance.dstSet = environmentSet;
+            wIrradiance.dstBinding = 0;
+            wIrradiance.descriptorCount = 1;
+            wIrradiance.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            wIrradiance.pImageInfo = &irradianceInfo;
+
+            VkWriteDescriptorSet wPrefilter = wIrradiance;
+            wPrefilter.dstBinding = 1;
+            wPrefilter.pImageInfo = &prefilterInfo;
+
+            writes[writeCount++] = wIrradiance;
+            writes[writeCount++] = wPrefilter;
+        }
+
+        if (updateSkybox) {
+            skyboxInfo = skybox.skyboxHandle.valid()
+                ? skybox.skyboxHandle.descriptor()
+                : IGPUResource::default_<GPUCubemap>().descriptor();
+
+            VkWriteDescriptorSet wSkybox{};
+            wSkybox.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            wSkybox.dstSet = skyboxDescriptorSet;
+            wSkybox.dstBinding = 0;
+            wSkybox.descriptorCount = 1;
+            wSkybox.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            wSkybox.pImageInfo = &skyboxInfo;
+
+            writes[writeCount++] = wSkybox;
+        }
+
+        if (writeCount > 0) {
+            vkUpdateDescriptorSets(device.device(), writeCount, writes, 0, nullptr);
+        }
+
+        boundIrradianceHandle = skybox.irradianceHandle;
+        boundIrradianceReady = irradianceReady;
+        boundPrefilterHandle = skybox.prefilterHandle;
+        boundPrefilterReady = prefilterReady;
+        boundSkyboxHandle = skybox.skyboxHandle;
+        boundSkyboxReady = skyboxReady;
     }
 
     VkPipelineDepthStencilStateCreateInfo GeometryStage::makeStencilWrite(uint8_t ref) {

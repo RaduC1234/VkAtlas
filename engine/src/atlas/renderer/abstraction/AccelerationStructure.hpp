@@ -24,15 +24,15 @@ namespace Atlas {
 
         // Phase 1 — allocates AS handle, backing buffer, scratch buffer.
         // Pure device queries + vmaCreateBuffer, no command recording.
-        // Called from GPUMesh constructor.
+        // Called when path tracing requests a BLAS.
         static AccelerationStructure allocateBLAS(Device &device, VkDeviceAddress vertexBufferAddress, VkDeviceAddress indexBufferAddress, uint32_t vertexCount, uint32_t indexCount, VkDeviceSize vertexStride);
 
         // Phase 2 — records vkCmdBuildAccelerationStructuresKHR into shared cmd buffer.
-        // Called from GPUMesh::recordTransfer() after the copy barrier.
+        // Called from GPUMesh::buildAccelerationStructure().
         void recordBuild(VkCommandBuffer cmd);
 
         // Phase 3 — frees scratch buffer.
-        // Called from GPUMesh::onTransferComplete().
+        // Called after the BLAS command buffer completes.
         void onBuildComplete();
 
         static AccelerationStructure buildTLAS(Device &device, const std::vector<VkAccelerationStructureInstanceKHR> &instances);

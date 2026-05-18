@@ -45,11 +45,9 @@ namespace Atlas {
             glm::vec4 baseColor;
         };
 
-        struct MeshAllocation {
-            uint32_t firstVertex = 0;
-            uint32_t vertexCount = 0;
-            uint32_t firstIndex = 0;
-            uint32_t indexCount = 0;
+        struct OpaqueDraw {
+            AssetHandle<Mesh> mesh;
+            uint32_t firstInstance = 0;
         };
 
         struct Light {
@@ -92,10 +90,9 @@ namespace Atlas {
 
         std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
         Storage<GPUObjectData> opaqueObjectData;
+        std::vector<OpaqueDraw> opaqueDraws;
         std::unique_ptr<GPUBuffer> objectDataBuffer;
         VkDescriptorSet objectDataSet = VK_NULL_HANDLE;
-        std::unique_ptr<GPUBuffer> opaqueIndirectCommandBuffer;
-
         Storage<Light> lights;
         std::unique_ptr<GPUBuffer> lightsBuffer;
         VkDescriptorSet lightSet = VK_NULL_HANDLE;
@@ -103,13 +100,12 @@ namespace Atlas {
 
         std::unique_ptr<DescriptorSetLayout> skyboxSetLayout;
         VkDescriptorSet skyboxDescriptorSet = VK_NULL_HANDLE;
+        AssetHandle<Cubemap> boundIrradianceHandle;
+        bool boundIrradianceReady = false;
+        AssetHandle<Cubemap> boundPrefilterHandle;
+        bool boundPrefilterReady = false;
         AssetHandle<Cubemap> boundSkyboxHandle;
-
-        std::unique_ptr<GPUBuffer> mergedVertexBuffer;
-        std::unique_ptr<GPUBuffer> mergedIndexBuffer;
-        uint32_t nextVertex = 0;
-        uint32_t nextIndex = 0;
-        std::unordered_map<AssetHandle<Mesh>, MeshAllocation> meshAllocations;
+        bool boundSkyboxReady = false;
 
         void begin(VkCommandBuffer cmd);
         void end(VkCommandBuffer cmd);
@@ -122,8 +118,8 @@ namespace Atlas {
         void createGPUBuffers();
 
         uint32_t registerTexture(AssetHandle<Texture> handle);
-        void registerMesh(AssetHandle<Mesh> handle);
         uint32_t resolveTextureIndex(AssetHandle<Texture> handle) const;
+        void updateSkyboxDescriptors(const SkyboxComponent &skybox);
 
         static VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
     };

@@ -1,8 +1,5 @@
 #include "RenderSystemV2.hpp"
 
-#include <ranges>
-#include <unordered_set>
-
 #include "core/Log.hpp"
 #include "renderer/stage/GeometryStage.hpp"
 #include "renderer/stage/OutputStage.hpp"
@@ -32,13 +29,11 @@ namespace Atlas {
 
 
     void RenderSystemV2::build(entt::registry &registry) {
-        std::unordered_set<RenderGraph *> built;
+        build(registry, ViewMode::LIT);
+    }
 
-        for (auto &graph: renderGraphs | std::views::values) {
-            if (built.insert(graph.get()).second) {
-                graph->build(registry);
-            }
-        }
+    void RenderSystemV2::build(entt::registry &registry, ViewMode viewMode) {
+        renderGraphs.at(viewMode)->build(registry);
     }
 
     void RenderSystemV2::render(const FrameContext frameContext,const Camera::Data &cameraData,const DebugData &debugData) const {

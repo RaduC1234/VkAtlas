@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include <optional>
+#include <vector>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.h>
 
@@ -21,17 +21,14 @@ namespace Atlas {
         GPUTexture(Device &device, const Texture &texture);
         ~GPUTexture() override;
 
-        // Phase 2 — records into shared transfer cmd buffer (transfer queue)
-        void recordTransfer(VkCommandBuffer cmd) override;
+        // Phase 2 — records upload into a graphics-compatible command buffer
+        void recordUpload(VkCommandBuffer cmd) override;
 
-        // Phase 3 — transfer completion callback, no GPU calls, frees staging buffer
-        void onTransferComplete() override;
+        // Phase 3 — upload completion, no GPU calls, frees staging buffer
+        void onUploadComplete() override;
 
-        // Phase 4 — graphics queue, frame start
-        void recordOwnershipAcquire(VkCommandBuffer cmd) override;
-
-        // Phase 5 — updates bindless slot from default → real VkImageView
-        // Called by ResourceManager::markAcquiredReady() on render thread
+        // Updates bindless slot from default to real VkImageView
+        // Called by ResourceManager::update() after upload completion
         void updateBindlessSlot() override;
 
         // Stable after construction — safe to bind permanently
@@ -48,8 +45,8 @@ namespace Atlas {
             return imageView_;
         }
 
-        // Called by PathTracingStage::registerTexture() to register the bindless slot
-        // ResourceManager::markAcquiredReady() will update it when READY
+        // Called by render stages to register the bindless slot.
+        // ResourceManager::update() will update it when READY.
         void registerBindlessSlot(VkDevice device, VkDescriptorSet set,
                                   uint32_t binding, uint32_t arrayElement);
 
@@ -66,7 +63,6 @@ namespace Atlas {
                               VkImageLayout newLayout);
         void recordCopyBufferToImage(VkCommandBuffer cmd);
         void recordGenerateMipmaps(VkCommandBuffer cmd);
-        void recordOwnershipRelease(VkCommandBuffer cmd);
 
         static uint32_t bytesPerPixel(VkFormat format);
         static VkFormat resolveFormat(VkFormat requested);
@@ -83,7 +79,7 @@ namespace Atlas {
         VkSampler sampler_ = VK_NULL_HANDLE;
         VkImageLayout imageLayout_ = VK_IMAGE_LAYOUT_UNDEFINED;
 
-        // Alive from constructor → onTransferComplete()
+        // Alive from constructor to onUploadComplete()
         std::unique_ptr<GPUBuffer> stagingBuffer_;
 
         // Set by registerBindlessSlot(), used by updateBindlessSlot()
@@ -94,6 +90,6 @@ namespace Atlas {
             uint32_t arrayElement;
         };
 
-        std::optional<BindlessSlot> bindlessSlot_;
+        std::vector<BindlessSlot> bindlessSlots_;
     };
 } // namespace Atlas

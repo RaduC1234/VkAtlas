@@ -102,6 +102,8 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         // Single time commands — synchronous, graphics queue
         VkCommandBuffer beginGraphicsCommands();
         void endGraphicsCommands(VkCommandBuffer commandBuffer) const;
+        void submitGraphicsCommands(VkCommandBuffer commandBuffer, VkFence fence) const;
+        void freeGraphicsCommandBuffer(VkCommandBuffer commandBuffer) const;
 
         // Transfer commands — async, transfer queue, one at a time
         struct TransferCmd {

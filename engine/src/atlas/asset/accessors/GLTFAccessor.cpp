@@ -7,8 +7,11 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <sstream>
 #include <utility>
+
+#include <stb_image.h>
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtc/matrix_transform.hpp>
@@ -312,6 +315,43 @@ namespace Atlas {
         return rgba;
     }
 
+    std::vector<std::byte> gltfDecodeImageToRgba(const tinygltf::Image &image, int &width, int &height) {
+        width = 0;
+        height = 0;
+
+        if (image.image.empty() || image.image.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+            return {};
+        }
+
+        if (!image.as_is) {
+            width = image.width;
+            height = image.height;
+            return gltfImageToRgba(image);
+        }
+
+        int componentCount = 0;
+        unsigned char *decoded = stbi_load_from_memory(
+            image.image.data(),
+            static_cast<int>(image.image.size()),
+            &width,
+            &height,
+            &componentCount,
+            4);
+
+        if (!decoded || width <= 0 || height <= 0) {
+            if (decoded) {
+                stbi_image_free(decoded);
+            }
+            return {};
+        }
+
+        const size_t byteCount = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+        std::vector<std::byte> rgba(byteCount);
+        std::memcpy(rgba.data(), decoded, byteCount);
+        stbi_image_free(decoded);
+        return rgba;
+    }
+
     void gltfAttachToParent(entt::registry &registry, const entt::entity parentEntity, const entt::entity entity) {
         if (parentEntity == entt::null || !registry.valid(parentEntity)) {
             return;
@@ -381,6 +421,20 @@ namespace Atlas {
     GLTFAccessor::GLTFAccessor(AssetManager &assets, ExecutorService &service) : assets(assets), executor(service) {
     }
 
+    GLTFAccessor::~GLTFAccessor() {
+        std::vector<std::future<void>> jobs;
+        {
+            std::lock_guard lock(textureJobsMutex);
+            jobs = std::move(textureJobs);
+        }
+
+        for (auto &job: jobs) {
+            if (job.valid()) {
+                job.wait();
+            }
+        }
+    }
+
     std::vector<entt::entity> GLTFAccessor::importAsset(
         const std::string &path,
         entt::registry &registry,
@@ -389,6 +443,8 @@ namespace Atlas {
         const std::string ext = gltfLowercaseExtension(fullPath);
 
         tinygltf::TinyGLTF loader;
+        loader.SetImagesAsIs(true);
+
         tinygltf::Model model;
         std::string err;
         std::string warn;
@@ -408,19 +464,7 @@ namespace Atlas {
 
         std::vector<AssetHandle<Texture>> imageHandles(model.images.size());
         for (size_t imageIndex = 0; imageIndex < model.images.size(); ++imageIndex) {
-            const tinygltf::Image &image = model.images[imageIndex];
-            std::vector<std::byte> pixels = gltfImageToRgba(image);
-            if (pixels.empty()) {
-                AT_WARN("GLTFAccessor: skipping image {} because it has unsupported data", imageIndex);
-                continue;
-            }
-
-            imageHandles[imageIndex] = assets.createTexture(
-                std::move(pixels),
-                static_cast<uint32_t>(image.width),
-                static_cast<uint32_t>(image.height),
-                VK_FORMAT_R8G8B8A8_SRGB,
-                VK_SAMPLER_ADDRESS_MODE_REPEAT);
+            imageHandles[imageIndex] = assets.createTexturePlaceholder();
         }
 
         std::vector<std::vector<AssetHandle<Mesh>>> meshHandles(model.meshes.size());
@@ -558,6 +602,8 @@ namespace Atlas {
             entities.push_back(entity);
         }
 
+        scheduleTextureDecode(std::move(model.images), imageHandles, path);
+
         AT_INFO("GLTFAccessor: created {} entities from {}", entities.size(), path);
         return entities;
     }
@@ -574,6 +620,50 @@ namespace Atlas {
 
         AT_WARN("GLTFAccessor: export is temporarily disabled for the typed asset system");
         return gltfToBytes(gltf.str());
+    }
+
+    void GLTFAccessor::scheduleTextureDecode(
+        std::vector<tinygltf::Image> images,
+        std::vector<AssetHandle<Texture>> imageHandles,
+        const std::string &path) {
+        if (images.empty() || imageHandles.empty()) {
+            return;
+        }
+
+        AssetManager *assetManager = &assets;
+        auto job = executor.submit([assetManager, images = std::move(images), imageHandles = std::move(imageHandles), path]() mutable {
+            const size_t count = std::min(images.size(), imageHandles.size());
+            size_t created = 0;
+
+            for (size_t imageIndex = 0; imageIndex < count; ++imageIndex) {
+                int width = 0;
+                int height = 0;
+                std::vector<std::byte> pixels = gltfDecodeImageToRgba(images[imageIndex], width, height);
+                if (pixels.empty()) {
+                    AT_WARN("GLTFAccessor: skipping image {} from {} because it has unsupported data", imageIndex, path);
+                    constexpr uint8_t white[4] = {255, 255, 255, 255};
+                    pixels.assign(
+                        reinterpret_cast<const std::byte *>(white),
+                        reinterpret_cast<const std::byte *>(white) + 4);
+                    width = 1;
+                    height = 1;
+                }
+
+                assetManager->fulfillTexture(
+                    imageHandles[imageIndex],
+                    std::move(pixels),
+                    static_cast<uint32_t>(width),
+                    static_cast<uint32_t>(height),
+                    VK_FORMAT_R8G8B8A8_SRGB,
+                    VK_SAMPLER_ADDRESS_MODE_REPEAT);
+                ++created;
+            }
+
+            AT_INFO("GLTFAccessor: decoded {} textures from {}", created, path);
+        });
+
+        std::lock_guard lock(textureJobsMutex);
+        textureJobs.push_back(std::move(job));
     }
 
     void GLTFAccessor::processNode(

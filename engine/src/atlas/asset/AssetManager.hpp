@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <concepts>
 #include <filesystem>
 #include <functional>
@@ -58,6 +59,8 @@ namespace Atlas {
             return {gpu.getSampler(), gpu.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
         }
 
+        void registerBindlessSlot(VkDevice device, VkDescriptorSet set, uint32_t binding, uint32_t arrayElement) const requires std::same_as<T, Texture> || std::same_as<T, Cubemap>;
+
         VkDescriptorBufferInfo vertexBufferInfo() const requires std::same_as<T, Mesh> {
             if (!state_ || !state_->gpu || !isReady()) return {};
             auto &gpu = static_cast<GPUMesh &>(*state_->gpu);
@@ -85,6 +88,11 @@ namespace Atlas {
             return static_cast<GPUMesh &>(*state_->gpu).accelerationStructure().deviceAddress();
         }
 
+        void buildAccelerationStructure() const requires std::same_as<T, Mesh> {
+            if (!state_ || !state_->gpu || !isReady()) return;
+            static_cast<GPUMesh &>(*state_->gpu).buildAccelerationStructure();
+        }
+
         // -------------------------------------------------------------------------
         // Comparison — handles to the same asset are equal
         // -------------------------------------------------------------------------
@@ -104,8 +112,16 @@ namespace Atlas {
         friend class AssetManager;
 
         struct State {
+            struct BindlessSlot {
+                VkDevice device = VK_NULL_HANDLE;
+                VkDescriptorSet set = VK_NULL_HANDLE;
+                uint32_t binding = 0;
+                uint32_t arrayElement = 0;
+            };
+
             std::shared_ptr<T> asset; // CPU data
             std::shared_ptr<IGPUResource> gpu; // null until AssetManager::update() runs
+            std::vector<BindlessSlot> bindlessSlots;
         };
 
         // Only AssetManager can construct a valid Handle
@@ -114,6 +130,37 @@ namespace Atlas {
 
         std::shared_ptr<State> state_;
     };
+
+    template<AssetType T>
+    void AssetHandle<T>::registerBindlessSlot(VkDevice device, VkDescriptorSet set, uint32_t binding, uint32_t arrayElement) const requires std::same_as<T, Texture> || std::same_as<T, Cubemap> {
+        if (!state_) return;
+
+        typename AssetHandle<T>::State::BindlessSlot slot{
+            .device = device,
+            .set = set,
+            .binding = binding,
+            .arrayElement = arrayElement,
+        };
+
+        const auto it = std::ranges::find_if(state_->bindlessSlots, [&](const typename AssetHandle<T>::State::BindlessSlot &other) {
+            return other.device == slot.device &&
+                   other.set == slot.set &&
+                   other.binding == slot.binding &&
+                   other.arrayElement == slot.arrayElement;
+        });
+
+        if (it == state_->bindlessSlots.end()) {
+            state_->bindlessSlots.push_back(slot);
+        }
+
+        if (!state_->gpu) return;
+
+        if constexpr (std::same_as<T, Texture>) {
+            static_cast<GPUTexture &>(*state_->gpu).registerBindlessSlot(device, set, binding, arrayElement);
+        } else {
+            static_cast<GPUCubemap &>(*state_->gpu).registerBindlessSlot(device, set, binding, arrayElement);
+        }
+    }
 
     class AssetManager {
     public:
@@ -129,6 +176,8 @@ namespace Atlas {
         std::vector<entt::entity> importAsset(const std::string &virtualPath, entt::registry &registry, entt::entity parentEntity = entt::null);
 
         AssetHandle<Texture> createTexture(std::vector<std::byte> pixels, uint32_t width, uint32_t height, VkFormat format, VkSamplerAddressMode addressMode);
+        AssetHandle<Texture> createTexturePlaceholder();
+        void fulfillTexture(AssetHandle<Texture> handle, std::vector<std::byte> pixels, uint32_t width, uint32_t height, VkFormat format, VkSamplerAddressMode addressMode);
         AssetHandle<Mesh> createMesh(std::vector<Mesh::Vertex> vertices, std::vector<uint32_t> indices);
         AssetHandle<Cubemap> createCubemap(std::vector<std::byte> pixels, uint32_t width, uint32_t height, uint32_t mipLevels, VkFormat format, std::vector<VkBufferImageCopy> copyRegions);
 
