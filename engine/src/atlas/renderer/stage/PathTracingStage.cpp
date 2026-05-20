@@ -6,11 +6,43 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include <array>
+#include <cstdint>
+#include <cstring>
+#include <functional>
 
 #include "core/Log.hpp"
 #include "entity/Object.hpp"
 
 namespace Atlas {
+    namespace {
+        void hashCombine(uint64_t &seed, uint64_t value) {
+            seed ^= value + 0x9e3779b97f4a7c15ull + (seed << 6) + (seed >> 2);
+        }
+
+        template<typename T>
+        void hashValue(uint64_t &seed, const T &value) {
+            hashCombine(seed, static_cast<uint64_t>(std::hash<T>{}(value)));
+        }
+
+        void hashVec3(uint64_t &seed, const glm::vec3 &value) {
+            hashValue(seed, value.x);
+            hashValue(seed, value.y);
+            hashValue(seed, value.z);
+        }
+
+        void hashVec4(uint64_t &seed, const glm::vec4 &value) {
+            hashValue(seed, value.x);
+            hashValue(seed, value.y);
+            hashValue(seed, value.z);
+            hashValue(seed, value.w);
+        }
+
+        template<typename T>
+        void hashHandle(uint64_t &seed, const AssetHandle<T> &handle) {
+            hashValue(seed, reinterpret_cast<uintptr_t>(handle.identity()));
+        }
+    }
+
     struct PTObjectData {
         glm::mat4 modelMatrix;
         glm::mat4 normalMatrix;
@@ -139,6 +171,28 @@ namespace Atlas {
         cameraUpdateConnection = registry.on_update<CameraComponent>().connect<&PathTracingStage::onCameraUpdated>(*this);
         cameraDestroyConnection = registry.on_destroy<CameraComponent>().connect<&PathTracingStage::onCameraDestroyed>(*this);
 
+        bool waitingForMeshes = false;
+        const uint64_t buildSignature = sceneBuildSignature(registry, waitingForMeshes);
+        const uint64_t textureSignature = textureReadinessSignature();
+
+        // Texture uploads refresh bindless descriptors through AssetHandle slots;
+        // they only need accumulation reset, not AS or packed-geometry rebuilds.
+        if (waitingForMeshes) {
+            if (sceneBuilt && textureSignature != lastTextureReadinessSignature) {
+                lastTextureReadinessSignature = textureSignature;
+                reset();
+            }
+            return;
+        }
+
+        if (sceneBuilt && buildSignature == lastSceneBuildSignature) {
+            if (textureSignature != lastTextureReadinessSignature) {
+                lastTextureReadinessSignature = textureSignature;
+                reset();
+            }
+            return;
+        }
+
         std::vector<VkAccelerationStructureInstanceKHR> tlasInstances;
         std::vector<PTObjectData> cpuObjects;
         std::vector<PTLight> cpuLights;
@@ -246,6 +300,8 @@ namespace Atlas {
 
         if (!tlasInstances.empty()) {
             tlas_ = AccelerationStructure::buildTLAS(device, tlasInstances);
+        } else {
+            tlas_ = AccelerationStructure{};
         }
 
         // ---- Upload packed geometry -----------------------------------------
@@ -294,6 +350,9 @@ namespace Atlas {
 
         updateDescriptorSet(); // Descriptor set needs to be updated with the new TLAS
         reset();
+        sceneBuilt = true;
+        lastSceneBuildSignature = buildSignature;
+        lastTextureReadinessSignature = textureReadinessSignature();
 
         AT_INFO("PathTracingStage: {} objects, {} lights", objectCount, lightCount);
     }
@@ -591,6 +650,82 @@ namespace Atlas {
         }
 
         return false;
+    }
+
+    uint64_t PathTracingStage::sceneBuildSignature(entt::registry &registry, bool &waitingForMeshes) const {
+        waitingForMeshes = false;
+
+        uint64_t seed = 0;
+        uint32_t modelCount = 0;
+        for (auto entity: registry.view<TransformComponent, ModelComponent, MaterialComponent>()) {
+            const auto &transform = registry.get<TransformComponent>(entity);
+            const auto &model = registry.get<ModelComponent>(entity);
+            const auto &material = registry.get<MaterialComponent>(entity);
+
+            if (material.transparent && !material.alphaMasked) {
+                continue;
+            }
+            if (!model.meshHandle.valid()) {
+                continue;
+            }
+
+            ++modelCount;
+            hashValue(seed, entt::to_integral(entity));
+            hashHandle(seed, model.meshHandle);
+            hashVec3(seed, transform.translation);
+            hashVec3(seed, transform.scale);
+            hashVec3(seed, transform.rotation);
+            hashVec4(seed, material.baseColor);
+            hashHandle(seed, material.albedoTexture);
+            hashHandle(seed, material.normalMap);
+            hashHandle(seed, material.metallicRoughnessMap);
+            hashHandle(seed, material.ambientOcclusion);
+            hashValue(seed, material.alphaMasked);
+            hashValue(seed, material.transparent);
+
+            if (!model.meshHandle.isReady()) {
+                waitingForMeshes = true;
+            }
+        }
+        hashValue(seed, modelCount);
+
+        uint32_t lightCountForSignature = 0;
+        for (auto entity: registry.view<TransformComponent, LightComponent>()) {
+            const auto &transform = registry.get<TransformComponent>(entity);
+            const auto &light = registry.get<LightComponent>(entity);
+
+            ++lightCountForSignature;
+            hashValue(seed, entt::to_integral(entity));
+            hashValue(seed, static_cast<uint32_t>(light.type));
+            hashValue(seed, light.intensity);
+            hashValue(seed, light.range);
+            hashValue(seed, light.innerConeAngle);
+            hashValue(seed, light.outerConeAngle);
+            hashVec3(seed, light.color);
+            hashVec3(seed, transform.translation);
+            hashValue(seed, light.width);
+            hashValue(seed, light.height);
+            hashVec3(seed, light.direction);
+            hashVec3(seed, light.rectRight);
+            hashVec3(seed, light.rectUp);
+        }
+        hashValue(seed, lightCountForSignature);
+
+        return seed;
+    }
+
+    uint64_t PathTracingStage::textureReadinessSignature() const {
+        uint64_t seed = 0;
+        for (const auto &[handle, slot]: handleToSlot) {
+            uint64_t entry = 0;
+            hashHandle(entry, handle);
+            hashValue(entry, slot);
+            hashValue(entry, handle.isReady());
+            seed ^= entry + 0x9e3779b97f4a7c15ull + (entry << 6) + (entry >> 2);
+        }
+
+        hashValue(seed, handleToSlot.size());
+        return seed;
     }
 
     uint32_t PathTracingStage::registerTexture(AssetHandle<Texture> handle) {

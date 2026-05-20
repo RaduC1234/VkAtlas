@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdint>
+
 #include <entt/signal/sigh.hpp>
 
 #include "IRenderStage.hpp"
@@ -31,6 +33,8 @@ namespace Atlas {
         void onCameraUpdated(entt::registry &registry, entt::entity entity);
         void onCameraDestroyed(entt::registry &registry, entt::entity entity);
 
+        uint64_t sceneBuildSignature(entt::registry &registry, bool &waitingForMeshes) const;
+        uint64_t textureReadinessSignature() const;
         uint32_t registerTexture(AssetHandle<Texture> handle);
         static bool cameraDataChanged(const Camera::Data &lhs, const Camera::Data &rhs);
 
@@ -74,6 +78,9 @@ namespace Atlas {
         uint32_t lightCount = 0;
         bool active = true;
         bool hasCameraData = false;
+        bool sceneBuilt = false;
+        uint64_t lastSceneBuildSignature = 0;
+        uint64_t lastTextureReadinessSignature = 0;
         Camera::Data lastCameraData{};
         entt::scoped_connection cameraConstructConnection;
         entt::scoped_connection cameraUpdateConnection;

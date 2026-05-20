@@ -95,6 +95,7 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         QueueFamilyIndices findPhysicalQueueFamilies() { return findQueueFamilies(physicalDevice_); }
         const QueueFamilyIndices &queueFamilyIndices() const { return queueFamilyIndices_; }
         const VkPhysicalDeviceRayTracingPipelinePropertiesKHR &rayTracingPipelineProperties() const { return rtPipelineProperties_; }
+        const VkPhysicalDeviceAccelerationStructurePropertiesKHR &accelerationStructureProperties() const { return accelStructureProperties_; }
 
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);

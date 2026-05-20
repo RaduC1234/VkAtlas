@@ -1,5 +1,7 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "IAsset.hpp"
@@ -16,6 +18,11 @@ namespace Atlas {
         VkFormat format() const { return format_; }
         VkSamplerAddressMode addressMode() const { return addressMode_; }
 
+        static std::shared_ptr<Texture> fromFile(const std::string &path, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+        static std::shared_ptr<Texture> fromRGBA8(const std::vector<std::byte> &data, uint32_t width, uint32_t height, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+        static std::shared_ptr<Texture> fromHDR(const std::vector<std::byte> &data, uint32_t width, uint32_t height, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+        static std::shared_ptr<Texture> fromKtx2(const std::vector<std::byte> &fileData, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+        static std::shared_ptr<Texture> default_();
     private:
         static uint64_t computeHash(const std::vector<std::byte> &pixels, uint32_t width, uint32_t height, VkFormat format, VkSamplerAddressMode addressMode);
 

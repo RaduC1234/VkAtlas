@@ -26,9 +26,9 @@ namespace Atlas {
         camera.camera.setViewYXZ(cameraTransform.translation, cameraTransform.rotation);
         camera.camera.setPerspectiveProjection(glm::radians(50.f), renderer.getAspectRatio(), 0.1f, 200.f);
 
-        AssetHandle<Cubemap> skybox;
-        AssetHandle<Cubemap> irradiance;
-        AssetHandle<Cubemap> prefilter;
+        auto skybox = assets.store<Cubemap>("cubemaps/citrus_orchard_road_puresky_2k.hdr");
+        auto irradiance = assets.store<Cubemap>("cubemaps/citrus_orchard_road_puresky_2k_irradiance.ktx2");
+        auto prefilter = assets.store<Cubemap>("cubemaps/citrus_orchard_road_puresky_2k_prefilter.ktx2");
 
         auto skyboxEntity = registry.create();
         registry.emplace<SkyboxComponent>(skyboxEntity, skybox, irradiance, prefilter);

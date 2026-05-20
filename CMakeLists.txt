@@ -59,6 +59,7 @@ if (WIN32 OR (UNIX AND NOT APPLE AND NOT ANDROID))
     add_subdirectory(samples/office)
     add_subdirectory(runtime)
     add_subdirectory(editor)
+    add_subdirectory(tools/atlas_pack)
 endif ()
 
-add_subdirectory(helpers/brdf_lut)
+add_subdirectory(tools/brdf_lut)

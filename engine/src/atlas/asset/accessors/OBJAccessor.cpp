@@ -267,7 +267,9 @@ namespace Atlas {
         std::vector<std::byte> bytes(begin, begin + size);
         stbi_image_free(pixels);
 
-        return assets.createTexture(std::move(bytes), static_cast<uint32_t>(width), static_cast<uint32_t>(height), format, VK_SAMPLER_ADDRESS_MODE_REPEAT);
+        return assets.store<Texture>(
+            std::make_shared<Texture>(bytes, static_cast<uint32_t>(width), static_cast<uint32_t>(height), format, VK_SAMPLER_ADDRESS_MODE_REPEAT),
+            virtualPath.generic_string());
     }
 
     OBJMaterialBucket &objBucketForMaterial(
@@ -383,7 +385,12 @@ namespace Atlas {
                 }
 
                 objFinalizeVertexFrames(bucket.vertices, bucket.indices);
-                AssetHandle<Mesh> meshHandle = assets.createMesh(std::move(bucket.vertices), std::move(bucket.indices));
+                const std::string meshPath = std::filesystem::path(path).generic_string() +
+                                             "#shape/" + std::to_string(shapeIdx) +
+                                             "/material/" + std::to_string(bucket.materialId);
+                AssetHandle<Mesh> meshHandle = assets.store<Mesh>(
+                    std::make_shared<Mesh>(bucket.vertices, bucket.indices),
+                    meshPath);
 
                 const bool hasMultipleMaterials = buckets.size() > 1;
                 auto entity = registry.create();

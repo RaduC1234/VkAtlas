@@ -3,6 +3,30 @@
 #include "core/Log.hpp"
 
 namespace Atlas {
+    namespace {
+        VkDeviceSize alignUp(VkDeviceSize value, VkDeviceSize alignment) {
+            if (alignment == 0) {
+                return value;
+            }
+            return ((value + alignment - 1) / alignment) * alignment;
+        }
+
+        VkDeviceSize scratchAllocationSize(Device &device, VkDeviceSize scratchSize) {
+            const VkDeviceSize alignment = device.accelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment;
+            return scratchSize + (alignment > 0 ? alignment - 1 : 0);
+        }
+
+        VkDeviceAddress alignedScratchAddress(Device &device, VkBuffer scratchBuffer) {
+            VkBufferDeviceAddressInfo addrInfo{};
+            addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+            addrInfo.buffer = scratchBuffer;
+
+            const VkDeviceAddress address = vkGetBufferDeviceAddress(device.device(), &addrInfo);
+            const VkDeviceSize alignment = device.accelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment;
+            return alignUp(address, alignment);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // allocateBLAS — Phase 1, pure CPU + device queries, no cmd recording
     // -------------------------------------------------------------------------
@@ -65,17 +89,13 @@ namespace Atlas {
         // Allocate scratch buffer — no cmds
         as.scratchBuffer_ = std::make_unique<GPUBuffer>(
             GPUBuffer::simple(device)
-            .setSize(sizeInfo.buildScratchSize)
+            .setSize(scratchAllocationSize(device, sizeInfo.buildScratchSize))
             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
             .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
             .build());
 
-        VkBufferDeviceAddressInfo scratchAddrInfo{};
-        scratchAddrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-        scratchAddrInfo.buffer = as.scratchBuffer_->get();
-        as.buildInfo_.scratchData.deviceAddress =
-                vkGetBufferDeviceAddress(device.device(), &scratchAddrInfo);
+        as.buildInfo_.scratchData.deviceAddress = alignedScratchAddress(device, as.scratchBuffer_->get());
 
         AT_INFO("BLAS allocated: {} primitives, {} bytes",
                 primitiveCount, sizeInfo.accelerationStructureSize);
@@ -207,19 +227,14 @@ namespace Atlas {
         const VkAccelerationStructureBuildRangeInfoKHR &rangeInfo,
         VkDeviceSize scratchSize) {
         auto scratch = GPUBuffer::simple(device)
-                .setSize(scratchSize)
+                .setSize(scratchAllocationSize(device, scratchSize))
                 .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
                 .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
                 .build();
 
-        VkBufferDeviceAddressInfo addrInfo{};
-        addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-        addrInfo.buffer = scratch.get();
-
         VkAccelerationStructureBuildGeometryInfoKHR patchedBuildInfo = buildInfo;
-        patchedBuildInfo.scratchData.deviceAddress =
-                vkGetBufferDeviceAddress(device.device(), &addrInfo);
+        patchedBuildInfo.scratchData.deviceAddress = alignedScratchAddress(device, scratch.get());
 
         const VkAccelerationStructureBuildRangeInfoKHR *pRange = &rangeInfo;
 

@@ -75,8 +75,8 @@ namespace Atlas {
             "Cannot create graphics pipeline: no renderPass provided in configInfo"
         );
 
-        const auto fragCode = AssetManager::loadFileAsU8(fragFilepath);
-        const auto vertCode = AssetManager::loadFileAsU8(vertFilepath);
+        const auto fragCode = AssetManager::loadFileAs<char>(fragFilepath);
+        const auto vertCode = AssetManager::loadFileAs<char>(vertFilepath);
 
         createShaderModule(vertCode, &vertShaderModule);
         createShaderModule(fragCode, &fragShaderModule);
@@ -140,7 +140,7 @@ namespace Atlas {
             "Cannot create compute pipeline: no pipelineLayout provided in configInfo"
         );
 
-        const auto computeCode = AssetManager::loadFileAsU8(computeShaderPath);
+        const auto computeCode = AssetManager::loadFileAs<char>(computeShaderPath);
 
         createShaderModule(computeCode, &compShaderModule);
 
@@ -180,7 +180,7 @@ namespace Atlas {
         std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
 
         // Index 0 — raygen
-        const auto rayGenCode = AssetManager::loadFileAsU8(rayGenerationShaderPath);
+        const auto rayGenCode = AssetManager::loadFileAs<char>(rayGenerationShaderPath);
         createShaderModule(rayGenCode, &rayGenModule);
         VkPipelineShaderStageCreateInfo rayGenStage{};
         rayGenStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -191,7 +191,7 @@ namespace Atlas {
 
         // Index 1 — primary miss
         if (!missShaderPath.empty()) {
-            const auto missCode = AssetManager::loadFileAsU8(missShaderPath);
+            const auto missCode = AssetManager::loadFileAs<char>(missShaderPath);
             createShaderModule(missCode, &rayMissModule);
             VkPipelineShaderStageCreateInfo missStage{};
             missStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -203,7 +203,7 @@ namespace Atlas {
 
         // Index 2 — shadow miss
         if (!shadowMissShaderPath.empty()) {
-            const auto shadowMissCode = AssetManager::loadFileAsU8(shadowMissShaderPath);
+            const auto shadowMissCode = AssetManager::loadFileAs<char>(shadowMissShaderPath);
             createShaderModule(shadowMissCode, &shadowMissModule);
             VkPipelineShaderStageCreateInfo shadowMissStage{};
             shadowMissStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -215,7 +215,7 @@ namespace Atlas {
 
         // Index 3 — closest hit
         if (!closestHitShaderPath.empty()) {
-            const auto chitCode = AssetManager::loadFileAsU8(closestHitShaderPath);
+            const auto chitCode = AssetManager::loadFileAs<char>(closestHitShaderPath);
             createShaderModule(chitCode, &rayClosestHitModule);
             VkPipelineShaderStageCreateInfo chitStage{};
             chitStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -227,7 +227,7 @@ namespace Atlas {
 
         // Index 4 — any hit (optional)
         if (!anyHitShaderPath.empty()) {
-            const auto ahitCode = AssetManager::loadFileAsU8(anyHitShaderPath);
+            const auto ahitCode = AssetManager::loadFileAs<char>(anyHitShaderPath);
             createShaderModule(ahitCode, &rayAnyHitModule);
             VkPipelineShaderStageCreateInfo ahitStage{};
             ahitStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;

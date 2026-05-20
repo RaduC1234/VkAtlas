@@ -1,5 +1,7 @@
 #include "CameraSystem.hpp"
 
+#include <algorithm>
+
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
@@ -14,6 +16,10 @@ namespace Atlas {
     }
 
     void CameraSystem::update(entt::registry &registry, float deltaTime, float screenAspect) {
+        constexpr float maxMovementDeltaTime = 1.0f / 30.0f;
+        constexpr float referenceLookDeltaTime = 1.0f / 60.0f;
+        const float movementDeltaTime = std::min(deltaTime, maxMovementDeltaTime);
+
         auto [mx, my] = Mouse::getCursorPosition();
         glm::vec2 curPos = {mx, my};
 
@@ -51,7 +57,7 @@ namespace Atlas {
             auto &tf = view.get<TransformComponent>(entity);
 
             if (glm::dot(rotationDt, rotationDt) > std::numeric_limits<float>::epsilon()) {
-                tf.rotation += lookSpeed * deltaTime * rotationDt;
+                tf.rotation += lookSpeed * referenceLookDeltaTime * rotationDt;
             }
 
             tf.rotation.x = glm::clamp(tf.rotation.x, -1.5f, 1.5f);
@@ -86,7 +92,7 @@ namespace Atlas {
             //if (Keyboard::isKeyPressed(keyMappings.down))     dir -= up;
 
             if (glm::dot(dir, dir) > std::numeric_limits<float>::epsilon()) {
-                tf.translation += moveSpeed * deltaTime * glm::normalize(dir);
+                tf.translation += moveSpeed * movementDeltaTime * glm::normalize(dir);
             }
 
             registry.patch<CameraComponent>(entity, [&](auto &camComp) {
