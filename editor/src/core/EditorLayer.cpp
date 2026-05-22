@@ -1,12 +1,16 @@
 #include "EditorLayer.hpp"
 
 #include <Atlas.hpp>
+#include <imgui.h>
 
-#include "imgui.h"
+#define IMVIEWGUIZMO_IMPLEMENTATION
+#include <ImViewGuizmo.h>
 
 namespace Atlas::Editor {
     namespace {
-        constexpr float TITLEBAR_HEIGHT = 33.0f;
+        float titlebarHeight() {
+            return ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 2.0f;
+        }
     }
 
     EditorLayer::EditorLayer(ProjectLayer &projectLayer) : Layer("EditorLayer"), projectLayer(projectLayer) {
@@ -122,97 +126,7 @@ namespace Atlas::Editor {
     }
 
     void EditorLayer::drawTitleBar() {
-        ImGuiViewport *viewport = ImGui::GetMainViewport();
 
-        ImGui::SetNextWindowPos(viewport->Pos);
-        ImGui::SetNextWindowSize(ImVec2(viewport->Size.x, TITLEBAR_HEIGHT));
-        ImGui::SetNextWindowViewport(viewport->ID);
-
-        constexpr ImGuiWindowFlags flags =
-            ImGuiWindowFlags_NoDecoration |
-            ImGuiWindowFlags_NoDocking |
-            ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoSavedSettings |
-            ImGuiWindowFlags_NoScrollbar |
-            ImGuiWindowFlags_NoScrollWithMouse |
-            ImGuiWindowFlags_NoBringToFrontOnFocus;
-
-        ImGui::Begin("AtlasTitleBar", nullptr, flags);
-
-        ImDrawList *drawList = ImGui::GetWindowDrawList();
-        const ImVec2 windowPos = ImGui::GetWindowPos();
-        const ImVec2 windowSize = ImGui::GetWindowSize();
-        drawList->AddRectFilled(
-            windowPos,
-            ImVec2(windowPos.x + windowSize.x, windowPos.y + windowSize.y),
-            IM_COL32(5, 5, 5, 255)
-        );
-        drawList->AddLine(
-            ImVec2(windowPos.x, windowPos.y + TITLEBAR_HEIGHT - 1.0f),
-            ImVec2(windowPos.x + windowSize.x, windowPos.y + TITLEBAR_HEIGHT - 1.0f),
-            IM_COL32(41, 41, 41, 255)
-        );
-
-        const float frameHeight = ImGui::GetFrameHeight();
-        ImGui::SetCursorPos(ImVec2(8.0f, (TITLEBAR_HEIGHT - frameHeight) * 0.5f));
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Atlas");
-
-        auto drawMenuButton = [](const char *label, const char *popupId, float x) {
-            ImGui::SameLine(x, 0.0f);
-            if (ImGui::Button(label)) {
-                ImGui::OpenPopup(popupId);
-            }
-        };
-
-        drawMenuButton("File", "AtlasTitleBar.File", 50.0f);
-        if (ImGui::BeginPopup("AtlasTitleBar.File")) {
-            ImGui::MenuItem("Open", "Ctrl+O");
-            ImGui::MenuItem("Save", "Ctrl+S");
-            ImGui::Separator();
-            ImGui::MenuItem("Exit");
-            ImGui::EndPopup();
-        }
-
-        drawMenuButton("Edit", "AtlasTitleBar.Edit", 94.0f);
-        if (ImGui::BeginPopup("AtlasTitleBar.Edit")) {
-            ImGui::MenuItem("Undo", "Ctrl+Z");
-            ImGui::MenuItem("Redo", "Ctrl+Y");
-            ImGui::EndPopup();
-        }
-
-        drawMenuButton("View", "AtlasTitleBar.View", 140.0f);
-        if (ImGui::BeginPopup("AtlasTitleBar.View")) {
-            ImGui::MenuItem("Scene Hierarchy");
-            ImGui::MenuItem("Inspector");
-            ImGui::MenuItem("Render Settings");
-            ImGui::EndPopup();
-        }
-
-        drawMenuButton("Tools", "AtlasTitleBar.Tools", 190.0f);
-        if (ImGui::BeginPopup("AtlasTitleBar.Tools")) {
-            ImGui::MenuItem("Content Browser");
-            ImGui::EndPopup();
-        }
-
-        drawMenuButton("Help", "AtlasTitleBar.Help", 248.0f);
-        if (ImGui::BeginPopup("AtlasTitleBar.Help")) {
-            ImGui::MenuItem("About Atlas");
-            ImGui::EndPopup();
-        }
-
-        const char *title = "Atlas Editor";
-        const float titleWidth = ImGui::CalcTextSize(title).x;
-        const float titleX = (viewport->Size.x - titleWidth) * 0.5f;
-        const float titleY = (TITLEBAR_HEIGHT - ImGui::GetTextLineHeight()) * 0.5f;
-
-        drawList->AddText(
-            ImVec2(windowPos.x + titleX, windowPos.y + titleY),
-            IM_COL32(190, 190, 190, 255),
-            title
-        );
-
-        ImGui::End();
     }
 
     void EditorLayer::drawSceneHierarchy() {

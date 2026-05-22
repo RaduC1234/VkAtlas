@@ -8,6 +8,10 @@ list(REMOVE_ITEM EDITOR_SOURCES "src/core/EditorEntryPoint.cpp")
 add_library(atlas_editor_module STATIC ${EDITOR_SOURCES})
 atlas_set_output_dirs(atlas_editor_module)
 
+target_include_directories(atlas_editor_module PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/ImViewGuizmo
+)
+
 target_link_libraries(atlas_editor_module PUBLIC
         atlas_engine
 )

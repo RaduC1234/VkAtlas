@@ -27,7 +27,7 @@ namespace Atlas {
         createInfo.projectManifest = manifestPath;
         createInfo.projectModule = modulePath;
         createInfo.rendererCreateInfo.window.title = createInfo.name;
-        createInfo.rendererCreateInfo.window.properties = Window::Properties::Decorated | Window::Properties::Resizeable | Window::Properties::CustomTitlebar;
+        createInfo.rendererCreateInfo.window.properties = Window::Properties::Decorated | Window::Properties::Resizeable;
         createInfo.enableImGui = true;
         createInfo.enableDockspace = true;
 
