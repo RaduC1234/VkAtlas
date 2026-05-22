@@ -134,6 +134,7 @@ namespace Atlas {
     }
 
     PathTracingStage::~PathTracingStage() {
+        vkDestroySampler(device.device(), envSampler, nullptr);
         if (pipelineLayout != VK_NULL_HANDLE)
             vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
     }
@@ -177,6 +178,30 @@ namespace Atlas {
         cameraConstructConnection = registry.on_construct<CameraComponent>().connect<&PathTracingStage::onCameraUpdated>(*this);
         cameraUpdateConnection = registry.on_update<CameraComponent>().connect<&PathTracingStage::onCameraUpdated>(*this);
         cameraDestroyConnection = registry.on_destroy<CameraComponent>().connect<&PathTracingStage::onCameraDestroyed>(*this);
+
+        auto skyboxView = registry.view<SkyboxComponent>();
+        if (skyboxView.empty()) {
+            if (envHandle.valid() || envReady) {
+                envHandle = {};
+                envReady = false;
+                updateDescriptorSet();
+            }
+        } else {
+            if (skyboxView.size() > 1) {
+                AT_WARN("PathTracingStage: multiple skyboxes detected, using the first one");
+            }
+            const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
+            const bool skyboxReady = skybox.skyboxHandle.valid() && skybox.skyboxHandle.isReady();
+            const bool updateEnvironment =
+                skybox.skyboxHandle != envHandle ||
+                skyboxReady != envReady;
+
+            if (updateEnvironment) {
+                envHandle = skybox.skyboxHandle;
+                envReady = skyboxReady;
+                updateDescriptorSet();
+            }
+        }
 
         bool waitingForMeshes = false;
         const uint64_t buildSignature = sceneBuildSignature(registry, waitingForMeshes);
@@ -502,6 +527,7 @@ namespace Atlas {
         // binding 5 — LightBuffer   (storage buffer,      chit)
         // binding 6 — textures[]    (combined sampler[],  chit + ahit, bindless)
         // binding 7 — accumulation  (storage image,       raygen)
+        // binding 9 — envMap        (combined sampler,    miss)
         constexpr VkShaderStageFlags hitStages = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
         ptSetLayout = DescriptorSetLayout::Builder(device)
@@ -513,6 +539,7 @@ namespace Atlas {
                 .addBinding(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 1)
                 .addBinding(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, hitStages, MAX_TEXTURES)
                 .addBinding(7, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 1)
+                .addBinding(9, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_MISS_BIT_KHR, 1)
                 .setBindingFlags(6, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
                 .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
                 .build();
@@ -522,7 +549,7 @@ namespace Atlas {
                 .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 2)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1)
                 .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES)
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES + 1)
                 .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                 .build();
 
@@ -530,6 +557,18 @@ namespace Atlas {
             throw std::runtime_error("PathTracingStage: failed to allocate PT descriptor set");
 
         bindlessTextureSet = ptSet;
+
+        VkSamplerCreateInfo si{};
+        si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        si.magFilter = VK_FILTER_LINEAR;
+        si.minFilter = VK_FILTER_LINEAR;
+        si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.maxLod = VK_LOD_CLAMP_NONE;
+        if (vkCreateSampler(device.device(), &si, nullptr, &envSampler) != VK_SUCCESS)
+            throw std::runtime_error("PathTracingStage: failed to create envSampler");
     }
 
     void PathTracingStage::createPipelineLayout() {
@@ -677,6 +716,22 @@ namespace Atlas {
                 .writeBuffer(5, &lightInfo)
                 .writeImage(7, &accumulationInfo)
                 .overwrite(ptSet);
+
+        VkDescriptorImageInfo envInfo = IGPUResource::default_<GPUCubemap>().descriptor();
+        if (envReady && envHandle.valid() && envHandle.isReady()) {
+            envInfo = envHandle.descriptor();
+            envInfo.sampler = envSampler;
+            envInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        }
+
+        VkWriteDescriptorSet w{};
+        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        w.dstSet = ptSet;
+        w.dstBinding = 9;
+        w.descriptorCount = 1;
+        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        w.pImageInfo = &envInfo;
+        vkUpdateDescriptorSets(device.device(), 1, &w, 0, nullptr);
     }
 
     void PathTracingStage::onCameraUpdated(entt::registry &registry, entt::entity entity) {

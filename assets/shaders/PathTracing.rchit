@@ -161,9 +161,9 @@ vec3 sampleCosineHemisphere(vec2 u, vec3 N) {
 
     // Build TBN around N
     if (abs(N.x) > 0.9)
-        T = normalize(cross(N, vec3(0, 1, 0)));
+    T = normalize(cross(N, vec3(0, 1, 0)));
     else
-        T = normalize(cross(N, vec3(1, 0, 0)));
+    T = normalize(cross(N, vec3(1, 0, 0)));
     B = cross(N, T);
 
     return normalize(r * cos(phi) * T + r * sin(phi) * B + sqrt(1.0 - u.x) * N);
@@ -181,9 +181,9 @@ vec3 sampleGGX(vec2 u, float roughness, vec3 N) {
 
     vec3 T, B;
     if (abs(N.x) > 0.9)
-        T = normalize(cross(N, vec3(0, 1, 0)));
+    T = normalize(cross(N, vec3(0, 1, 0)));
     else
-        T = normalize(cross(N, vec3(1, 0, 0)));
+    T = normalize(cross(N, vec3(1, 0, 0)));
     B = cross(N, T);
 
     return normalize(H_local.x * T + H_local.y * B + H_local.z * N);
@@ -222,7 +222,7 @@ void main() {
 
     // Barycentric interpolation
     vec3 bary = vec3(1.0 - barycentrics.x - barycentrics.y,
-                     barycentrics.x, barycentrics.y);
+    barycentrics.x, barycentrics.y);
 
     vec3 localPos = v0.position * bary.x + v1.position * bary.y + v2.position * bary.z;
     vec3 worldPos = (obj.modelMatrix * vec4(localPos, 1.0)).xyz;
@@ -292,19 +292,19 @@ void main() {
 
             vec2 u = vec2(randFloat(payload.seed), randFloat(payload.seed)) - 0.5;
             vec3 samplePos = light.position
-                           + rectT * (u.x * max(light.width, EPSILON))
-                           + rectB * (u.y * max(light.height, EPSILON));
+            + rectT * (u.x * max(light.width, EPSILON))
+            + rectB * (u.y * max(light.height, EPSILON));
 
             vec3 toLight = samplePos - worldPos;
             float dist = length(toLight);
             if (dist <= 0.001) continue;
 
             L = toLight / dist;
-            float cosLight = dot(lightNormal, -L);
-            if (cosLight < 0.01) continue;
+            float cosLight = abs(dot(lightNormal, -L));
+            if (cosLight <= 0.0) continue;
 
             float area = max(light.width * light.height, EPSILON);
-            atten = min((area * cosLight) / max(dist * dist, 0.01), 100.0);
+            atten = area * cosLight / max(dist * dist, EPSILON);
             tMax = max(dist - 0.001, 0.0);
         } else {
             vec3  toLight = light.position - worldPos;
@@ -318,7 +318,7 @@ void main() {
 
         if (light.type == LIGHT_TYPE_SPOT) {
             atten *= spotAttenuation(L, normalize(light.direction),
-                                     light.innerConeAngle, light.outerConeAngle);
+            light.innerConeAngle, light.outerConeAngle);
         }
 
         float NdotL = dot(N, L);
@@ -327,9 +327,9 @@ void main() {
         // Shadow ray
         shadowPayload = true;
         traceRayEXT(tlas,
-            gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
-            0xFF, 0, 0, 1,              // hit group 1 = shadow, miss index 1 = shadow miss
-            offsetRayOrigin(worldPos, geometricNormal, L), 0.0, L, tMax, 1);
+        gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+        0xFF, 0, 0, 1,              // hit group 1 = shadow, miss index 1 = shadow miss
+        offsetRayOrigin(worldPos, geometricNormal, L), 0.0, L, tMax, 1);
 
         if (shadowPayload) continue;    // occluded
 
@@ -377,7 +377,7 @@ void main() {
     } else {
         // Cosine-weighted diffuse bounce
         nextDir     = sampleCosineHemisphere(
-                          vec2(randFloat(payload.seed), randFloat(payload.seed)), N);
+        vec2(randFloat(payload.seed), randFloat(payload.seed)), N);
         float NdotL = max(dot(N, nextDir), 0.0);
         vec3  H     = safeNormalize(V + nextDir, N);
         float HdotV = max(dot(H, V), 0.0);
@@ -388,12 +388,12 @@ void main() {
     }
 
     if (hasInvalid(nextDir) || hasInvalid(brdfWeight) || hasInvalid(pdf) ||
-        dot(nextDir, N) <= 0.0 || dot(nextDir, geometricNormal) <= 0.0 || pdf < EPSILON) {
+    dot(nextDir, N) <= 0.0 || dot(nextDir, geometricNormal) <= 0.0 || pdf < EPSILON) {
         payload.done = true;
         return;
     }
 
-    payload.throughput = sanitizeColor(payload.throughput * min(brdfWeight / pdf, vec3(20.0)));
+    payload.throughput = sanitizeColor(payload.throughput * (brdfWeight / pdf));
     payload.origin      = offsetRayOrigin(worldPos, geometricNormal, nextDir);
     payload.direction   = nextDir;
 
@@ -404,7 +404,7 @@ void main() {
         return;
     }
 
-    float survivalProb = clamp(maxThroughput, 0.2, 1.0);
+    float survivalProb = clamp(maxThroughput, 0.05, 1.0);
     if (randFloat(payload.seed) > survivalProb) {
         payload.done = true;
         return;

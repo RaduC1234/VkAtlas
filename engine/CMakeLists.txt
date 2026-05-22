@@ -89,7 +89,6 @@ elseif (WIN32)
             ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_tables.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_glfw.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_vulkan.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/ImGuizmo/src/ImGuizmo.cpp
     )
 
     set_target_properties(imgui PROPERTIES
@@ -104,7 +103,6 @@ elseif (WIN32)
     target_include_directories(imgui PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui
             ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/ImGuizmo/src
     )
 
     target_sources(atlas_engine PRIVATE $<TARGET_OBJECTS:imgui>)
@@ -123,7 +121,6 @@ target_include_directories(atlas_engine PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends
-        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/ImGuizmo/src
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/tinygltf
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/tinyobjloader
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/VulkanMemoryAllocator/include

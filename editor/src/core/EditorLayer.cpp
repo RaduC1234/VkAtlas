@@ -2,63 +2,11 @@
 
 #include <Atlas.hpp>
 
-#include <ImGuizmo.h>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include "imgui.h"
 
 namespace Atlas::Editor {
     namespace {
         constexpr float TITLEBAR_HEIGHT = 33.0f;
-
-        glm::vec3 decomposeScale(const glm::mat4 &matrix) {
-            return {
-                glm::length(glm::vec3(matrix[0])),
-                glm::length(glm::vec3(matrix[1])),
-                glm::length(glm::vec3(matrix[2]))
-            };
-        }
-
-        glm::vec3 decomposeRotationYXZ(const glm::mat4 &matrix, const glm::vec3 &scale) {
-            glm::mat3 rotationMatrix{1.0f};
-            if (scale.x != 0.0f) {
-                rotationMatrix[0] = glm::vec3(matrix[0]) / scale.x;
-            }
-            if (scale.y != 0.0f) {
-                rotationMatrix[1] = glm::vec3(matrix[1]) / scale.y;
-            }
-            if (scale.z != 0.0f) {
-                rotationMatrix[2] = glm::vec3(matrix[2]) / scale.z;
-            }
-
-            const float x = glm::asin(glm::clamp(-rotationMatrix[2][1], -1.0f, 1.0f));
-            const float cosX = glm::cos(x);
-
-            if (glm::abs(cosX) > 0.0001f) {
-                return {
-                    x,
-                    glm::atan(rotationMatrix[2][0], rotationMatrix[2][2]),
-                    glm::atan(rotationMatrix[0][1], rotationMatrix[1][1])
-                };
-            }
-
-            return {
-                x,
-                glm::atan(-rotationMatrix[0][2], rotationMatrix[0][0]),
-                0.0f
-            };
-        }
-
-        ImGuizmo::OPERATION toImGuizmoOperation(int operation) {
-            switch (operation) {
-                case 1:
-                    return ImGuizmo::ROTATE;
-                case 2:
-                    return ImGuizmo::SCALE;
-                default:
-                    return ImGuizmo::TRANSLATE;
-            }
-        }
     }
 
     EditorLayer::EditorLayer(ProjectLayer &projectLayer) : Layer("EditorLayer"), projectLayer(projectLayer) {
@@ -76,18 +24,6 @@ namespace Atlas::Editor {
     }
 
     void EditorLayer::onImGuiRender() {
-        ImGuizmo::BeginFrame();
-
-        if (ImGui::IsKeyPressed(ImGuiKey_W)) {
-            gizmoOperation = 0;
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_E)) {
-            gizmoOperation = 1;
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_R)) {
-            gizmoOperation = 2;
-        }
-
         drawTitleBar();
         drawRenderSettings();
         drawViewport();
@@ -171,7 +107,6 @@ namespace Atlas::Editor {
         ImGui::PopStyleVar();
 
         const ImVec2 size = ImGui::GetContentRegionAvail();
-        const ImVec2 viewportMin = ImGui::GetCursorScreenPos();
         if (size.x > 1.0f && size.y > 1.0f) {
             projectLayer.getRenderer().setSceneViewportExtent({
                 static_cast<uint32_t>(size.x),
@@ -182,8 +117,6 @@ namespace Atlas::Editor {
         if (viewportTexture != VK_NULL_HANDLE && size.x > 1.0f && size.y > 1.0f) {
             ImGui::Image((ImTextureID) viewportTexture, size);
         }
-
-        drawViewportGizmo(viewportMin, size);
 
         ImGui::End();
     }
@@ -280,48 +213,6 @@ namespace Atlas::Editor {
         );
 
         ImGui::End();
-    }
-
-    void EditorLayer::drawViewportGizmo(const ImVec2 &viewportMin, const ImVec2 &viewportSize) {
-        auto *scene = projectLayer.project().scene();
-        if (!scene || selectedEntity == entt::null || viewportSize.x <= 1.0f || viewportSize.y <= 1.0f) {
-            return;
-        }
-
-        auto &registry = scene->getRegistry();
-        if (!registry.valid(selectedEntity) || !registry.all_of<TransformComponent>(selectedEntity)) {
-            return;
-        }
-
-        auto cameraView = registry.view<CameraComponent>();
-        if (cameraView.empty()) {
-            return;
-        }
-
-        const auto cameraEntity = *cameraView.begin();
-        const auto &camera = cameraView.get<CameraComponent>(cameraEntity).camera;
-        auto &transform = registry.get<TransformComponent>(selectedEntity);
-
-        ImGuizmo::SetOrthographic(false);
-        ImGuizmo::SetDrawlist();
-        ImGuizmo::SetRect(viewportMin.x, viewportMin.y, viewportSize.x, viewportSize.y);
-
-        glm::mat4 transformMatrix = transform.mat4();
-        const glm::mat4 view = camera.getView();
-        const glm::mat4 projection = camera.getProjection();
-
-        if (ImGuizmo::Manipulate(
-                glm::value_ptr(view),
-                glm::value_ptr(projection),
-                toImGuizmoOperation(gizmoOperation),
-                ImGuizmo::LOCAL,
-                glm::value_ptr(transformMatrix))) {
-            transform.translation = glm::vec3(transformMatrix[3]);
-            transform.scale = decomposeScale(transformMatrix);
-            transform.rotation = decomposeRotationYXZ(transformMatrix, transform.scale);
-
-            registry.patch<TransformComponent>(selectedEntity);
-        }
     }
 
     void EditorLayer::drawSceneHierarchy() {

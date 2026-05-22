@@ -10,21 +10,39 @@ struct RayPayload {
     uint  seed;
 };
 
+struct DebugData {
+    float iblMultiplier;
+    float exposureMultiplier;
+    uint  viewMode;
+};
+
+struct CameraData {
+    mat4  projection;
+    mat4  view;
+    mat4  viewProjection;
+    vec4  frustumPlanes[6];
+    vec3  position;
+    float nearPlane;
+    vec3  direction;
+    float farPlane;
+};
+
+layout(set = 0, binding = 0) uniform GlobalUbo {
+    CameraData cameraData;
+    DebugData  debugData;
+} ubo;
+
+layout(set = 1, binding = 9) uniform samplerCube envMap;
+
 layout(location = 0) rayPayloadInEXT RayPayload payload;
 
-// Simple sky gradient — replace with cubemap sample later
-vec3 skyColor(vec3 dir) {
-    float t       = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3  horizon = vec3(0.8, 0.85, 0.9);
-    vec3  zenith  = vec3(0.2, 0.4, 0.8);
-    vec3  ground  = vec3(0.15, 0.12, 0.10);
-    if (dir.y >= 0.0)
-    return mix(horizon, zenith, t * t);
-    else
-    return mix(horizon, ground, -dir.y);
-}
-
 void main() {
-    payload.radiance += payload.throughput * skyColor(payload.direction);
+    vec3 env  = texture(envMap, payload.direction).rgb;
+    env      *= ubo.debugData.iblMultiplier;
+
+    // Guard against NaN/Inf from malformed HDR data
+    if (any(isnan(env)) || any(isinf(env))) env = vec3(0.0);
+
+    payload.radiance += payload.throughput * env;
     payload.done      = true;
 }

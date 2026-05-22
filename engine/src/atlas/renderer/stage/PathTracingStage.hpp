@@ -62,6 +62,9 @@ namespace Atlas {
         std::unique_ptr<DescriptorPool> ptPool;
         VkDescriptorSet ptSet = VK_NULL_HANDLE;
         VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE; // alias for ptSet
+        VkSampler envSampler = VK_NULL_HANDLE;
+        AssetHandle<Cubemap> envHandle;
+        bool envReady = false;
 
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         std::unique_ptr<Pipeline> pipeline;
