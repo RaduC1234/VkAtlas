@@ -135,7 +135,7 @@ void main() {
     for (uint bounce = 0; bounce < pc.maxBounces; bounce++) {
         traceRayEXT(
             tlas,
-            gl_RayFlagsOpaqueEXT,
+            gl_RayFlagsNoneEXT,
             0xFF,           // cull mask
             0,              // sbt record offset — hit group 0
             0,              // sbt record stride
@@ -156,7 +156,7 @@ void main() {
     if (pc.sampleIndex == 0u) {
         accumulated = sampleRadiance;
     } else {
-        vec3 prev = sanitizeColor(imageLoad(accumulationImage, pixel).rgb, sampleRadiance);
+        vec3 prev = sanitizeColor(imageLoad(accumulationImage, pixel).rgb, vec3(0.0));
         accumulated = mix(prev, sampleRadiance, 1.0 / float(pc.sampleIndex + 1u));
     }
     accumulated = sanitizeColor(accumulated, sampleRadiance);

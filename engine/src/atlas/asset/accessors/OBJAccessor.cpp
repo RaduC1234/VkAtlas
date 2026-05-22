@@ -290,10 +290,9 @@ namespace Atlas {
     OBJAccessor::OBJAccessor(AssetManager &assets, ExecutorService &service) : assets(assets), executor(service) {
     }
 
-    std::vector<entt::entity> OBJAccessor::importAsset(
+    void OBJAccessor::importAsset(
         const std::string &path,
-        entt::registry &registry,
-        entt::entity parentEntity) {
+        EntityBuffer &buffer) {
         const std::filesystem::path fullPath = assets.rootPath() / path;
         const std::string materialBaseDir = fullPath.parent_path().string();
 
@@ -305,7 +304,7 @@ namespace Atlas {
 
         if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, fullPath.string().c_str(), materialBaseDir.c_str())) {
             AT_ERROR("OBJAccessor: failed to load {}: {}", path, warn + err);
-            return {};
+            return;
         }
 
         if (!warn.empty()) {
@@ -345,7 +344,7 @@ namespace Atlas {
             }
         }
 
-        std::vector<entt::entity> entities;
+        size_t stagedEntityCount = 0;
 
         for (size_t shapeIdx = 0; shapeIdx < shapes.size(); ++shapeIdx) {
             const auto &shape = shapes[shapeIdx];
@@ -393,30 +392,26 @@ namespace Atlas {
                     meshPath);
 
                 const bool hasMultipleMaterials = buckets.size() > 1;
-                auto entity = registry.create();
 
-                auto &node = registry.emplace<SceneNodeComponent>(entity);
+                SceneNodeComponent node{};
                 node.name = shape.name.empty() ? ("Shape_" + std::to_string(shapeIdx)) : shape.name;
                 if (hasMultipleMaterials) {
                     node.name += "_mat" + std::to_string(bucket.materialId);
                 }
-                node.parent = parentEntity;
+                node.parent = entt::null;
+                buffer.add(node);
 
-                if (parentEntity != entt::null && registry.valid(parentEntity)) {
-                    if (auto *parentNode = registry.try_get<SceneNodeComponent>(parentEntity)) {
-                        parentNode->children.push_back(entity);
-                    }
-                }
-
-                auto &transform = registry.emplace<TransformComponent>(entity);
+                TransformComponent transform{};
                 transform.translation = glm::vec3(0.0f);
                 transform.rotation = glm::vec3(0.0f);
                 transform.scale = glm::vec3(1.0f);
+                buffer.add(transform);
 
-                auto &model = registry.emplace<ModelComponent>(entity);
+                ModelComponent model{};
                 model.meshHandle = meshHandle;
+                buffer.add(model);
 
-                auto &material = registry.emplace<MaterialComponent>(entity);
+                MaterialComponent material{};
                 if (bucket.materialId >= 0 && bucket.materialId < static_cast<int>(materials.size())) {
                     const auto &mat = materials[bucket.materialId];
                     material.baseColor = glm::vec4(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2], mat.dissolve);
@@ -427,13 +422,14 @@ namespace Atlas {
                     material.alphaMasked = mat.dissolve < 1.0f;
                     material.transparent = mat.dissolve < 1.0f;
                 }
+                buffer.add(material);
+                buffer.next();
 
-                entities.push_back(entity);
+                ++stagedEntityCount;
             }
         }
 
-        AT_INFO("OBJAccessor: created {} entities from {}", entities.size(), path);
-        return entities;
+        AT_INFO("OBJAccessor: staged {} entities from {}", stagedEntityCount, path);
     }
 
     std::vector<std::byte> OBJAccessor::exportAsset(

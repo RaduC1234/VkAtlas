@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -14,6 +15,7 @@
 #include <vector>
 
 #include "Cubemap.hpp"
+#include "EntityBuffer.hpp"
 #include "Mesh.hpp"
 #include "Texture.hpp"
 #include "accessors/IAssetAccessor.hpp"
@@ -179,6 +181,7 @@ namespace Atlas {
 
 
         std::vector<entt::entity> importAsset(const std::string &virtualPath, entt::registry &registry, entt::entity parentEntity = entt::null);
+        std::future<void> importAsync(const std::string &virtualPath, entt::registry &registry);
 
         template<AssetType T>
         AssetHandle<T> store(std::shared_ptr<T> asset, const std::string &virtualPath);
@@ -190,6 +193,7 @@ namespace Atlas {
         void overwriteRootPath(const std::filesystem::path &path);
 
         void update();
+        void clearCaches();
 
         template<FileLoadable T>
         static std::vector<T> loadFileAs(const std::string &path);
@@ -245,8 +249,12 @@ namespace Atlas {
         std::vector<WeakState<Cubemap> > pendingCubemaps_;
 
         ResourceManager &resourceManager_;
+        ExecutorService &executor_;
         std::filesystem::path rootPath_;
         std::unordered_map<std::string, std::shared_ptr<IAccessor> > accessors_;
+
+        std::mutex pendingFlushMutex_;
+        std::vector<std::pair<EntityBuffer, entt::registry*>> pendingFlushes_;
 
         static std::filesystem::path resolveFilePath(const std::string &path);
     };
@@ -295,9 +303,9 @@ namespace Atlas {
             return store(Texture::fromFile(virtualPath), virtualPath);
         } else if constexpr (std::is_same_v<T, Cubemap>) {
             return store(Cubemap::fromFile(virtualPath), virtualPath);
+        } else {
+            static_assert(std::same_as<T, Texture> || std::same_as<T, Cubemap>, "AssetManager::store(path) only supports file-loadable asset types");
         }
-
-        return AssetHandle<T>::invalid();
     }
 
     template<FileLoadable T>

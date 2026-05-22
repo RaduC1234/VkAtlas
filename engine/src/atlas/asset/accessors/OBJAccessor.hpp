@@ -11,7 +11,7 @@ namespace Atlas {
 
         std::vector<std::string> extensions() const override { return {".obj"}; }
 
-        std::vector<entt::entity> importAsset(const std::string &path, entt::registry &registry, entt::entity parentEntity) override;
+        void importAsset(const std::string &path, EntityBuffer &buffer) override;
         std::vector<std::byte> exportAsset(const std::vector<entt::entity> &entities, const entt::registry &registry) override;
 
     private:

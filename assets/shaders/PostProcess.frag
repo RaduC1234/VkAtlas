@@ -30,6 +30,7 @@ layout(set = 1, binding = 1) uniform usampler2D layers;
 
 const uint VIEWMODE_CLAY  = 2u;
 const uint VIEWMODE_UNLIT = 1u;
+const uint VIEWMODE_PATH_TRACING = 3u;
 
 // ---- Tone mapping ----
 
@@ -56,10 +57,48 @@ vec3 ACESFitted(vec3 color) {
     return mix(a, b, lessThanEqual(color, vec3(0.0031308)));
 }*/
 
+float luminance(vec3 color) {
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec3 saltPepperFilter3x3(ivec2 pixel) {
+    ivec2 size = textureSize(hdrInput, 0);
+    vec3 samples[9];
+    int count = 0;
+
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            ivec2 p = clamp(pixel + ivec2(x, y), ivec2(0), size - ivec2(1));
+            samples[count++] = texelFetch(hdrInput, p, 0).rgb;
+        }
+    }
+
+    for (int i = 1; i < 9; ++i) {
+        vec3 value = samples[i];
+        float valueLum = luminance(value);
+        int j = i - 1;
+
+        while (j >= 0 && luminance(samples[j]) > valueLum) {
+            samples[j + 1] = samples[j];
+            --j;
+        }
+
+        samples[j + 1] = value;
+    }
+
+    return samples[4];
+}
 
 void main() {
     vec3 hdr = texture(hdrInput, inUV).rgb;
     uint layer = texture(layers, inUV).r;
+
+    if (ubo.debugData.viewMode == VIEWMODE_PATH_TRACING) {
+        ivec2 size = textureSize(hdrInput, 0);
+        ivec2 pixel = clamp(ivec2(inUV * vec2(size)), ivec2(0), size - ivec2(1));
+        outColor = vec4(saltPepperFilter3x3(pixel), 1.0);
+        return;
+    }
 
     if (ubo.debugData.viewMode == VIEWMODE_CLAY) {
         outColor = vec4(hdr, 1.0);

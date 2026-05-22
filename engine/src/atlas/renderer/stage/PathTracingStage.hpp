@@ -29,7 +29,6 @@ namespace Atlas {
         void createPipeline();
         void buildSBT();
         void updateDescriptorSet();
-        void updateDescriptorSets();
         void onCameraUpdated(entt::registry &registry, entt::entity entity);
         void onCameraDestroyed(entt::registry &registry, entt::entity entity);
 
@@ -50,6 +49,7 @@ namespace Atlas {
         const DescriptorSetLayout &globalSetLayout;
 
         GPUImage *outputImage = nullptr;
+        GPUImage *geometryDepth = nullptr;
         AccelerationStructure tlas_;
 
         std::unique_ptr<GPUBuffer> objectBuffer;
@@ -61,7 +61,7 @@ namespace Atlas {
         std::unique_ptr<DescriptorSetLayout> ptSetLayout;
         std::unique_ptr<DescriptorPool> ptPool;
         VkDescriptorSet ptSet = VK_NULL_HANDLE;
-        VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
+        VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE; // alias for ptSet
 
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         std::unique_ptr<Pipeline> pipeline;

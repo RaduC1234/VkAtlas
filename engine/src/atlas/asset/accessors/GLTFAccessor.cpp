@@ -1,7 +1,10 @@
 #include "GLTFAccessor.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <mutex>
 #include <numeric>
@@ -21,6 +24,57 @@
 #include "asset/Mesh.hpp"
 
 namespace Atlas {
+    namespace {
+        std::string toLower(std::string value) {
+            std::ranges::transform(value, value.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            return value;
+        }
+
+        glm::vec3 toEngineDirection(const glm::vec3 &direction) {
+            glm::vec3 converted{-direction.x, -direction.y, direction.z};
+            const float len2 = glm::dot(converted, converted);
+            return len2 > 0.0f ? converted * glm::inversesqrt(len2) : converted;
+        }
+
+        bool tinyValueNumber(const tinygltf::Value &value) {
+            return value.IsNumber();
+        }
+
+        float tinyValueFloat(const tinygltf::Value &value, float fallback = 0.0f) {
+            return tinyValueNumber(value) ? static_cast<float>(value.GetNumberAsDouble()) : fallback;
+        }
+
+        std::filesystem::path resolveAssetPath(const AssetManager &assets, const std::string &path) {
+            const std::filesystem::path requested(path);
+            if (requested.is_absolute()) {
+                return requested;
+            }
+
+            if (!assets.rootPath().empty()) {
+                const auto candidate = assets.rootPath() / requested;
+                if (std::filesystem::exists(candidate)) {
+                    return candidate;
+                }
+            }
+
+            for (auto directory = std::filesystem::current_path(); !directory.empty(); directory = directory.parent_path()) {
+                const auto candidate = directory / "assets" / requested;
+                if (std::filesystem::exists(candidate)) {
+                    return candidate;
+                }
+
+                if (directory == directory.root_path()) {
+                    break;
+                }
+            }
+
+            return assets.rootPath().empty()
+                ? std::filesystem::current_path() / "assets" / requested
+                : assets.rootPath() / requested;
+        }
+    }
 
     GLTFAccessor::GLTFAccessor(AssetManager &assets, ExecutorService &service) : assets(assets), executor(service) {}
 
@@ -29,13 +83,32 @@ namespace Atlas {
         return {};
     }
 
-    std::vector<entt::entity> GLTFAccessor::importAsset(const std::string &path, entt::registry &registry, entt::entity parentEntity) {
+    void GLTFAccessor::importAsset(const std::string &path, EntityBuffer &buffer) {
 
         // ---- Load file bytes ------------------------------------------------
-        const auto fileBytes = AssetManager::loadFileAs<uint8_t>(path);
+        const auto sourcePath = resolveAssetPath(assets, path);
+        std::ifstream file(sourcePath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            AT_ERROR("GLTFAccessor: failed to open file: {}", sourcePath.string());
+            return;
+        }
+
+        const std::streamsize fileSize = file.tellg();
+        if (fileSize < 0) {
+            AT_ERROR("GLTFAccessor: failed to determine file size: {}", sourcePath.string());
+            return;
+        }
+
+        file.seekg(0, std::ios::beg);
+        std::vector<uint8_t> fileBytes(static_cast<size_t>(fileSize));
+        if (fileSize > 0 && !file.read(reinterpret_cast<char *>(fileBytes.data()), fileSize)) {
+            AT_ERROR("GLTFAccessor: failed to read file: {}", sourcePath.string());
+            return;
+        }
+
         if (fileBytes.empty()) {
-            AT_ERROR("GLTFAccessor: failed to read file: {}", path);
-            return {};
+            AT_ERROR("GLTFAccessor: empty glTF file: {}", sourcePath.string());
+            return;
         }
 
         // ---- Parse glTF -----------------------------------------------------
@@ -46,7 +119,7 @@ namespace Atlas {
         loader.RemoveImageLoader();
         loader.SetStoreOriginalJSONForExtrasAndExtensions(true);
 
-        const std::string ext = std::filesystem::path(path).extension().string();
+        const std::string ext = toLower(sourcePath.extension().string());
         bool success = false;
         if (ext == ".glb") {
             success = loader.LoadBinaryFromMemory(
@@ -54,8 +127,8 @@ namespace Atlas {
                 reinterpret_cast<const unsigned char *>(fileBytes.data()),
                 static_cast<uint32_t>(fileBytes.size()));
         } else {
-            // For .gltf we need the base directory so tinygltf can resolve buffers/images
-            const std::string baseDir = std::filesystem::path(path).parent_path().string();
+            // For .gltf we need the resolved filesystem directory so tinygltf can resolve buffers/images.
+            const std::string baseDir = sourcePath.parent_path().string();
             success = loader.LoadASCIIFromString(
                 &model, &err, &warn,
                 reinterpret_cast<const char *>(fileBytes.data()), static_cast<uint32_t>(fileBytes.size()), baseDir);
@@ -64,7 +137,7 @@ namespace Atlas {
         if (!warn.empty()) AT_WARN("glTF warning ({}): {}", path, warn);
         if (!success) {
             AT_ERROR("glTF parse error ({}): {}", path, err);
-            return {};
+            return;
         }
 
         AT_INFO("GLTFAccessor: loaded {} — {} meshes, {} images",
@@ -161,7 +234,10 @@ namespace Atlas {
 
                             if (normBase) {
                                 auto nv = reinterpret_cast<const float *>(normBase + v * normStride);
-                                vert.normal = glm::vec3(nv[0], nv[1], nv[2]);
+                                vert.normal = glm::vec3(-nv[0], -nv[1], nv[2]);
+                                if (glm::dot(vert.normal, vert.normal) > 0.0f) {
+                                    vert.normal = glm::normalize(vert.normal);
+                                }
                             }
 
                             if (texBase) {
@@ -178,7 +254,11 @@ namespace Atlas {
 
                             if (tangentBase) {
                                 auto tv = reinterpret_cast<const float *>(tangentBase + v * tangentStride);
-                                vert.tangent = glm::vec4(tv[0], tv[1], tv[2], tv[3]);
+                                glm::vec3 tangent{-tv[0], -tv[1], tv[2]};
+                                if (glm::dot(tangent, tangent) > 0.0f) {
+                                    tangent = glm::normalize(tangent);
+                                }
+                                vert.tangent = glm::vec4(tangent, -tv[3]);
                             } else {
                                 vert.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
                             }
@@ -240,18 +320,20 @@ namespace Atlas {
         // =========================================================================
         // STEP 3: Walk scene graph, create entities
         // =========================================================================
-        std::vector<entt::entity> outEntities;
+        bool skyboxAdded = false;
+        bool postProcessingAdded = false;
+        handleSkybox(buffer, model, skyboxAdded);
+        handlePostProcessing(buffer, model, postProcessingAdded);
 
         const int sceneIdx = model.defaultScene >= 0 ? model.defaultScene : 0;
         if (sceneIdx < static_cast<int>(model.scenes.size())) {
             for (int nodeIdx : model.scenes[sceneIdx].nodes) {
-                processNode(registry, model, nodeIdx, glm::mat4(1.0f),
-                            parentEntity, meshHandles, imageHandles, outEntities);
+                processNode(buffer, model, nodeIdx, glm::mat4(1.0f),
+                            meshHandles, imageHandles);
             }
         }
 
-        AT_INFO("GLTFAccessor: created {} entities from {}", outEntities.size(), path);
-        return outEntities;
+        AT_INFO("GLTFAccessor: staged entities from {}", path);
     }
 
     // =========================================================================
@@ -276,13 +358,24 @@ namespace Atlas {
 
                 // Determine if this texture is linear data (normal / metallic-roughness / AO)
                 // by checking common name conventions used by DCC tools.
-                const std::string &name = image.name;
+                const std::string name = toLower(image.name);
+                const bool isNormalMap =
+                    name.find("normal") != std::string::npos ||
+                    name.find("nrm") != std::string::npos ||
+                    name.find("norm") != std::string::npos ||
+                    name.ends_with("_n") ||
+                    name.ends_with("-n") ||
+                    name.find("_n.") != std::string::npos ||
+                    name.find("_n_") != std::string::npos;
                 const bool isLinear =
-                    name.find("normal")    != std::string::npos ||
-                    name.find("Normal")    != std::string::npos ||
+                    isNormalMap ||
                     name.find("roughness") != std::string::npos ||
                     name.find("metallic")  != std::string::npos ||
+                    name.find("metallicroughness") != std::string::npos ||
+                    name.find("_mr")       != std::string::npos ||
                     name.find("occlusion") != std::string::npos ||
+                    name.find("_ao")       != std::string::npos ||
+                    name.find("ambientocclusion") != std::string::npos ||
                     name.find("_arm")      != std::string::npos ||
                     name.find("_orm")      != std::string::npos;
 
@@ -315,10 +408,22 @@ namespace Atlas {
 
                     for (size_t i = 0; i < pixelCount; ++i) {
                         const size_t src = i * sourceChannels;
-                        dst[i * 4 + 0] = image.image[src + 0];
-                        dst[i * 4 + 1] = sourceChannels > 1 ? image.image[src + 1] : image.image[src + 0];
-                        dst[i * 4 + 2] = sourceChannels > 2 ? image.image[src + 2] : image.image[src + 0];
-                        dst[i * 4 + 3] = sourceChannels > 3 ? image.image[src + 3] : 255;
+                        if (sourceChannels == 1) {
+                            dst[i * 4 + 0] = image.image[src];
+                            dst[i * 4 + 1] = image.image[src];
+                            dst[i * 4 + 2] = image.image[src];
+                            dst[i * 4 + 3] = 255;
+                        } else if (sourceChannels == 2) {
+                            dst[i * 4 + 0] = image.image[src + 0];
+                            dst[i * 4 + 1] = image.image[src + 0];
+                            dst[i * 4 + 2] = image.image[src + 0];
+                            dst[i * 4 + 3] = image.image[src + 1];
+                        } else {
+                            dst[i * 4 + 0] = image.image[src + 0];
+                            dst[i * 4 + 1] = image.image[src + 1];
+                            dst[i * 4 + 2] = image.image[src + 2];
+                            dst[i * 4 + 3] = sourceChannels > 3 ? image.image[src + 3] : 255;
+                        }
                     }
                 } else {
                     // Compressed (PNG/JPEG) — decode with stb
@@ -351,7 +456,8 @@ namespace Atlas {
                     texPath);
 
                 AT_TRACE("Image[{}] decoded and stored: {} ({}x{}, {})",
-                         imgIdx, texPath, width, height, isLinear ? "linear" : "sRGB");
+                         imgIdx, texPath, width, height,
+                         isNormalMap ? "normal" : (isLinear ? "linear" : "sRGB"));
 
                 return std::pair<size_t, AssetHandle<Texture>>{imgIdx, handle};
             }));
@@ -370,19 +476,22 @@ namespace Atlas {
     // =========================================================================
 
     void GLTFAccessor::processNode(
-        entt::registry                                  &registry,
+        EntityBuffer                                    &buffer,
         const tinygltf::Model                           &model,
         int32_t                                          nodeIdx,
         const glm::mat4                                 &parentTransform,
-        entt::entity                                     parentEntity,
         const std::vector<std::vector<AssetHandle<Mesh>>> &meshHandles,
-        const std::vector<AssetHandle<Texture>>          &imageHandles,
-        std::vector<entt::entity>                        &outEntities) {
+        const std::vector<AssetHandle<Texture>>          &imageHandles) {
 
         const tinygltf::Node &node = model.nodes[nodeIdx];
 
         const glm::mat4 localTransform = getNodeTransform(node);
         const glm::mat4 worldTransform = parentTransform * localTransform;
+
+        glm::vec3 translation, scale, skew;
+        glm::quat rotation;
+        glm::vec4 perspective;
+        glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
 
         // ---- Mesh primitives ------------------------------------------------
         if (node.mesh >= 0 && node.mesh < static_cast<int>(meshHandles.size())) {
@@ -393,26 +502,25 @@ namespace Atlas {
                 if (primIdx >= primHandles.size()) break;
                 if (!primHandles[primIdx].valid()) continue;
 
-                auto entity = registry.create();
-                outEntities.push_back(entity);
+                SceneNodeComponent sceneNode{};
+                sceneNode.name = (gltfMesh.name.empty() ? ("Node_" + std::to_string(nodeIdx)) : gltfMesh.name)
+                                 + (gltfMesh.primitives.size() > 1 ? "_prim" + std::to_string(primIdx) : "");
+                sceneNode.parent = entt::null;
+                buffer.add(sceneNode);
 
-                // Transform
-                glm::vec3 translation, scale, skew;
-                glm::quat rotation;
-                glm::vec4 perspective;
-                glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
-
-                auto &transform      = registry.emplace<TransformComponent>(entity);
+                TransformComponent transform{};
                 transform.translation = translation;
                 transform.rotation    = glm::eulerAngles(rotation);
                 transform.scale       = scale;
+                buffer.add(transform);
 
                 // Model component
-                auto &modelComp  = registry.emplace<ModelComponent>(entity);
+                ModelComponent modelComp{};
                 modelComp.meshHandle = primHandles[primIdx];
+                buffer.add(modelComp);
 
                 // Material component
-                auto &material = registry.emplace<MaterialComponent>(entity);
+                MaterialComponent material{};
                 material.baseColor = glm::vec4(1.0f);
 
                 const tinygltf::Primitive &prim = gltfMesh.primitives[primIdx];
@@ -431,31 +539,33 @@ namespace Atlas {
                     material.normalMap              = resolveTexture(model, mat.normalTexture.index,           imageHandles);
                     material.metallicRoughnessMap   = resolveTexture(model, pbr.metallicRoughnessTexture.index, imageHandles);
                     material.ambientOcclusion       = resolveTexture(model, mat.occlusionTexture.index,        imageHandles);
+                    material.alphaMasked            = mat.alphaMode == "MASK";
+                    material.transparent            = mat.alphaMode == "BLEND" ||
+                                                      material.alphaMasked ||
+                                                      material.baseColor.a < 1.0f;
                 }
+                buffer.add(material);
 
-                // Per-node extension hooks
-                handleSkybox(registry, entity, model);
-                handlePostProcessing(registry, entity, model);
+                buffer.next();
             }
         }
 
         // ---- KHR_lights_punctual --------------------------------------------
         if (node.light >= 0 && node.light < static_cast<int>(model.lights.size())) {
             const tinygltf::Light &gltfLight = model.lights[node.light];
-            auto entity = registry.create();
-            outEntities.push_back(entity);
 
-            glm::vec3 translation, scale, skew;
-            glm::quat rotation;
-            glm::vec4 perspective;
-            glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
+            SceneNodeComponent sceneNode{};
+            sceneNode.name = gltfLight.name.empty() ? "Light" : gltfLight.name;
+            sceneNode.parent = entt::null;
+            buffer.add(sceneNode);
 
-            auto &transform      = registry.emplace<TransformComponent>(entity);
-            transform.translation = translation * glm::vec3(1.0f, -1.0f, 1.0f);
+            TransformComponent transform{};
+            transform.translation = translation;
             transform.rotation    = glm::eulerAngles(rotation);
             transform.scale       = scale;
+            buffer.add(transform);
 
-            auto &light = registry.emplace<LightComponent>(entity);
+            LightComponent light{};
 
             if      (gltfLight.type == "point")       light.type = LightType::POINT;
             else if (gltfLight.type == "spot")         { light.type = LightType::SPOT;
@@ -471,8 +581,9 @@ namespace Atlas {
             light.range     = static_cast<float>(gltfLight.range);
 
             constexpr glm::vec3 defaultDir{0.0f, 0.0f, -1.0f};
-            light.direction    = glm::normalize(rotation * defaultDir);
-            light.direction    = -light.direction;
+            light.direction = toEngineDirection(rotation * defaultDir);
+            buffer.add(light);
+            buffer.next();
         }
 
         // ---- ATLAS_lights_special -------------------------------------------
@@ -494,41 +605,48 @@ namespace Atlas {
                             && arr[lightIndex].IsObject()) {
                             const tinygltf::Value &lobj = arr[lightIndex];
 
-                            glm::vec3 translation, scale, skew;
-                            glm::quat rotation;
-                            glm::vec4 perspective;
-                            glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
+                            SceneNodeComponent sceneNode{};
+                            sceneNode.name = lobj.Has("name") && lobj.Get("name").IsString()
+                                ? lobj.Get("name").Get<std::string>()
+                                : ("AtlasLight_" + std::to_string(lightIndex));
+                            sceneNode.parent = entt::null;
+                            buffer.add(sceneNode);
 
-                            auto entity = registry.create();
-                            outEntities.push_back(entity);
-
-                            auto &transform      = registry.emplace<TransformComponent>(entity);
-                            transform.translation = translation * glm::vec3(1.0f, -1.0f, 1.0f);
+                            TransformComponent transform{};
+                            transform.translation = translation;
                             transform.rotation    = glm::eulerAngles(rotation);
                             transform.scale       = scale;
+                            buffer.add(transform);
 
-                            auto &light = registry.emplace<LightComponent>(entity);
+                            LightComponent light{};
                             light.type  = LightType::RECT;
 
-                            constexpr glm::vec3 defaultDir{0.0f, 0.0f, -1.0f};
-                            light.direction    = glm::normalize(rotation * defaultDir);
-                            light.direction.y  = -light.direction.y;
+                            glm::vec3 localDirection{0.0f, 0.0f, -1.0f};
+                            if (lobj.Has("direction") && lobj.Get("direction").IsArray()) {
+                                const auto &d = lobj.Get("direction").Get<tinygltf::Value::Array>();
+                                if (d.size() >= 3 && tinyValueNumber(d[0]) && tinyValueNumber(d[1]) && tinyValueNumber(d[2])) {
+                                    localDirection = glm::vec3(tinyValueFloat(d[0]), tinyValueFloat(d[1]), tinyValueFloat(d[2]));
+                                }
+                            }
+                            light.direction = toEngineDirection(rotation * localDirection);
+                            light.rectRight = toEngineDirection(rotation * glm::vec3(1.0f, 0.0f, 0.0f));
+                            light.rectUp = toEngineDirection(rotation * glm::vec3(0.0f, 1.0f, 0.0f));
 
                             light.color = glm::vec3(1.0f);
                             if (lobj.Has("color") && lobj.Get("color").IsArray()) {
                                 const auto &c = lobj.Get("color").Get<tinygltf::Value::Array>();
-                                if (c.size() >= 3)
-                                    light.color = glm::vec3(
-                                        static_cast<float>(c[0].Get<double>()),
-                                        static_cast<float>(c[1].Get<double>()),
-                                        static_cast<float>(c[2].Get<double>()));
+                                if (c.size() >= 3 && tinyValueNumber(c[0]) && tinyValueNumber(c[1]) && tinyValueNumber(c[2])) {
+                                    light.color = glm::vec3(tinyValueFloat(c[0]), tinyValueFloat(c[1]), tinyValueFloat(c[2]));
+                                }
                             }
-                            if (lobj.Has("intensity") && lobj.Get("intensity").IsReal())
-                                light.intensity = static_cast<float>(lobj.Get("intensity").Get<double>());
-                            if (lobj.Has("width")  && lobj.Get("width").IsReal())
-                                light.width     = static_cast<float>(lobj.Get("width").Get<double>());
-                            if (lobj.Has("height") && lobj.Get("height").IsReal())
-                                light.height    = static_cast<float>(lobj.Get("height").Get<double>());
+                            if (lobj.Has("intensity") && tinyValueNumber(lobj.Get("intensity")))
+                                light.intensity = tinyValueFloat(lobj.Get("intensity"));
+                            if (lobj.Has("width") && tinyValueNumber(lobj.Get("width")))
+                                light.width = tinyValueFloat(lobj.Get("width"));
+                            if (lobj.Has("height") && tinyValueNumber(lobj.Get("height")))
+                                light.height = tinyValueFloat(lobj.Get("height"));
+                            buffer.add(light);
+                            buffer.next();
                         }
                     }
                 }
@@ -537,8 +655,8 @@ namespace Atlas {
 
         // ---- Recurse into children ------------------------------------------
         for (int childIdx : node.children) {
-            processNode(registry, model, childIdx, worldTransform,
-                        parentEntity, meshHandles, imageHandles, outEntities);
+            processNode(buffer, model, childIdx, worldTransform,
+                        meshHandles, imageHandles);
         }
     }
 
@@ -547,32 +665,35 @@ namespace Atlas {
     // =========================================================================
 
     void GLTFAccessor::handleSkybox(
-        entt::registry &registry, entt::entity entity, const tinygltf::Model &model) {
+        EntityBuffer &buffer, const tinygltf::Model &model, bool &skyboxAdded) {
+        if (skyboxAdded) return;
 
-        // Check for ATLAS_skybox extension on the model level
         auto it = model.extensions.find("ATLAS_skybox");
         if (it == model.extensions.end() || !it->second.IsObject()) return;
 
         const tinygltf::Value &skyboxExt = it->second;
 
-        // Only attach the SkyboxComponent once
-        if (!registry.view<SkyboxComponent>().empty()) return;
-
-        auto &skybox = registry.emplace_or_replace<SkyboxComponent>(entity);
-
-        auto resolveImageHandle = [&](const char *key) -> AssetHandle<Texture> {
-            if (!skyboxExt.Has(key)) return {};
+        auto loadCubemap = [&](const char *key) -> AssetHandle<Cubemap> {
+            if (!skyboxExt.Has(key)) return AssetHandle<Cubemap>::invalid();
             const auto &val = skyboxExt.Get(key);
-            if (!val.IsInt()) return {};
-            const int imgIdx = val.Get<int>();
-            if (imgIdx < 0 || imgIdx >= static_cast<int>(model.images.size())) return {};
-            // Skybox images must be resolved after texture decode — return invalid for now;
-            // the caller should wait for pending jobs before using skybox handles.
-            return AssetHandle<Texture>{};
+            if (!val.IsString()) return AssetHandle<Cubemap>::invalid();
+            return assets.store<Cubemap>(val.Get<std::string>());
         };
 
-        (void)resolveImageHandle; // skybox cubemap handles are typically set by a separate cubemap loader
-        AT_TRACE("handleSkybox: ATLAS_skybox extension found, SkyboxComponent attached");
+        SceneNodeComponent node{};
+        node.name = "Skybox";
+        node.parent = entt::null;
+        buffer.add(node);
+
+        SkyboxComponent skybox{};
+        skybox.skyboxHandle = loadCubemap("skybox");
+        skybox.irradianceHandle = loadCubemap("irradiance");
+        skybox.prefilterHandle = loadCubemap("prefilter");
+        buffer.add(skybox);
+        buffer.next();
+
+        skyboxAdded = true;
+        AT_TRACE("Loaded skybox from ATLAS_skybox extension");
     }
 
     // =========================================================================
@@ -580,15 +701,36 @@ namespace Atlas {
     // =========================================================================
 
     void GLTFAccessor::handlePostProcessing(
-        entt::registry &registry, entt::entity entity, const tinygltf::Model &model) {
+        EntityBuffer &buffer, const tinygltf::Model &model, bool &postProcessingAdded) {
+        if (postProcessingAdded) return;
 
         auto it = model.extensions.find("ATLAS_post_processing");
         if (it == model.extensions.end() || !it->second.IsObject()) return;
 
-        if (!registry.view<PostProcessingVolumeComponent>().empty()) return;
+        const tinygltf::Value &ext = it->second;
 
-        registry.emplace_or_replace<PostProcessingVolumeComponent>(entity);
-        AT_TRACE("handlePostProcessing: ATLAS_post_processing extension found");
+        SceneNodeComponent node{};
+        node.name = "PostProcessing";
+        node.parent = entt::null;
+        buffer.add(node);
+
+        PostProcessingVolumeComponent volume{};
+        if (ext.Has("exposure")) volume.exposure = tinyValueFloat(ext.Get("exposure"), volume.exposure);
+        if (ext.Has("contrast")) volume.contrast = tinyValueFloat(ext.Get("contrast"), volume.contrast);
+        if (ext.Has("saturation")) volume.saturation = tinyValueFloat(ext.Get("saturation"), volume.saturation);
+
+        if (ext.Has("colorTint") && ext.Get("colorTint").IsArray()) {
+            const auto &arr = ext.Get("colorTint").Get<tinygltf::Value::Array>();
+            if (arr.size() >= 3 && tinyValueNumber(arr[0]) && tinyValueNumber(arr[1]) && tinyValueNumber(arr[2])) {
+                volume.colorTint = glm::vec3(tinyValueFloat(arr[0]), tinyValueFloat(arr[1]), tinyValueFloat(arr[2]));
+            }
+        }
+
+        buffer.add(volume);
+        buffer.next();
+
+        postProcessingAdded = true;
+        AT_TRACE("Loaded post processing: exposure={} contrast={} saturation={}", volume.exposure, volume.contrast, volume.saturation);
     }
 
     // =========================================================================

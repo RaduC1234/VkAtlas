@@ -121,6 +121,16 @@ namespace Atlas {
                     };
                 }
 
+                static Description hostVisibleStorageBuffer(std::string name, VkDeviceSize size) {
+                    return {
+                        .name = std::move(name),
+                        .type = Type::BUFFER_STORAGE,
+                        .bufferUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                        .size = size,
+                        .hostVisible = true
+                    };
+                }
+
                 template<typename T>
                 static Description cpuBuffer(std::string name) {
                     return {

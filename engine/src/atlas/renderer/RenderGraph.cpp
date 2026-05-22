@@ -84,12 +84,22 @@ namespace Atlas {
                 }
 
                 if (output.kind() == IRenderStage::Resource::Kind::GPU_BUFFER) {
-                    auto buffer = GPUBuffer::Builder(device)
-                            .setSize(output.size)
-                            .setUsage(output.bufferUsage)
-                            .setAllocationFlags(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+                    GPUBuffer buf = output.hostVisible
+                        ? GPUBuffer::Builder(device)
+                              .setSize(output.size)
+                              .setUsage(output.bufferUsage)
+                              .setMemoryUsage(VMA_MEMORY_USAGE_AUTO)
+                              .setAllocationFlags(VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                                                  VMA_ALLOCATION_CREATE_MAPPED_BIT)
+                              .setMapped()
+                              .build()
+                        : GPUBuffer::Builder(device)
+                              .setSize(output.size)
+                              .setUsage(output.bufferUsage)
+                              .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
+                              .build();
 
-                    ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buffer.build())});
+                    ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buf)});
                 }
             }
         }

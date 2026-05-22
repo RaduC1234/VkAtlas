@@ -1,6 +1,7 @@
 #include "RenderSystemV2.hpp"
 
 #include "core/Log.hpp"
+#include "renderer/stage/CullingStage.hpp"
 #include "renderer/stage/GeometryStage.hpp"
 #include "renderer/stage/OutputStage.hpp"
 #include "renderer/stage/PathTracingStage.hpp"
@@ -10,8 +11,14 @@ namespace Atlas {
     RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer, AssetManager &assets) : device(device) {
         createGlobalUbo();
 
+        // Create CullingStage first so we can pass a reference to GeometryStage.
+        // Both are owned by the render graph once moved in.
+        auto culling  = std::make_unique<CullingStage>(device, assets);
+        auto geometry = std::make_unique<GeometryStage>(device, assets, *globalSetLayout, *culling);
+
         auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
-            .addStage<GeometryStage>(device, assets, *globalSetLayout)
+            .addStage(std::move(culling))
+            .addStage(std::move(geometry))
             .addStage<PostProcessPass>(device, *globalSetLayout)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
@@ -19,6 +26,7 @@ namespace Atlas {
 
         auto rayTracingGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
             .addStage<PathTracingStage>(device, assets, *globalSetLayout)
+            .addStage<PostProcessPass>(device, *globalSetLayout)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));
@@ -26,7 +34,6 @@ namespace Atlas {
         renderGraphs[ViewMode::LIT] = renderGraphs[ViewMode::UNLIT] = renderGraphs[ViewMode::LIGHTING_ONLY] = rasterGraph;
         renderGraphs[ViewMode::PATH_TRACING] = std::move(rayTracingGraph);
     }
-
 
     void RenderSystemV2::build(entt::registry &registry) {
         build(registry, ViewMode::LIT);
@@ -36,10 +43,10 @@ namespace Atlas {
         renderGraphs.at(viewMode)->build(registry);
     }
 
-    void RenderSystemV2::render(const FrameContext frameContext,const Camera::Data &cameraData,const DebugData &debugData) const {
+    void RenderSystemV2::render(const FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData) const {
         GlobalUbo globalUbo{};
         globalUbo.cameraData = cameraData;
-        globalUbo.debugData = debugData;
+        globalUbo.debugData  = debugData;
         globalUboBuffers[frameContext.index]->uploadData(&globalUbo, sizeof(GlobalUbo));
 
         renderGraphs.at(debugData.viewMode)->render(frameContext, globalDescriptorSets[frameContext.index]);
@@ -47,13 +54,13 @@ namespace Atlas {
 
     void RenderSystemV2::createGlobalUbo() {
         globalSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL)
-                .build();
+            .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL)
+            .build();
 
         globalPool = DescriptorPool::Builder(device)
-                .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
-                .build();
+            .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
+            .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
+            .build();
 
         globalUboBuffers.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
         globalDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
@@ -73,8 +80,8 @@ namespace Atlas {
 
             auto bufferInfo = globalUboBuffers[i]->descriptorInfo();
             DescriptorWriter(*globalSetLayout, *globalPool)
-                    .writeBuffer(0, &bufferInfo)
-                    .build(globalDescriptorSets[i]);
+                .writeBuffer(0, &bufferInfo)
+                .build(globalDescriptorSets[i]);
         }
     }
 } // namespace Atlas

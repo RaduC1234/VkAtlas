@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Atlas.hpp>
-#include <future>
 
 namespace Atlas {
     class AssetManager;
@@ -20,8 +19,6 @@ namespace Atlas {
         AssetManager &assets;
         std::unique_ptr<CameraSystem> cameraSystem;
         std::unique_ptr<RenderSystemV2> renderSystem;
-        std::future<entt::registry> importFuture;
-        bool importComplete{false};
 
         bool rayTracingReady() const;
         ViewMode activeViewMode() const;

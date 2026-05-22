@@ -300,11 +300,11 @@ void main() {
             if (dist <= 0.001) continue;
 
             L = toLight / dist;
-            float cosLight = abs(dot(lightNormal, -L));
-            if (cosLight <= 0.0) continue;
+            float cosLight = dot(lightNormal, -L);
+            if (cosLight < 0.01) continue;
 
             float area = max(light.width * light.height, EPSILON);
-            atten = area * cosLight / max(dist * dist, EPSILON);
+            atten = min((area * cosLight) / max(dist * dist, 0.01), 100.0);
             tMax = max(dist - 0.001, 0.0);
         } else {
             vec3  toLight = light.position - worldPos;
@@ -393,7 +393,7 @@ void main() {
         return;
     }
 
-    payload.throughput = sanitizeColor(payload.throughput * (brdfWeight / pdf));
+    payload.throughput = sanitizeColor(payload.throughput * min(brdfWeight / pdf, vec3(20.0)));
     payload.origin      = offsetRayOrigin(worldPos, geometricNormal, nextDir);
     payload.direction   = nextDir;
 
@@ -404,7 +404,7 @@ void main() {
         return;
     }
 
-    float survivalProb = clamp(maxThroughput, 0.05, 1.0);
+    float survivalProb = clamp(maxThroughput, 0.2, 1.0);
     if (randFloat(payload.seed) > survivalProb) {
         payload.done = true;
         return;

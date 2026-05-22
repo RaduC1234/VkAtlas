@@ -163,6 +163,10 @@ namespace Atlas {
             destroyProjectModule(projectModule);
         }
 
+        if (projectContext) {
+            projectContext->assets.clearCaches();
+        }
+
         projectModule = nullptr;
         destroyProjectModule = nullptr;
         projectContext.reset();

@@ -6,6 +6,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <utility>
 
 #include "core/Log.hpp"
 #include "accessors/GLTFAccessor.hpp"
@@ -14,15 +15,18 @@
 #include "renderer/resources/GPUCubemap.hpp"
 
 namespace Atlas {
-    AssetManager::AssetManager(ResourceManager &resourceManager, ExecutorService &executorService) : resourceManager_(resourceManager) {
+    AssetManager::AssetManager(ResourceManager &resourceManager, ExecutorService &executorService) : resourceManager_(resourceManager), executor_(executorService) {
         registerLoader<GLTFAccessor>(*this, executorService);
         registerLoader<OBJAccessor>(*this, executorService);
     }
 
     AssetManager::~AssetManager() {
+        clearCaches();
     }
 
     std::vector<entt::entity> AssetManager::importAsset(const std::string &virtualPath, entt::registry &registry, entt::entity parentEntity) {
+        (void) parentEntity;
+
         std::string ext = std::filesystem::path(virtualPath).extension().string();
         std::ranges::transform(ext, ext.begin(), ::tolower);
 
@@ -32,7 +36,29 @@ namespace Atlas {
             return {};
         }
 
-        return it->second->importAsset(virtualPath, registry, parentEntity);
+        EntityBuffer buffer;
+        it->second->importAsset(virtualPath, buffer);
+        return buffer.flush(registry);
+    }
+
+    std::future<void> AssetManager::importAsync(const std::string &virtualPath, entt::registry &registry) {
+        std::string ext = std::filesystem::path(virtualPath).extension().string();
+        std::ranges::transform(ext, ext.begin(), ::tolower);
+
+        auto it = accessors_.find(ext);
+        if (it == accessors_.end()) {
+            AT_ERROR("No loader registered for extension: {}", ext);
+            return {};
+        }
+
+        auto accessor = it->second;
+        return executor_.submit([this, accessor = std::move(accessor), virtualPath, registry = &registry]() {
+            EntityBuffer buffer;
+            accessor->importAsset(virtualPath, buffer);
+
+            std::lock_guard lock(pendingFlushMutex_);
+            pendingFlushes_.emplace_back(std::move(buffer), registry);
+        });
     }
 
     std::filesystem::path AssetManager::rootPath() const {
@@ -45,6 +71,18 @@ namespace Atlas {
 
     void AssetManager::update() {
         constexpr size_t maxGpuCreatesPerFrame = 1;
+
+        std::vector<std::pair<EntityBuffer, entt::registry*>> pendingFlushes;
+        {
+            std::lock_guard lock(pendingFlushMutex_);
+            pendingFlushes.swap(pendingFlushes_);
+        }
+
+        for (auto &[buffer, registry]: pendingFlushes) {
+            if (registry) {
+                buffer.flush(*registry);
+            }
+        }
 
         std::vector<WeakState<Texture> > textures;
         std::vector<WeakState<Mesh> > meshes;
@@ -96,13 +134,40 @@ namespace Atlas {
 
         resourceManager_.update();
 
-        // Prune expired weak_ptrs from dedup caches
-        std::erase_if(textureByHash_, [](const auto &kv) { return kv.second.expired(); });
-        std::erase_if(meshByHash_, [](const auto &kv) { return kv.second.expired(); });
-        std::erase_if(cubemapByHash_, [](const auto &kv) { return kv.second.expired(); });
-        std::erase_if(textureByPath_, [](const auto &kv) { return kv.second.expired(); });
-        std::erase_if(meshByPath_, [](const auto &kv) { return kv.second.expired(); });
-        std::erase_if(cubemapByPath_, [](const auto &kv) { return kv.second.expired(); });
+        {
+            std::lock_guard lock(pendingMutex_);
+
+            // Prune expired weak_ptrs from dedup caches. These maps are also
+            // touched by async import jobs through store(), so keep pruning
+            // under the same lock as insertion/deduplication.
+            std::erase_if(textureByHash_, [](const auto &kv) { return kv.second.expired(); });
+            std::erase_if(meshByHash_, [](const auto &kv) { return kv.second.expired(); });
+            std::erase_if(cubemapByHash_, [](const auto &kv) { return kv.second.expired(); });
+            std::erase_if(textureByPath_, [](const auto &kv) { return kv.second.expired(); });
+            std::erase_if(meshByPath_, [](const auto &kv) { return kv.second.expired(); });
+            std::erase_if(cubemapByPath_, [](const auto &kv) { return kv.second.expired(); });
+        }
+    }
+
+    void AssetManager::clearCaches() {
+        {
+            std::lock_guard lock(pendingFlushMutex_);
+            pendingFlushes_.clear();
+        }
+
+        std::lock_guard lock(pendingMutex_);
+
+        pendingTextures_.clear();
+        pendingMeshes_.clear();
+        pendingCubemaps_.clear();
+
+        textureByHash_.clear();
+        meshByHash_.clear();
+        cubemapByHash_.clear();
+
+        textureByPath_.clear();
+        meshByPath_.clear();
+        cubemapByPath_.clear();
     }
 
     std::string AssetManager::loadFileAsString(const std::string &path) {

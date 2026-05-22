@@ -102,7 +102,7 @@ namespace Atlas {
         // Placeholder 1-element buffers so descriptors are always valid at init.
         vertexBuffer = std::make_unique<GPUBuffer>(
             GPUBuffer::simple(device)
-            .setSize(sizeof(GPUMesh::Vertex))
+            .setSize(sizeof(Mesh::Vertex))
             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
             .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
             .build()
@@ -140,10 +140,16 @@ namespace Atlas {
 
     void PathTracingStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
         out.push_back({
-            .name = "post_color",
+            .name = "geometry_color",
             .type = Resource::Type::SHADER_WRITE,
             .format = VK_FORMAT_R32G32B32A32_SFLOAT,
             .imageUsage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        });
+        out.push_back({
+            .name = "geometry_depth",
+            .type = Resource::Type::ATTACHMENT_DEPTH,
+            .format = VK_FORMAT_D24_UNORM_S8_UINT,
+            .imageUsage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
         });
     }
 
@@ -151,7 +157,8 @@ namespace Atlas {
     }
 
     void PathTracingStage::onResourcesCreated(const Context &ctx) {
-        outputImage = &ctx.resources.at("post_color").get().asImage();
+        outputImage = &ctx.resources.at("geometry_color").get().asImage();
+        geometryDepth = &ctx.resources.at("geometry_depth").get().asImage();
 
         const auto extent = outputImage->extent();
         auto accum = GPUImage::Builder(device)
@@ -370,9 +377,9 @@ namespace Atlas {
 
             std::array<VkImageMemoryBarrier, 2> barriers{};
             barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barriers[0].oldLayout = preserveAccumulation ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
+            barriers[0].oldLayout = preserveAccumulation ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
             barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-            barriers[0].srcAccessMask = preserveAccumulation ? VK_ACCESS_TRANSFER_READ_BIT : 0;
+            barriers[0].srcAccessMask = preserveAccumulation ? VK_ACCESS_SHADER_READ_BIT : 0;
             barriers[0].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
             barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -380,13 +387,14 @@ namespace Atlas {
             barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
             barriers[1] = barriers[0];
+            barriers[1].oldLayout = preserveAccumulation ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
             barriers[1].srcAccessMask = preserveAccumulation ? VK_ACCESS_SHADER_WRITE_BIT : 0;
             barriers[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
             barriers[1].image = accumulationImage->image();
 
             vkCmdPipelineBarrier(cmd,
                                  preserveAccumulation
-                                     ? (VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
+                                     ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
                                      : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                                  VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                                  0, 0, nullptr, 0, nullptr,
@@ -425,6 +433,55 @@ namespace Atlas {
         const auto extent = outputImage->extent();
 
         vkCmdTraceRaysKHR(cmd, &sbtRaygen, &sbtMiss, &sbtHit, &sbtCallable, extent.width, extent.height, 1);
+
+        VkImageMemoryBarrier pre[2]{};
+
+        pre[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        pre[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        pre[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        pre[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        pre[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        pre[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[0].image = outputImage->image();
+        pre[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+        pre[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        pre[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        pre[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        pre[1].srcAccessMask = 0;
+        pre[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        pre[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        pre[1].image = geometryDepth->image();
+        pre[1].subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
+
+        vkCmdPipelineBarrier(cmd,
+                             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             0, 0, nullptr, 0, nullptr, 2, pre);
+
+        VkClearDepthStencilValue clearDS{1.0f, 0};
+        VkImageSubresourceRange dsRange{VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
+        vkCmdClearDepthStencilImage(cmd,
+                                    geometryDepth->image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                    &clearDS, 1, &dsRange);
+
+        VkImageMemoryBarrier post{};
+        post.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        post.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        post.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        post.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        post.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        post.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        post.image = geometryDepth->image();
+        post.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
+
+        vkCmdPipelineBarrier(cmd,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &post);
 
         currentSample++;
         frameIndex++;

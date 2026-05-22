@@ -105,6 +105,7 @@ namespace Atlas::Editor {
 
     void EditorLayer::drawRenderSettings() {
         ImGui::Begin("Render Settings");
+        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 
         auto *scene = projectLayer.project().scene();
         if (!scene) {

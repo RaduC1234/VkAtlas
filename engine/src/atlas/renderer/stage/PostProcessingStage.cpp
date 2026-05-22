@@ -108,6 +108,7 @@ namespace Atlas {
         dep.srcSubpass = VK_SUBPASS_EXTERNAL;
         dep.dstSubpass = 0;
         dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                           VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
                            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         dep.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
