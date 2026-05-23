@@ -70,10 +70,9 @@ void main() {
     }
 
     if (layer == 0u) {
-        outColor = vec4(hdr, 1.0);
+        outColor = vec4(ACESFitted(max(hdr, vec3(0.0)) * ubo.debugData.exposureMultiplier), 1.0);
         return;
     }
 
-    hdr *= ubo.debugData.exposureMultiplier;
-    outColor = vec4(hdr, 1.0);
+    outColor = vec4(ACESFitted(max(hdr, vec3(0.0)) * ubo.debugData.exposureMultiplier), 1.0);
 }

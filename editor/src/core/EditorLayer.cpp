@@ -1,197 +1,142 @@
 #include "EditorLayer.hpp"
 
-#include <Atlas.hpp>
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+
 #include <imgui.h>
 
-#define IMVIEWGUIZMO_IMPLEMENTATION
-#include <ImViewGuizmo.h>
+#include "core/Log.hpp"
+#include "utils/FileDialogs.hpp"
 
 namespace Atlas::Editor {
-    namespace {
-        float titlebarHeight() {
-            return ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 2.0f;
-        }
-    }
-
     EditorLayer::EditorLayer(ProjectLayer &projectLayer) : Layer("EditorLayer"), projectLayer(projectLayer) {
     }
 
     void EditorLayer::onAttach() {
+        hierarchyPanel = std::make_shared<HierarchyPanel>(projectLayer, selectedEntity);
+        inspectorPanel = std::make_shared<InspectorPanel>(projectLayer, selectedEntity);
+        viewportPanel = std::make_shared<ViewportPanel>(projectLayer);
+        renderSettingsPanel = std::make_shared<RenderSettingsPanel>(projectLayer);
     }
 
     void EditorLayer::onDetach() {
-        destroyViewportTexture();
+        if (hierarchyPanel) hierarchyPanel->onDetach();
+        if (inspectorPanel) inspectorPanel->onDetach();
+        if (viewportPanel) viewportPanel->onDetach();
+        if (renderSettingsPanel) renderSettingsPanel->onDetach();
     }
 
-    void EditorLayer::onUpdate(float deltaTime) {
-        frameTime = deltaTime;
+    void EditorLayer::onUpdate(float) {
     }
 
     void EditorLayer::onImGuiRender() {
-        drawTitleBar();
-        drawRenderSettings();
-        drawViewport();
-        drawSceneHierarchy();
-
-        ImGui::Begin("Inspector");
-        if (selectedEntity == entt::null) {
-            ImGui::Text("No entity selected");
-        } else if (auto *scene = projectLayer.project().scene()) {
-            auto &registry = scene->getRegistry();
-            ImGui::Text("%s", entityName(registry, selectedEntity));
-        }
-        ImGui::End();
+        drawMenuBar();
+        if (renderSettingsPanel) renderSettingsPanel->onImGuiRender();
+        if (viewportPanel) viewportPanel->onImGuiRender();
+        if (hierarchyPanel) hierarchyPanel->onImGuiRender();
+        if (inspectorPanel) inspectorPanel->onImGuiRender();
     }
 
-    void EditorLayer::drawRenderSettings() {
-        ImGui::Begin("Render Settings");
-        ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
+    void EditorLayer::drawMenuBar() {
+        if (!ImGui::BeginMainMenuBar()) {
+            return;
+        }
 
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("Import into Level...")) {
+                importIntoLevel();
+            }
+
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("View")) {
+            if (ImGui::MenuItem("Show All Panels")) {
+                if (hierarchyPanel) hierarchyPanel->visible = true;
+                if (inspectorPanel) inspectorPanel->visible = true;
+                if (viewportPanel) viewportPanel->visible = true;
+                if (renderSettingsPanel) renderSettingsPanel->visible = true;
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem("Viewport", nullptr, viewportPanel && viewportPanel->visible)) {
+                if (viewportPanel) viewportPanel->visible = true;
+            }
+            if (ImGui::MenuItem("Scene Hierarchy", nullptr, hierarchyPanel && hierarchyPanel->visible)) {
+                if (hierarchyPanel) hierarchyPanel->visible = true;
+            }
+            if (ImGui::MenuItem("Properties", nullptr, inspectorPanel && inspectorPanel->visible)) {
+                if (inspectorPanel) inspectorPanel->visible = true;
+            }
+            if (ImGui::MenuItem("Render Settings", nullptr, renderSettingsPanel && renderSettingsPanel->visible)) {
+                if (renderSettingsPanel) renderSettingsPanel->visible = true;
+            }
+
+            ImGui::EndMenu();
+        }
+
+        ImGui::EndMainMenuBar();
+    }
+
+    void EditorLayer::importIntoLevel() {
         auto *scene = projectLayer.project().scene();
         if (!scene) {
-            ImGui::Text("No scene loaded");
-            ImGui::End();
+            AT_WARN("EditorLayer: cannot import asset, no scene is loaded");
             return;
         }
 
-        auto &debugData = scene->debugData();
-        int mode = static_cast<int>(debugData.viewMode);
-        constexpr const char *modes[] = {
-            "Lit",
-            "Unlit",
-            "Lighting Only",
-            "Path Tracing"
-        };
+        const auto extensions = projectLayer.assetManager().importerExtensions();
+        const std::string filter = buildImportFilter(extensions);
+        const std::string path = FileDialogs::openFile(filter.c_str());
 
-        if (ImGui::Combo("Mode", &mode, modes, IM_ARRAYSIZE(modes))) {
-            debugData.viewMode = static_cast<ViewMode>(mode);
-        }
-
-        ImGui::DragFloat("Exposure", &debugData.exposureMultiplier, 0.01f, 0.0f, 10.0f);
-        ImGui::DragFloat("Irradiance", &debugData.irradianceMultiplier, 0.01f, 0.0f, 10.0f);
-
-        ImGui::End();
-    }
-
-    void EditorLayer::createViewportTexture() {
-        const auto &outputImage = projectLayer.getRenderer().getSceneOutputImage();
-        if (!outputImage.valid()) {
-            destroyViewportTexture();
+        if (path.empty()) {
             return;
         }
 
-        if (viewportTexture != VK_NULL_HANDLE &&
-            viewportImageView == outputImage.imageView &&
-            viewportImageLayout == outputImage.imageLayout) {
+        if (!hasSupportedExtension(path, extensions)) {
+            AT_WARN("EditorLayer: unsupported import extension '{}'", std::filesystem::path(path).extension().string());
             return;
         }
 
-        destroyViewportTexture();
-        viewportImageView = outputImage.imageView;
-        viewportImageLayout = outputImage.imageLayout;
-        viewportTexture = ImGuiLayer::addTexture(outputImage.imageView, outputImage.imageLayout);
+        projectLayer.assetManager().importAsync(path, scene->getRegistry());
     }
 
-    void EditorLayer::destroyViewportTexture() {
-        if (viewportTexture != VK_NULL_HANDLE) {
-            vkDeviceWaitIdle(projectLayer.getRenderer().device().device());
-            ImGuiLayer::removeTexture(viewportTexture);
-            viewportTexture = VK_NULL_HANDLE;
-        }
-
-        viewportImageView = VK_NULL_HANDLE;
-        viewportImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    }
-
-    void EditorLayer::drawViewport() {
-        createViewportTexture();
-
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::Begin("Viewport");
-        ImGui::PopStyleVar();
-
-        const ImVec2 size = ImGui::GetContentRegionAvail();
-        if (size.x > 1.0f && size.y > 1.0f) {
-            projectLayer.getRenderer().setSceneViewportExtent({
-                static_cast<uint32_t>(size.x),
-                static_cast<uint32_t>(size.y)
-            });
-        }
-
-        if (viewportTexture != VK_NULL_HANDLE && size.x > 1.0f && size.y > 1.0f) {
-            ImGui::Image((ImTextureID) viewportTexture, size);
-        }
-
-        ImGui::End();
-    }
-
-    void EditorLayer::drawTitleBar() {
-
-    }
-
-    void EditorLayer::drawSceneHierarchy() {
-        ImGui::Begin("Scene Hierarchy");
-
-        auto *scene = projectLayer.project().scene();
-        if (!scene) {
-            ImGui::End();
-            return;
-        }
-
-        auto &registry = scene->getRegistry();
-        auto view = registry.view<SceneNodeComponent>();
-
-        for (auto entity: view) {
-            const auto &node = view.get<SceneNodeComponent>(entity);
-            if (node.parent == entt::null) {
-                drawEntityNode(registry, entity);
+    std::string EditorLayer::buildImportFilter(const std::vector<std::string> &extensions) {
+        std::string patterns;
+        for (const auto &extension: extensions) {
+            if (!patterns.empty()) {
+                patterns += ";";
             }
+            patterns += "*";
+            patterns += extension;
         }
 
-        ImGui::End();
+        if (patterns.empty()) {
+            patterns = "*.*";
+        }
+
+        std::string filter = "Importable Assets (";
+        filter += patterns;
+        filter += ")";
+        filter.push_back('\0');
+        filter += patterns;
+        filter.push_back('\0');
+        filter += "All Files (*.*)";
+        filter.push_back('\0');
+        filter += "*.*";
+        filter.push_back('\0');
+        filter.push_back('\0');
+        return filter;
     }
 
-    void EditorLayer::drawEntityNode(entt::registry &registry, entt::entity entity) {
-        auto &node = registry.get<SceneNodeComponent>(entity);
+    bool EditorLayer::hasSupportedExtension(const std::string &path, const std::vector<std::string> &extensions) {
+        std::string extension = std::filesystem::path(path).extension().string();
+        std::ranges::transform(extension, extension.begin(), [](unsigned char value) {
+            return static_cast<char>(std::tolower(value));
+        });
 
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
-        if (selectedEntity == entity) {
-            flags |= ImGuiTreeNodeFlags_Selected;
-        }
-        if (node.children.empty()) {
-            flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-        }
-
-        const bool open = ImGui::TreeNodeEx(
-            reinterpret_cast<void *>(static_cast<uintptr_t>(entt::to_integral(entity))),
-            flags,
-            "%s",
-            entityName(registry, entity)
-        );
-
-        if (ImGui::IsItemClicked()) {
-            selectedEntity = entity;
-        }
-
-        if (open && !node.children.empty()) {
-            for (auto child: node.children) {
-                if (registry.valid(child) && registry.all_of<SceneNodeComponent>(child)) {
-                    drawEntityNode(registry, child);
-                }
-            }
-
-            ImGui::TreePop();
-        }
-    }
-
-    const char *EditorLayer::entityName(entt::registry &registry, entt::entity entity) const {
-        if (registry.valid(entity) && registry.all_of<SceneNodeComponent>(entity)) {
-            const auto &node = registry.get<SceneNodeComponent>(entity);
-            if (!node.name.empty()) {
-                return node.name.c_str();
-            }
-        }
-
-        return "Entity";
+        return std::ranges::find(extensions, extension) != extensions.end();
     }
 }

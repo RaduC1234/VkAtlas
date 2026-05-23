@@ -191,6 +191,7 @@ namespace Atlas {
 
         std::filesystem::path rootPath() const;
         void overwriteRootPath(const std::filesystem::path &path);
+        std::vector<std::string> importerExtensions() const;
 
         void update();
         void clearCaches();

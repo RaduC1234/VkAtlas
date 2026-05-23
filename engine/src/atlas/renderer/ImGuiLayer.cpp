@@ -20,7 +20,7 @@ namespace Atlas {
 
         ImGuiIO &io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-        //io.Fonts->AddFontFromFileTTF("assets/engine/Roboto-Medium.ttf", 15.0f);
+        io.Fonts->AddFontFromFileTTF("assets/engine/Roboto-Medium.ttf", 15.0f);
 
         setStyle();
 

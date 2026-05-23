@@ -1,21 +1,15 @@
 #include "FileDialogs.hpp"
 
 #ifndef ATLAS_PLATFORM_ANDROID
-#include <GLFW/glfw3.h>
+    #ifdef ATLAS_PLATFORM_DESKTOP
+        #include <windows.h>
+        #include <commdlg.h>
+    #endif
 
-#ifdef ATLAS_PLATFORM_DESKTOP
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <windows.h>
-#include <commdlg.h>
-
-#endif
-
-#ifdef ATLAS_PLATFORM_LINUX
-#define GLFW_EXPOSE_NATIVE_X11
-#include <gtk/gtk.h>
-#endif
-
-#include <GLFW/glfw3native.h>
+    #ifdef ATLAS_PLATFORM_LINUX
+        #define GLFW_EXPOSE_NATIVE_X11
+        #include <gtk/gtk.h>
+    #endif
 #endif // ATLAS_PLATFORM_ANDROID
 
 #include <stdexcept>
@@ -36,11 +30,6 @@ std::string FileDialogs::saveFile(const char *filter) {
 #else
 
 std::string FileDialogs::openFile(const char *filter) {
-    auto glfwWindow = glfwGetCurrentContext();
-    if (glfwWindow == nullptr) {
-        throw std::runtime_error("No glfw window in context, create a window before running this.");
-    }
-
 #ifdef _WIN32
     // Windows code
     OPENFILENAMEA ofn;
@@ -48,7 +37,7 @@ std::string FileDialogs::openFile(const char *filter) {
     CHAR currentDir[256] = {0};
     ZeroMemory(&ofn, sizeof(OPENFILENAME));
     ofn.lStructSize = sizeof(OPENFILENAME);
-    ofn.hwndOwner = glfwGetWin32Window(glfwWindow);
+    ofn.hwndOwner = nullptr;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = sizeof(szFile);
     if (GetCurrentDirectoryA(256, currentDir)) {
@@ -103,18 +92,13 @@ std::string FileDialogs::openFile(const char *filter) {
 }
 
 std::string FileDialogs::saveFile(const char *filter) {
-    auto glfwWindow = glfwGetCurrentContext();
-    if (glfwWindow == nullptr) {
-        throw std::runtime_error("No glfw window in context, create a window before running this.");
-    }
-
 #ifdef _WIN32
     OPENFILENAMEA ofn;
     CHAR szFile[260] = {0};
     CHAR currentDir[256] = {0};
     ZeroMemory(&ofn, sizeof(OPENFILENAME));
     ofn.lStructSize = sizeof(OPENFILENAME);
-    ofn.hwndOwner = glfwGetWin32Window(glfwWindow);
+    ofn.hwndOwner = nullptr;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = sizeof(szFile);
     if (GetCurrentDirectoryA(256, currentDir)) {

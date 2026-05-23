@@ -136,6 +136,7 @@ namespace Atlas {
                     return {
                         .name = std::move(name),
                         .type = Type::BUFFER_CPU,
+                        .size = sizeof(T),
                         .cpuInitial = std::any(T{})
                     };
                 }

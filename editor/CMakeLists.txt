@@ -3,12 +3,13 @@ cmake_minimum_required(VERSION 3.22)
 project("atlas_editor")
 
 file(GLOB_RECURSE EDITOR_SOURCES CONFIGURE_DEPENDS "src/*.cpp" "src/*.hpp")
-list(REMOVE_ITEM EDITOR_SOURCES "src/core/EditorEntryPoint.cpp")
+list(REMOVE_ITEM EDITOR_SOURCES "src/EditorEntryPoint.cpp")
 
 add_library(atlas_editor_module STATIC ${EDITOR_SOURCES})
 atlas_set_output_dirs(atlas_editor_module)
 
 target_include_directories(atlas_editor_module PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/ImViewGuizmo
 )
 
@@ -22,7 +23,7 @@ target_compile_definitions(atlas_editor_module PRIVATE
 )
 
 add_executable(atlas_editor
-        src/core/EditorEntryPoint.cpp
+        src/EditorEntryPoint.cpp
 )
 atlas_set_output_dirs(atlas_editor)
 

@@ -8,41 +8,16 @@
 #include "renderer/abstraction/GPUBuffer.hpp"
 
 namespace Atlas {
-    CullingStage::CullingStage(Device &device, AssetManager &assets)
-        : IRenderStage(Queue::GRAPHICS), device_(device), assets_(assets) {
-        textureSetLayout_ = DescriptorSetLayout::Builder(device_)
-            .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, MAX_TEXTURES)
-            .setBindingFlags(0, VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT | VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
-            .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
-            .build();
-
-        texturePool_ = DescriptorPool::Builder(device_)
-            .setMaxSets(1)
-            .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES)
-            .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
-            .build();
-
-        if (!texturePool_->allocateDescriptor(textureSetLayout_->getDescriptorSetLayout(), bindlessTextureSet_)) {
-            throw std::runtime_error("CullingStage: failed to allocate bindless texture set");
-        }
-
-        VkDescriptorImageInfo defaultInfo = IGPUResource::default_<GPUTexture>().descriptor();
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = bindlessTextureSet_;
-        write.dstBinding = 0;
-        write.dstArrayElement = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = &defaultInfo;
-        vkUpdateDescriptorSets(device_.device(), 1, &write, 0, nullptr);
+    CullingStage::CullingStage(Device &, AssetManager &assets)
+        : IRenderStage(Queue::GRAPHICS), assets_(assets) {
     }
 
     void CullingStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
         out.push_back(Resource::Description::hostVisibleStorageBuffer(
             "scene_objects", sizeof(GPUObjectData) * MAX_OBJECTS));
         out.push_back(Resource::Description::hostVisibleStorageBuffer(
-            "scene_lights", sizeof(Light) * MAX_LIGHTS));
+            "scene_lights", sizeof(LightBufferLayout)));
+        out.push_back(Resource::Description::cpuBuffer<RasterDrawData>("scene_draws"));
     }
 
     void CullingStage::getDeclaredInputs(std::vector<std::string> &out) const {}
@@ -50,6 +25,7 @@ namespace Atlas {
     void CullingStage::onResourcesCreated(const Context &ctx) {
         objectBuffer_ = &ctx.resources.at("scene_objects").get().asBuffer();
         lightBuffer_  = &ctx.resources.at("scene_lights").get().asBuffer();
+        drawData_ = &ctx.resources.at("scene_draws").get().asCPUBuffer().as<RasterDrawData>();
     }
 
     void CullingStage::onUpdate(entt::registry &registry) {
@@ -115,6 +91,11 @@ namespace Atlas {
         }
 
         for (auto entity: registry.view<TransformComponent, LightComponent>()) {
+            if (lightData_.size() >= MAX_LIGHTS) {
+                AT_WARN("CullingStage: MAX_LIGHTS reached");
+                break;
+            }
+
             auto [transform, light] = registry.get<TransformComponent, LightComponent>(entity);
             lightData_.push_back(Light{
                 static_cast<uint32_t>(light.type),
@@ -128,36 +109,34 @@ namespace Atlas {
                 light.direction,
                 light.height,
             });
-            ++lightCount_;
         }
+        lightCount_ = static_cast<uint32_t>(lightData_.size());
 
-        flushPendingTextureWrites();
+        if (drawData_) {
+            auto &[draws, textures, textureRevision] = *drawData_;
+            draws = draws_;
+            textures.clear();
+            textures.reserve(handleToTextureSlot_.size());
+            for (const auto &[handle, slot]: handleToTextureSlot_) {
+                textures.push_back({handle, slot});
+            }
+            ++textureRevision;
+        }
 
         if (!objectData_.empty() && objectBuffer_) {
             objectBuffer_->uploadData(objectData_.data(), sizeof(GPUObjectData) * objectData_.size());
         }
-        if (!lightData_.empty() && lightBuffer_) {
-            lightBuffer_->uploadData(lightData_.data(), sizeof(Light) * lightData_.size());
+        if (lightBuffer_) {
+            LightBufferLayout lightBufferData{};
+            lightBufferData.count = lightCount_;
+            for (size_t i = 0; i < lightData_.size(); ++i) {
+                lightBufferData.lights[i] = lightData_[i];
+            }
+            lightBuffer_->uploadData(&lightBufferData, sizeof(LightBufferLayout));
         }
 
         // Retry next frame if any meshes were still uploading to the GPU.
         if (anyUnready) dirty_ = true;
-    }
-
-    void CullingStage::flushPendingTextureWrites() {
-        if (pendingTextureWrites_.empty()) return;
-
-        // Recompute pImageInfo pointers — pendingTextureInfos_ may have reallocated
-        // during the entity loop as new textures were appended, invalidating any
-        // &back() pointers captured during registerTexture().
-        for (size_t i = 0; i < pendingTextureWrites_.size(); ++i) {
-            pendingTextureWrites_[i].pImageInfo = &pendingTextureInfos_[i];
-        }
-        vkUpdateDescriptorSets(device_.device(),
-            static_cast<uint32_t>(pendingTextureWrites_.size()),
-            pendingTextureWrites_.data(), 0, nullptr);
-        pendingTextureWrites_.clear();
-        pendingTextureInfos_.clear();
     }
 
     uint32_t CullingStage::registerTexture(AssetHandle<Texture> handle) {
@@ -165,9 +144,6 @@ namespace Atlas {
 
         auto [it, inserted] = handleToTextureSlot_.emplace(handle, nextTextureSlot_);
         if (!inserted) {
-            // Already registered — re-register the bindless slot so GPUTexture::updateBindlessSlot
-            // can refresh the descriptor if the texture finished uploading since last rebuild.
-            handle.registerBindlessSlot(device_.device(), bindlessTextureSet_, 0, it->second);
             return it->second;
         }
 
@@ -177,21 +153,6 @@ namespace Atlas {
 
         const uint32_t slot = nextTextureSlot_++;
         it->second = slot;
-
-        // Register the slot so GPUTexture::updateBindlessSlot() writes the real descriptor
-        // once the upload completes (the immediate write below uses a default if not ready yet).
-        handle.registerBindlessSlot(device_.device(), bindlessTextureSet_, 0, slot);
-
-        pendingTextureInfos_.push_back(handle.descriptor());
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = bindlessTextureSet_;
-        write.dstBinding = 0;
-        write.dstArrayElement = slot;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.descriptorCount = 1;
-        write.pImageInfo = nullptr; // fixed up in flushPendingTextureWrites()
-        pendingTextureWrites_.push_back(write);
 
         return slot;
     }

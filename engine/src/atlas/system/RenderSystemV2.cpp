@@ -11,14 +11,9 @@ namespace Atlas {
     RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer, AssetManager &assets) : device(device) {
         createGlobalUbo();
 
-        // Create CullingStage first so we can pass a reference to GeometryStage.
-        // Both are owned by the render graph once moved in.
-        auto culling  = std::make_unique<CullingStage>(device, assets);
-        auto geometry = std::make_unique<GeometryStage>(device, assets, *globalSetLayout, *culling);
-
         auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
-            .addStage(std::move(culling))
-            .addStage(std::move(geometry))
+            .addStage<CullingStage>(device, assets)
+            .addStage<GeometryStage>(device, assets, *globalSetLayout)
             .addStage<PostProcessPass>(device, *globalSetLayout)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)

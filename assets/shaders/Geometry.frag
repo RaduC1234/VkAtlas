@@ -65,14 +65,30 @@ layout(std430, set = 3, binding = 0) readonly buffer ObjectDataBuffer {
 } objectData;
 
 layout(std430, set = 4, binding = 0) readonly buffer LightBuffer {
+    uint  count;    // actual light count written by CPU
+    uint  _pad[3];  // 16-byte alignment
     Light lights[];
 } lightData;
 
 const float PI             = 3.14159265359;
 const float INV_PI         = 0.31830988618;
 const float EPSILON        = 1e-5;
-const uint  MAX_LIGHTS     = 5u;
 const float MAX_REFLECTION_LOD = 5.0;
+
+// Light types (Light.type)
+const uint LIGHT_TYPE_POINT       = 1u;
+const uint LIGHT_TYPE_SPOT        = 2u;
+const uint LIGHT_TYPE_DIRECTIONAL = 3u;
+const uint LIGHT_TYPE_RECT        = 4u;
+
+const uint MAX_LIGHT_COUNT = 256u; // lights
+
+const float STERADIANS_PER_SPHERE = 4.0 * PI;        // sr, full sphere solid angle
+const float POINT_LM_TO_CD        = 1.0 / STERADIANS_PER_SPHERE; // cd/lm, isotropic point light
+const float SPOT_LM_TO_CD         = INV_PI;          // cd/lm, UE5 spot light normalization
+const float DIRECTIONAL_LUX_SCALE = 1.0;             // lux/lux, no lm-to-cd conversion
+const float RECT_AREA_LIGHT_SCALE = 1.0;             // imported ATLAS rect radiance scale
+const float SCENE_SCALE           = 1.0 / 10000.0;   // m^2/cm^2, UE5 cm distances to engine m distances
 
 // Debug view modes (debugData.viewMode)
 const uint VIEWMODE_LIT   = 0u;
@@ -140,21 +156,27 @@ vec3 evaluateLight(Light light, vec3 N, vec3 V, vec3 worldPos, vec3 albedo, floa
     vec3  L;
     float atten;
 
-    if (light.type == 1u) {
+    if (light.type == LIGHT_TYPE_DIRECTIONAL) {
         L     = normalize(-light.direction);
         atten = 1.0;
     } else {
         vec3  toLight = light.position - worldPos;
         float dist    = length(toLight);
         L             = toLight / max(dist, EPSILON);
-        atten         = distanceAttenuation(dist, light.range);
-        if (light.type == 2u)
-        atten *= spotAttenuation(L, normalize(light.direction),
-        light.innerConeAngle, light.outerConeAngle);
+        if (light.type == LIGHT_TYPE_RECT) {
+            vec3  lightNormal = normalize(light.direction);
+            float rectArea    = max(light.width * light.height, EPSILON);
+            float cosLight    = max(dot(lightNormal, -L), 0.0);
+            atten             = rectArea * cosLight / max(dist * dist, EPSILON);
+        } else {
+            atten = distanceAttenuation(dist, light.range);
+            if (light.type == LIGHT_TYPE_SPOT)
+            atten *= spotAttenuation(L, normalize(light.direction),
+            light.innerConeAngle, light.outerConeAngle);
+        }
     }
 
-    float NdotL = dot(N, L);
-    if (NdotL <= 0.0) return vec3(0.0);
+    float NdotL = max(dot(N, L), 0.0);
 
     float NdotV = max(dot(N, V), EPSILON);
     vec3  H     = normalize(V + L);
@@ -169,14 +191,19 @@ vec3 evaluateLight(Light light, vec3 N, vec3 V, vec3 worldPos, vec3 albedo, floa
     vec3 kD       = (1.0 - F) * (1.0 - metallic);
     vec3 diffuse  = kD * albedo * INV_PI;
 
-    float intensityScale = (light.type == 0u) ? (1.0 / (4.0 * PI))
-    : (light.type == 2u) ? (1.0 / PI)
-    : 1.0;
+    float intensityScale;
+    if (light.type == LIGHT_TYPE_POINT)
+        intensityScale = POINT_LM_TO_CD * SCENE_SCALE;
+    else if (light.type == LIGHT_TYPE_SPOT)
+        intensityScale = SPOT_LM_TO_CD * SCENE_SCALE;
+    else if (light.type == LIGHT_TYPE_RECT)
+        intensityScale = RECT_AREA_LIGHT_SCALE;
+    else
+        intensityScale = DIRECTIONAL_LUX_SCALE * SCENE_SCALE;
 
     vec3 radiance = light.color * light.intensity * intensityScale * atten;
     return (diffuse + specular) * radiance * NdotL;
 }
-
 
 // ---- IBL — diffuse + prefiltered specular, no BRDF LUT ----
 
@@ -262,7 +289,8 @@ void main() {
         vec3 ambientClay = evaluateIBL(N, V, clayAlbedo, clayMetallic, clayRoughness, clayF0, ao);
 
         vec3 LoClay = vec3(0.0);
-        for (uint i = 0u; i < MAX_LIGHTS; i++)
+        uint lightCount = min(lightData.count, MAX_LIGHT_COUNT);
+        for (uint i = 0u; i < lightCount; i++)
         LoClay += evaluateLight(lightData.lights[i], N, V, fragWorldPos,
         clayAlbedo, clayMetallic, clayRoughness, clayF0);
 
@@ -275,7 +303,8 @@ void main() {
     vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao);
 
     vec3 Lo = vec3(0.0);
-    for (uint i = 0u; i < MAX_LIGHTS; i++)
+    uint lightCount = min(lightData.count, MAX_LIGHT_COUNT);
+    for (uint i = 0u; i < lightCount; i++)
     Lo += evaluateLight(lightData.lights[i], N, V, fragWorldPos,
     albedo, metallic, roughness, F0);
 

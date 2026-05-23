@@ -101,6 +101,15 @@ namespace Atlas {
 
                     ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buf)});
                 }
+
+                if (output.kind() == IRenderStage::Resource::Kind::CPU_BUFFER) {
+                    CPUBuffer buf = CPUBuffer::Builder()
+                        .setSize(output.size)
+                        .setInitialData(output.cpuInitial)
+                        .build();
+
+                    ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buf)});
+                }
             }
         }
 

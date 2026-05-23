@@ -69,6 +69,19 @@ namespace Atlas {
         rootPath_ = path;
     }
 
+    std::vector<std::string> AssetManager::importerExtensions() const {
+        std::vector<std::string> extensions;
+        extensions.reserve(accessors_.size());
+
+        for (const auto &[extension, accessor]: accessors_) {
+            (void)accessor;
+            extensions.push_back(extension);
+        }
+
+        std::ranges::sort(extensions);
+        return extensions;
+    }
+
     void AssetManager::update() {
         constexpr size_t maxGpuCreatesPerFrame = 1;
 

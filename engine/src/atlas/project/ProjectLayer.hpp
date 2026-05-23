@@ -19,6 +19,8 @@ namespace Atlas {
 
         Renderer &getRenderer() { return renderer; }
         const Renderer &getRenderer() const { return renderer; }
+        AssetManager &assetManager() { return assets; }
+        const AssetManager &assetManager() const { return assets; }
         ProjectInstance &project() { return projectInstance; }
         const ProjectInstance &project() const { return projectInstance; }
 

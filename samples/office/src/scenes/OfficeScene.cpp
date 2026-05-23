@@ -18,16 +18,12 @@ namespace Atlas {
         camera.camera.setViewYXZ(cameraTransform.translation, cameraTransform.rotation);
         camera.camera.setPerspectiveProjection(glm::radians(50.f), renderer.getAspectRatio(), 0.1f, 200.f);
 
-        auto skybox      = assets.store<Cubemap>("cubemaps/citrus_orchard_road_puresky_2k.hdr");
-        auto irradiance  = assets.store<Cubemap>("cubemaps/citrus_orchard_road_puresky_2k_irradiance.ktx2");
-        auto prefilter   = assets.store<Cubemap>("cubemaps/citrus_orchard_road_puresky_2k_prefilter.ktx2");
-        auto skyboxEntity = registry.create();
-        auto &skyboxComponent = registry.emplace<SkyboxComponent>(skyboxEntity);
-        skyboxComponent.skyboxHandle     = skybox;
-        skyboxComponent.irradianceHandle = irradiance;
-        skyboxComponent.prefilterHandle  = prefilter;
+        auto skybox = assets.store<Cubemap>("cubemaps/citrus_orchard_road_puresky_2k.hdr");
+        auto irradiance = assets.store<Cubemap>("cubemaps/citrus_orchard_road_puresky_2k_irradiance.ktx2");
+        auto prefilter = assets.store<Cubemap>("cubemaps/citrus_orchard_road_puresky_2k_prefilter.ktx2");
 
-        assets.importAsync("models/Cabinet_with_light3.glb", registry);
+        auto skyboxEntity = registry.create();
+        registry.emplace<SkyboxComponent>(skyboxEntity, skybox, irradiance, prefilter);
 
         renderSystem->build(registry, debugData().viewMode);
     }
