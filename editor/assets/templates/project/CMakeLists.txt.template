@@ -1,0 +1,45 @@
+cmake_minimum_required(VERSION 3.22)
+
+project("{{PROJECT_NAME}}")
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+if (NOT TARGET atlas_engine)
+    message(FATAL_ERROR "Atlas project modules must be added from the Atlas root CMake project so atlas_engine exists.")
+endif ()
+
+file(GLOB_RECURSE ATLAS_PROJECT_SCRIPT_SOURCES CONFIGURE_DEPENDS
+        "src/scripts/*.cpp"
+        "src/scripts/*.hpp"
+)
+
+add_library({{PROJECT_TARGET}} SHARED
+        src/core/{{PROJECT_CLASS}}.cpp
+        ${ATLAS_PROJECT_SCRIPT_SOURCES}
+)
+
+target_link_libraries({{PROJECT_TARGET}} PRIVATE atlas_engine)
+
+target_include_directories({{PROJECT_TARGET}} PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+set_target_properties({{PROJECT_TARGET}} PROPERTIES
+        PREFIX ""
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/modules"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/modules"
+        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/build/modules"
+)
+
+foreach (OUTPUT_CONFIG DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
+    set_target_properties({{PROJECT_TARGET}} PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY_${OUTPUT_CONFIG} "${CMAKE_CURRENT_SOURCE_DIR}/build/modules"
+            LIBRARY_OUTPUT_DIRECTORY_${OUTPUT_CONFIG} "${CMAKE_CURRENT_SOURCE_DIR}/build/modules"
+            ARCHIVE_OUTPUT_DIRECTORY_${OUTPUT_CONFIG} "${CMAKE_CURRENT_SOURCE_DIR}/build/modules"
+    )
+endforeach ()
+
+if (COMMAND atlas_copy_runtime_dependencies)
+    atlas_copy_runtime_dependencies({{PROJECT_TARGET}} "$<TARGET_FILE_DIR:{{PROJECT_TARGET}}>")
+endif ()

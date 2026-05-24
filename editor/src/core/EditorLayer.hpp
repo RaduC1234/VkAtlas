@@ -24,9 +24,11 @@ namespace Atlas::Editor {
     private:
         void handleShortcuts();
         void drawMenuBar();
+        void createNewProject();
         void importIntoLevel();
         void undo();
         void redo();
+        static std::string buildProjectFilter();
         static std::string buildImportFilter(const std::vector<std::string> &extensions);
         static bool hasSupportedExtension(const std::string &path, const std::vector<std::string> &extensions);
 

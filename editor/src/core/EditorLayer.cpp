@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <exception>
 #include <filesystem>
 
 #include <imgui.h>
 
 #include "core/Log.hpp"
+#include "project/ProjectCreator.hpp"
 #include "utils/FileDialogs.hpp"
 
 namespace Atlas::Editor {
@@ -70,6 +72,12 @@ namespace Atlas::Editor {
         }
 
         if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("New Project...")) {
+                createNewProject();
+            }
+
+            ImGui::Separator();
+
             if (ImGui::MenuItem("Import into Level...")) {
                 importIntoLevel();
             }
@@ -129,6 +137,31 @@ namespace Atlas::Editor {
         }
     }
 
+    void EditorLayer::createNewProject() {
+        const std::string filter = buildProjectFilter();
+        const std::string manifestPath = FileDialogs::saveFile(filter.c_str());
+
+        if (manifestPath.empty()) {
+            return;
+        }
+
+        try {
+            ProjectCreateInfo info{};
+            info.manifestPath = manifestPath;
+            info.name = ProjectCreator::defaultNameForPath(info.manifestPath);
+
+            const ProjectCreateResult result = ProjectCreator::create(info);
+            AT_INFO(
+                "EditorLayer: created project '{}' at '{}'. Build '{}' before loading the project.",
+                result.name,
+                result.rootPath.string(),
+                result.targetName
+            );
+        } catch (const std::exception &error) {
+            AT_ERROR("EditorLayer: failed to create project: {}", error.what());
+        }
+    }
+
     void EditorLayer::importIntoLevel() {
         auto *scene = projectLayer.project().scene();
         if (!scene) {
@@ -150,6 +183,23 @@ namespace Atlas::Editor {
         }
 
         projectLayer.assetManager().importAsync(path, scene->getRegistry());
+    }
+
+    std::string EditorLayer::buildProjectFilter() {
+        std::string filter = "Atlas Project Manifest (*.atlas.json)";
+        filter.push_back('\0');
+        filter += "*.atlas.json";
+        filter.push_back('\0');
+        filter += "JSON Files (*.json)";
+        filter.push_back('\0');
+        filter += "*.json";
+        filter.push_back('\0');
+        filter += "All Files (*.*)";
+        filter.push_back('\0');
+        filter += "*.*";
+        filter.push_back('\0');
+        filter.push_back('\0');
+        return filter;
     }
 
     std::string EditorLayer::buildImportFilter(const std::vector<std::string> &extensions) {

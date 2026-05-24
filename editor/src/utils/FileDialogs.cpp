@@ -1,7 +1,7 @@
 #include "FileDialogs.hpp"
 
 #ifndef ATLAS_PLATFORM_ANDROID
-    #ifdef ATLAS_PLATFORM_DESKTOP
+    #ifdef ATLAS_PLATFORM_WINDOWS
         #include <windows.h>
         #include <commdlg.h>
     #endif
@@ -12,6 +12,7 @@
     #endif
 #endif // ATLAS_PLATFORM_ANDROID
 
+#include <cstring>
 #include <stdexcept>
 #include <string>
 
@@ -108,7 +109,7 @@ std::string FileDialogs::saveFile(const char *filter) {
     ofn.nFilterIndex = 1;
     ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
 
-    ofn.lpstrDefExt = strchr(filter, '\0') + 1;
+    ofn.lpstrDefExt = std::strchr(filter, '\0') + 1;
 
     if (GetSaveFileNameA(&ofn) == TRUE)
         return ofn.lpstrFile;

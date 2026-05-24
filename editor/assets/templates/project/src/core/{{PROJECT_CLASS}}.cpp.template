@@ -1,0 +1,13 @@
+/* AUTO GENERATED FILE. DO NOT MODIFY */
+#include <Atlas.hpp>
+
+class {{PROJECT_CLASS}} final : public Atlas::IProjectModule {
+public:
+    Atlas::IScene *createScene(Atlas::ProjectContext &context, const std::string &sceneId) override {
+        (void)context;
+        AT_WARN("{{PROJECT_CLASS}}: level '{}' should be loaded by the editor/runtime level scene", sceneId);
+        return nullptr;
+    }
+};
+
+ATLAS_PROJECT({{PROJECT_CLASS}})
