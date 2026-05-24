@@ -14,15 +14,8 @@ namespace Atlas::Editor {
         ImGui::Begin("Render Settings", &visible);
         ImGui::Text("FPS: %.1f", ImGui::GetIO().Framerate);
 
-        auto *scene = projectLayer.project().scene();
-        if (!scene) {
-            ImGui::Text("No scene loaded");
-            ImGui::End();
-            return;
-        }
-
-        auto &debugData = scene->debugData();
-        int mode = static_cast<int>(debugData.viewMode);
+        auto &rendererSettings = projectLayer.getRenderer().settings();
+        int mode = static_cast<int>(rendererSettings.viewMode);
         constexpr const char *modes[] = {
             "Lit",
             "Unlit",
@@ -31,9 +24,17 @@ namespace Atlas::Editor {
         };
 
         if (ImGui::Combo("Mode", &mode, modes, IM_ARRAYSIZE(modes))) {
-            debugData.viewMode = static_cast<ViewMode>(mode);
+            rendererSettings.viewMode = static_cast<ViewMode>(mode);
         }
 
+        auto *scene = projectLayer.project().scene();
+        if (!scene) {
+            ImGui::Text("No scene loaded");
+            ImGui::End();
+            return;
+        }
+
+        auto &debugData = scene->debugData();
         ImGui::DragFloat("Exposure", &debugData.exposureMultiplier, 0.01f, 0.0f, 10.0f);
         ImGui::DragFloat("Irradiance", &debugData.irradianceMultiplier, 0.01f, 0.0f, 10.0f);
 

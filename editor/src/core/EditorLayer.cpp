@@ -15,8 +15,8 @@ namespace Atlas::Editor {
 
     void EditorLayer::onAttach() {
         hierarchyPanel = std::make_shared<HierarchyPanel>(projectLayer, selectedEntity);
-        inspectorPanel = std::make_shared<InspectorPanel>(projectLayer, selectedEntity);
-        viewportPanel = std::make_shared<ViewportPanel>(projectLayer);
+        inspectorPanel = std::make_shared<InspectorPanel>(projectLayer, selectedEntity, history);
+        viewportPanel = std::make_shared<ViewportPanel>(projectLayer, selectedEntity, history);
         renderSettingsPanel = std::make_shared<RenderSettingsPanel>(projectLayer);
     }
 
@@ -31,11 +31,37 @@ namespace Atlas::Editor {
     }
 
     void EditorLayer::onImGuiRender() {
+        handleShortcuts();
         drawMenuBar();
         if (renderSettingsPanel) renderSettingsPanel->onImGuiRender();
         if (viewportPanel) viewportPanel->onImGuiRender();
         if (hierarchyPanel) hierarchyPanel->onImGuiRender();
         if (inspectorPanel) inspectorPanel->onImGuiRender();
+    }
+
+    void EditorLayer::handleShortcuts() {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) {
+            return;
+        }
+
+        const ImGuiIO &io = ImGui::GetIO();
+        if (!io.KeyCtrl) {
+            return;
+        }
+        if (ImGui::IsAnyItemActive()) {
+            return;
+        }
+
+        if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) {
+            if (io.KeyShift) {
+                redo();
+            } else {
+                undo();
+            }
+        } else if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) {
+            redo();
+        }
     }
 
     void EditorLayer::drawMenuBar() {
@@ -46,6 +72,17 @@ namespace Atlas::Editor {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("Import into Level...")) {
                 importIntoLevel();
+            }
+
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Edit")) {
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, history.canUndo())) {
+                undo();
+            }
+            if (ImGui::MenuItem("Redo", "Ctrl+Y / Ctrl+Shift+Z", false, history.canRedo())) {
+                redo();
             }
 
             ImGui::EndMenu();
@@ -78,6 +115,18 @@ namespace Atlas::Editor {
         }
 
         ImGui::EndMainMenuBar();
+    }
+
+    void EditorLayer::undo() {
+        if (auto *scene = projectLayer.project().scene()) {
+            history.undo(scene->getRegistry());
+        }
+    }
+
+    void EditorLayer::redo() {
+        if (auto *scene = projectLayer.project().scene()) {
+            history.redo(scene->getRegistry());
+        }
     }
 
     void EditorLayer::importIntoLevel() {

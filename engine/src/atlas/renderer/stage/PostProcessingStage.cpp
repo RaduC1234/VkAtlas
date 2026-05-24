@@ -213,8 +213,8 @@ namespace Atlas {
 
         pipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/PostProcess.vert.spv",
-            "shaders/PostProcess.frag.spv",
+            "##engine/shaders/PostProcess.vert.spv",
+            "##engine/shaders/PostProcess.frag.spv",
             cfg
         );
     }

@@ -70,8 +70,8 @@ namespace Atlas {
         void connectSignals(entt::registry &registry);
         void rebuild(entt::registry &registry);
         uint32_t registerTexture(AssetHandle<Texture> handle);
-        void markDirty(entt::registry &reg, entt::entity e) {
-            if (reg.any_of<ModelComponent, LightComponent>(e)) dirty_ = true;
+        void markDirty(entt::registry &, entt::entity) {
+            dirty_ = true;
         }
 
         AssetManager &assets_;

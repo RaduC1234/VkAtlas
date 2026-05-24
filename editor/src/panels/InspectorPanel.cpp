@@ -6,8 +6,8 @@
 #include <imgui.h>
 
 namespace Atlas::Editor {
-    InspectorPanel::InspectorPanel(ProjectLayer &projectLayer, entt::entity &selectedEntity)
-        : projectLayer(projectLayer), selectedEntity(selectedEntity) {
+    InspectorPanel::InspectorPanel(ProjectLayer &projectLayer, entt::entity &selectedEntity, EditorHistory &history)
+        : projectLayer(projectLayer), selectedEntity(selectedEntity), history(history) {
     }
 
     void InspectorPanel::onImGuiRender() {
@@ -67,12 +67,23 @@ namespace Atlas::Editor {
     void InspectorPanel::drawEntityHeader(entt::registry &registry) {
         if (!registry.all_of<SceneNodeComponent>(selectedEntity)) return;
         auto &node = registry.get<SceneNodeComponent>(selectedEntity);
+        const std::string before = node.name;
 
         char buf[256]{};
         std::strncpy(buf, node.name.c_str(), sizeof(buf) - 1);
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::InputText("##entityname", buf, sizeof(buf)))
+        if (ImGui::InputText("##entityname", buf, sizeof(buf))) {
+            if (!nameEditActive) {
+                nameEditActive = true;
+                nameEditBefore = before;
+            }
             node.name = buf;
+        }
+
+        if (nameEditActive && ImGui::IsItemDeactivatedAfterEdit()) {
+            history.recordName(selectedEntity, nameEditBefore, node.name);
+            nameEditActive = false;
+        }
     }
 
     bool InspectorPanel::beginComponent(const char *label) {
@@ -101,16 +112,45 @@ namespace Atlas::Editor {
         if (!beginComponent("Transform")) return;
 
         auto &t = registry.get<TransformComponent>(selectedEntity);
+        const TransformComponent before = t;
         glm::vec3 degrees = glm::degrees(t.rotation);
         bool changed = false;
+        bool finished = false;
 
         changed |= ImGui::DragFloat3("Position", glm::value_ptr(t.translation), 0.01f);
+        if (ImGui::IsItemActivated() && !transformEditActive) {
+            transformEditActive = true;
+            transformEditBefore = before;
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
+
         changed |= ImGui::DragFloat3("Rotation", glm::value_ptr(degrees), 0.1f);
+        if (ImGui::IsItemActivated() && !transformEditActive) {
+            transformEditActive = true;
+            transformEditBefore = before;
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
+
         changed |= ImGui::DragFloat3("Scale", glm::value_ptr(t.scale), 0.01f);
+        if (ImGui::IsItemActivated() && !transformEditActive) {
+            transformEditActive = true;
+            transformEditBefore = before;
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
 
         if (changed) {
+            if (!transformEditActive) {
+                transformEditActive = true;
+                transformEditBefore = before;
+            }
+
             t.rotation = glm::radians(degrees);
             registry.patch<TransformComponent>(selectedEntity);
+        }
+
+        if (transformEditActive && finished) {
+            history.recordTransform(selectedEntity, transformEditBefore, t);
+            transformEditActive = false;
         }
 
         endComponent();
@@ -130,20 +170,47 @@ namespace Atlas::Editor {
         if (!beginComponent("Material")) return;
 
         auto &mat = registry.get<MaterialComponent>(selectedEntity);
+        const MaterialComponent before = mat;
         bool changed = false;
+        bool finished = false;
 
-        changed |= ImGui::ColorEdit4("Base Color", glm::value_ptr(mat.baseColor));
+        bool itemChanged = ImGui::ColorEdit4("Base Color", glm::value_ptr(mat.baseColor));
+        changed |= itemChanged;
+        if (ImGui::IsItemActivated() && !materialEditActive) {
+            materialEditActive = true;
+            materialEditBefore = before;
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
 
-        changed |= ImGui::Checkbox("Alpha Masked", &mat.alphaMasked);
-        changed |= ImGui::Checkbox("Transparent", &mat.transparent);
+        itemChanged = ImGui::Checkbox("Alpha Masked", &mat.alphaMasked);
+        changed |= itemChanged;
+        if (itemChanged && !materialEditActive) {
+            materialEditActive = true;
+            materialEditBefore = before;
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit() || (itemChanged && !ImGui::IsItemActive());
+
+        itemChanged = ImGui::Checkbox("Transparent", &mat.transparent);
+        changed |= itemChanged;
+        if (itemChanged && !materialEditActive) {
+            materialEditActive = true;
+            materialEditBefore = before;
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit() || (itemChanged && !ImGui::IsItemActive());
 
         ImGui::LabelText("Albedo", "%s", mat.albedoTexture.valid() ? "Assigned" : "None");
         ImGui::LabelText("Normal", "%s", mat.normalMap.valid() ? "Assigned" : "None");
         ImGui::LabelText("Metallic/Roughness", "%s", mat.metallicRoughnessMap.valid() ? "Assigned" : "None");
         ImGui::LabelText("AO", "%s", mat.ambientOcclusion.valid() ? "Assigned" : "None");
 
-        if (changed)
+        if (changed) {
             registry.patch<MaterialComponent>(selectedEntity);
+        }
+
+        if (materialEditActive && finished) {
+            history.recordMaterial(selectedEntity, materialEditBefore, mat);
+            materialEditActive = false;
+        }
 
         endComponent();
     }
@@ -152,34 +219,82 @@ namespace Atlas::Editor {
         if (!beginComponent("Light")) return;
 
         auto &light = registry.get<LightComponent>(selectedEntity);
+        const LightComponent before = light;
         bool changed = false;
+        bool finished = false;
 
         constexpr const char *types[] = {"Unknown", "Point", "Spot", "Directional", "Rectangle"};
         int type = static_cast<int>(light.type);
         if (ImGui::Combo("Type", &type, types, IM_ARRAYSIZE(types))) {
+            if (!lightEditActive) {
+                lightEditActive = true;
+                lightEditBefore = before;
+            }
             light.type = static_cast<LightType>(type);
             changed = true;
+            finished = true;
         }
 
-        changed |= ImGui::ColorEdit3("Color", glm::value_ptr(light.color));
-        changed |= ImGui::DragFloat("Intensity", &light.intensity, 0.1f, 0.f, 100.f);
-        changed |= ImGui::DragFloat("Range", &light.range, 1.0f, 0.f, 500.f);
+        bool itemChanged = ImGui::ColorEdit3("Color", glm::value_ptr(light.color));
+        changed |= itemChanged;
+        if (ImGui::IsItemActivated() && !lightEditActive) {
+            lightEditActive = true;
+            lightEditBefore = before;
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
+
+        itemChanged = ImGui::DragFloat("Intensity", &light.intensity, 0.1f, 0.f, 100.f);
+        changed |= itemChanged;
+        if (ImGui::IsItemActivated() && !lightEditActive) {
+            lightEditActive = true;
+            lightEditBefore = before;
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
+
+        itemChanged = ImGui::DragFloat("Range", &light.range, 1.0f, 0.f, 500.f);
+        changed |= itemChanged;
+        if (ImGui::IsItemActivated() && !lightEditActive) {
+            lightEditActive = true;
+            lightEditBefore = before;
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
 
         if (light.type == LightType::SPOT) {
             float inner = glm::degrees(light.innerConeAngle);
             float outer = glm::degrees(light.outerConeAngle);
             if (ImGui::DragFloat("Inner Angle", &inner, 0.1f, 0.f, 90.f)) {
+                if (!lightEditActive) {
+                    lightEditActive = true;
+                    lightEditBefore = before;
+                }
                 light.innerConeAngle = glm::radians(inner);
                 changed = true;
             }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+
             if (ImGui::DragFloat("Outer Angle", &outer, 0.1f, 0.f, 90.f)) {
+                if (!lightEditActive) {
+                    lightEditActive = true;
+                    lightEditBefore = before;
+                }
                 light.outerConeAngle = glm::radians(outer);
                 changed = true;
             }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
         }
 
-        if (changed)
+        if (changed) {
+            if (!lightEditActive) {
+                lightEditActive = true;
+                lightEditBefore = before;
+            }
             registry.patch<LightComponent>(selectedEntity);
+        }
+
+        if (lightEditActive && finished) {
+            history.recordLight(selectedEntity, lightEditBefore, light);
+            lightEditActive = false;
+        }
 
         endComponent();
     }

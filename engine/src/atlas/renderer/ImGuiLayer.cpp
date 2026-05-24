@@ -102,8 +102,7 @@ namespace Atlas {
         return addTexture(VK_NULL_HANDLE, imageView, imageLayout);
     }
 
-    VkDescriptorSet ImGuiLayer::addTexture(VkSampler sampler, VkImageView imageView,
-                                           VkImageLayout imageLayout) {
+    VkDescriptorSet ImGuiLayer::addTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout) {
         return ImGui_ImplVulkan_AddTexture(sampler, imageView, imageLayout);
     }
 
@@ -112,7 +111,7 @@ namespace Atlas {
     }
 
     void ImGuiLayer::createDescriptorPool(Device &device) {
-        const std::array<VkDescriptorPoolSize, 3> poolSizes{
+        constexpr std::array<VkDescriptorPoolSize, 3> poolSizes{
             {
                 {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
                 {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},

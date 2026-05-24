@@ -65,6 +65,33 @@ namespace Atlas {
         return glm::vec4(glm::normalize(glm::cross(helper, n)), 1.0f);
     }
 
+    glm::vec3 objMaterialDiffuseColor(const tinyobj::material_t &material) {
+        glm::vec3 diffuse{
+            material.diffuse[0],
+            material.diffuse[1],
+            material.diffuse[2]
+        };
+
+        if (!std::isfinite(diffuse.x) || !std::isfinite(diffuse.y) || !std::isfinite(diffuse.z)) {
+            return glm::vec3(0.8f);
+        }
+
+        diffuse = glm::max(diffuse, glm::vec3(0.0f));
+        if (glm::dot(diffuse, diffuse) <= OBJ_EPSILON && material.diffuse_texname.empty()) {
+            return glm::vec3(0.8f);
+        }
+
+        return glm::min(diffuse, glm::vec3(1.0f));
+    }
+
+    float objMaterialAlpha(const tinyobj::material_t &material) {
+        if (!std::isfinite(material.dissolve)) {
+            return 1.0f;
+        }
+
+        return glm::clamp(material.dissolve, 0.0f, 1.0f);
+    }
+
     void objFinalizeVertexFrames(std::vector<Mesh::Vertex> &vertices, const std::vector<uint32_t> &indices) {
         if (vertices.empty()) {
             return;
@@ -414,7 +441,7 @@ namespace Atlas {
                 MaterialComponent material{};
                 if (bucket.materialId >= 0 && bucket.materialId < static_cast<int>(materials.size())) {
                     const auto &mat = materials[bucket.materialId];
-                    material.baseColor = glm::vec4(mat.diffuse[0], mat.diffuse[1], mat.diffuse[2], mat.dissolve);
+                    material.baseColor = glm::vec4(objMaterialDiffuseColor(mat), objMaterialAlpha(mat));
                     material.albedoTexture = albedoHandles[bucket.materialId];
                     material.normalMap = normalHandles[bucket.materialId];
                     material.metallicRoughnessMap = metallicHandles[bucket.materialId] ? metallicHandles[bucket.materialId] : roughnessHandles[bucket.materialId];

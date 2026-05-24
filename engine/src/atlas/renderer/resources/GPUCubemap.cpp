@@ -16,7 +16,8 @@ namespace Atlas {
             pixels.insert(
                 pixels.end(),
                 reinterpret_cast<const std::byte *>(white),
-                reinterpret_cast<const std::byte *>(white) + 4);
+                reinterpret_cast<const std::byte *>(white) + 4
+            );
         }
 
         std::vector<VkBufferImageCopy> copyRegions;
@@ -236,5 +237,4 @@ namespace Atlas {
             static_cast<uint32_t>(copyRegions_.size()),
             copyRegions_.data());
     }
-
 } // namespace Atlas

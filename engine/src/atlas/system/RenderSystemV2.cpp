@@ -8,7 +8,7 @@
 #include "renderer/stage/PostProcessingStage.hpp"
 
 namespace Atlas {
-    RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer, AssetManager &assets) : device(device) {
+    RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer, AssetManager &assets) : device(device), renderer(renderer) {
         createGlobalUbo();
 
         auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
@@ -31,7 +31,7 @@ namespace Atlas {
     }
 
     void RenderSystemV2::build(entt::registry &registry) {
-        build(registry, ViewMode::LIT);
+        build(registry, renderer.settings().viewMode);
     }
 
     void RenderSystemV2::build(entt::registry &registry, ViewMode viewMode) {
@@ -39,12 +39,16 @@ namespace Atlas {
     }
 
     void RenderSystemV2::render(const FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData) const {
+        const ViewMode viewMode = renderer.settings().viewMode;
+
         GlobalUbo globalUbo{};
         globalUbo.cameraData = cameraData;
-        globalUbo.debugData  = debugData;
+        globalUbo.debugData.irradianceMultiplier = debugData.irradianceMultiplier;
+        globalUbo.debugData.exposureMultiplier = debugData.exposureMultiplier;
+        globalUbo.debugData.viewMode = viewMode;
         globalUboBuffers[frameContext.index]->uploadData(&globalUbo, sizeof(GlobalUbo));
 
-        renderGraphs.at(debugData.viewMode)->render(frameContext, globalDescriptorSets[frameContext.index]);
+        renderGraphs.at(viewMode)->render(frameContext, globalDescriptorSets[frameContext.index]);
     }
 
     void RenderSystemV2::createGlobalUbo() {

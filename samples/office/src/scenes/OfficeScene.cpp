@@ -25,7 +25,7 @@ namespace Atlas {
         auto skyboxEntity = registry.create();
         registry.emplace<SkyboxComponent>(skyboxEntity, skybox, irradiance, prefilter);
 
-        renderSystem->build(registry, debugData().viewMode);
+        renderSystem->build(registry);
     }
 
     void OfficeScene::onUpdate(float deltaTime) {
@@ -39,7 +39,7 @@ namespace Atlas {
             });
         }
 
-        renderSystem->build(registry, debugData().viewMode);
+        renderSystem->build(registry);
     }
 
     void OfficeScene::onRender(FrameContext frameContext) {

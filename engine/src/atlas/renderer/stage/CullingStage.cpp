@@ -50,6 +50,8 @@ namespace Atlas {
         registry.on_update<LightComponent>().connect<&CullingStage::markDirty>(this);
 
         registry.on_update<TransformComponent>().connect<&CullingStage::markDirty>(this);
+        registry.on_construct<MaterialComponent>().connect<&CullingStage::markDirty>(this);
+        registry.on_destroy<MaterialComponent>().connect<&CullingStage::markDirty>(this);
         registry.on_update<MaterialComponent>().connect<&CullingStage::markDirty>(this);
     }
 

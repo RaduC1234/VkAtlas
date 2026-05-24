@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "EditorHistory.hpp"
 #include "panels/HierarchyPanel.hpp"
 #include "panels/InspectorPanel.hpp"
 #include "panels/ViewportPanel.hpp"
@@ -21,13 +22,17 @@ namespace Atlas::Editor {
         void onImGuiRender() override;
 
     private:
+        void handleShortcuts();
         void drawMenuBar();
         void importIntoLevel();
+        void undo();
+        void redo();
         static std::string buildImportFilter(const std::vector<std::string> &extensions);
         static bool hasSupportedExtension(const std::string &path, const std::vector<std::string> &extensions);
 
         ProjectLayer &projectLayer;
         entt::entity selectedEntity = entt::null;
+        EditorHistory history;
 
         std::shared_ptr<HierarchyPanel> hierarchyPanel;
         std::shared_ptr<InspectorPanel> inspectorPanel;

@@ -200,6 +200,39 @@ namespace Atlas {
             return filePath;
         }
 
+        if (path.starts_with("##")) {
+            const size_t separator = path.find_first_of("/\\", 2);
+            const std::string mount = separator == std::string::npos
+                                          ? path.substr(2)
+                                          : path.substr(2, separator - 2);
+            const std::filesystem::path relativePath = separator == std::string::npos
+                                                           ? std::filesystem::path{}
+                                                           : std::filesystem::path(path.substr(separator + 1));
+
+            std::filesystem::path assetDirectory;
+            if (mount == "engine") {
+                assetDirectory = "engine";
+            } else if (mount == "editor") {
+                assetDirectory = "editor";
+            } else {
+                AT_ERROR("Unknown asset namespace: {}", mount);
+                return std::filesystem::current_path() / filePath;
+            }
+
+            for (auto directory = std::filesystem::current_path(); !directory.empty(); directory = directory.parent_path()) {
+                const auto candidateRoot = directory / assetDirectory / "assets";
+                if (std::filesystem::exists(candidateRoot)) {
+                    return candidateRoot / relativePath;
+                }
+
+                if (directory == directory.root_path()) {
+                    break;
+                }
+            }
+
+            return std::filesystem::current_path() / assetDirectory / "assets" / relativePath;
+        }
+
         for (auto directory = std::filesystem::current_path(); !directory.empty(); directory = directory.parent_path()) {
             const auto candidate = directory / "assets" / filePath;
             if (std::filesystem::exists(candidate)) {

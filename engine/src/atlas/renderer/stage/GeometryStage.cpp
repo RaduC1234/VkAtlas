@@ -363,8 +363,8 @@ namespace Atlas {
 
         opaquePipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/Geometry.vert.spv",
-            "shaders/Geometry.frag.spv",
+            "##engine/shaders/Geometry.vert.spv",
+            "##engine/shaders/Geometry.frag.spv",
             cfg
         );
 
@@ -379,8 +379,8 @@ namespace Atlas {
 
         skyboxPipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/Skybox.vert.spv",
-            "shaders/Skybox.frag.spv",
+            "##engine/shaders/Skybox.vert.spv",
+            "##engine/shaders/Skybox.frag.spv",
             cfg2
         );
     }

@@ -600,11 +600,11 @@ namespace Atlas {
 
         pipeline = std::make_unique<Pipeline>(
             device,
-            "shaders/PathTracing.rgen.spv",
-            "shaders/PathTracing.rmiss.spv",
-            "shaders/PathTracing.rchit.spv",
-            "shaders/PathTracing.rahit.spv",
-            "shaders/PathTracingShadow.rmiss.spv",
+            "##engine/shaders/PathTracing.rgen.spv",
+            "##engine/shaders/PathTracing.rmiss.spv",
+            "##engine/shaders/PathTracing.rchit.spv",
+            "##engine/shaders/PathTracing.rahit.spv",
+            "##engine/shaders/PathTracingShadow.rmiss.spv",
             configInfo
         );
     }

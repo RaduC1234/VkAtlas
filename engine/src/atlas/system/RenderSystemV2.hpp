@@ -16,8 +16,6 @@ namespace Atlas {
     struct alignas(16) DebugData {
         float irradianceMultiplier{1.0f};
         float exposureMultiplier{1.0f};
-        ViewMode viewMode{ViewMode::LIT};
-        float _padding{};
     };
 
     class RenderSystemV2 {
@@ -36,9 +34,16 @@ namespace Atlas {
         void render(FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData) const;
 
     private:
+        struct alignas(16) ShaderDebugData {
+            float irradianceMultiplier{1.0f};
+            float exposureMultiplier{1.0f};
+            ViewMode viewMode{ViewMode::LIT};
+            float _padding{};
+        };
+
         struct alignas(16) GlobalUbo {
             Camera::Data cameraData{};
-            DebugData debugData{};
+            ShaderDebugData debugData{};
         };
 
         void createGlobalUbo();
@@ -46,6 +51,7 @@ namespace Atlas {
         bool pathTracingCameraChanged(const Camera::Data &cameraData) const;
 
         Device &device;
+        Renderer &renderer;
         std::unordered_map<ViewMode, std::shared_ptr<RenderGraph> > renderGraphs;
 
         // Set 0 - Global descriptors (UBO)
