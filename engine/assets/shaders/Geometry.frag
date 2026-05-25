@@ -216,14 +216,14 @@ vec3 evaluateIBL(vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, v
     //irradiance       = irradiance / (irradiance + vec3(1.0));
     vec3 kS_ibl      = F_SchlickRoughness(NdotV, F0, roughness);
     vec3 kD_ibl      = (1.0 - kS_ibl) * (1.0 - metallic);
-    vec3 diffuse_ibl = kD_ibl * irradiance * albedo * ao * ubo.debugData.iblMultiplier * 0.01;
+    vec3 diffuse_ibl = kD_ibl * irradiance * albedo * ao * ubo.debugData.iblMultiplier;
 
-    // specular — prefilter sample only, BRDF LUT correction done in post process
+    // Specular IBL fallback. Do not sample brdfLUT here unless a real LUT is
+    // bound; the default white texture overdrives every material toward white.
     vec3  R              = reflect(-V, N);
     float lod            = roughness * MAX_REFLECTION_LOD;
     vec3  prefilteredColor = textureLod(prefilterMap, R, lod).rgb;
-    vec2 brdf = texture(brdfLUT, vec2(NdotV, roughness)).rg;
-    vec3 specular_ibl = prefilteredColor * (F0 * brdf.x + brdf.y) * ubo.debugData.iblMultiplier * 0.01;
+    vec3 specular_ibl = prefilteredColor * kS_ibl * ubo.debugData.iblMultiplier;
 
     return diffuse_ibl + specular_ibl;
 }
@@ -247,8 +247,10 @@ void main() {
     GPUObjectData obj = objectData.objects[fragObjectIndex];
 
     // albedo
-    vec4 albedoSample = texture(textures[nonuniformEXT(obj.textureIndices.x)], fragTexCoord);
-    vec3 albedo       = albedoSample.rgb * obj.baseColor.rgb;
+    vec4 albedoSample = obj.textureIndices.x == 0u
+        ? vec4(1.0)
+        : texture(textures[nonuniformEXT(obj.textureIndices.x)], fragTexCoord);
+    vec3 albedo       = albedoSample.rgb * obj.baseColor.rgb * fragColor;
     float alpha       = albedoSample.a * obj.baseColor.a;
 
     // Debug: unlit mode outputs base color only (no lighting/IBL)
@@ -257,9 +259,13 @@ void main() {
         return;
     }
 
+    vec3 V  = normalize(ubo.cameraData.position - fragWorldPos);
+
     // normal
-    vec3 N = perturbNormal(normalize(fragNormal), fragTangent,
+    vec3 baseNormal = normalize(fragNormal);
+    vec3 N = perturbNormal(baseNormal, fragTangent,
     fragTexCoord, obj.textureIndices.y);
+    N = faceforward(N, -V, N);
 
     // metallic-roughness
     float metallic  = 0.0;
@@ -275,8 +281,6 @@ void main() {
     float ao = 1.0;
     if (obj.textureIndices.w != 0u)
     ao = texture(textures[nonuniformEXT(obj.textureIndices.w)], fragTexCoord).r;
-
-    vec3 V  = normalize(ubo.cameraData.position - fragWorldPos);
 
     // Debug: clay mode overrides material to a neutral, readable look
     if (ubo.debugData.viewMode == VIEWMODE_CLAY) {

@@ -242,6 +242,10 @@ namespace Atlas {
         };
 
         for (auto entity: registry.view<TransformComponent, ModelComponent, MaterialComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
             if (cpuObjects.size() >= MAX_OBJECTS) {
                 AT_WARN("PathTracingStage: MAX_OBJECTS reached");
                 break;
@@ -298,6 +302,10 @@ namespace Atlas {
         }
 
         for (auto entity: registry.view<TransformComponent, LightComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
             if (cpuLights.size() >= MAX_LIGHTS) {
                 AT_WARN("PathTracingStage: MAX_LIGHTS reached");
                 break;
@@ -770,6 +778,10 @@ namespace Atlas {
         uint64_t seed = 0;
         uint32_t modelCount = 0;
         for (auto entity: registry.view<TransformComponent, ModelComponent, MaterialComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
             const auto &transform = registry.get<TransformComponent>(entity);
             const auto &model = registry.get<ModelComponent>(entity);
             const auto &material = registry.get<MaterialComponent>(entity);
@@ -803,6 +815,10 @@ namespace Atlas {
 
         uint32_t lightCountForSignature = 0;
         for (auto entity: registry.view<TransformComponent, LightComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
             const auto &transform = registry.get<TransformComponent>(entity);
             const auto &light = registry.get<LightComponent>(entity);
 

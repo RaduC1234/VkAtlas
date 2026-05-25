@@ -49,6 +49,17 @@ namespace Atlas::Editor {
         push(std::move(entry));
     }
 
+    void EditorHistory::recordVisibility(entt::entity entity, const bool before, const bool after) {
+        if (before == after) {
+            return;
+        }
+
+        Entry entry{.type = EntryType::Visibility, .entity = entity};
+        entry.beforeVisible = before;
+        entry.afterVisible = after;
+        push(std::move(entry));
+    }
+
     void EditorHistory::recordTransform(entt::entity entity, const TransformComponent &before, const TransformComponent &after) {
         if (before.translation == after.translation && before.rotation == after.rotation && before.scale == after.scale) {
             return;
@@ -112,6 +123,13 @@ namespace Atlas::Editor {
             case EntryType::Name:
                 if (auto *node = registry.try_get<SceneNodeComponent>(entry.entity)) {
                     node->name = redo ? entry.afterName : entry.beforeName;
+                }
+                break;
+            case EntryType::Visibility:
+                if (registry.all_of<SceneNodeComponent>(entry.entity)) {
+                    registry.patch<SceneNodeComponent>(entry.entity, [&](auto &node) {
+                        node.visible = redo ? entry.afterVisible : entry.beforeVisible;
+                    });
                 }
                 break;
             case EntryType::Transform:

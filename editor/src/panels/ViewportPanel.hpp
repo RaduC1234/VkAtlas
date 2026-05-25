@@ -6,6 +6,8 @@
 #include <Atlas.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include <string>
+
 struct ImVec2;
 
 namespace Atlas::Editor {
@@ -20,6 +22,11 @@ namespace Atlas::Editor {
         World
     };
 
+    enum class ViewportPrimitive {
+        Cube,
+        Square
+    };
+
     class ViewportPanel final : public Panel {
     public:
         ViewportPanel(ProjectLayer &projectLayer, entt::entity &selectedEntity, EditorHistory &history);
@@ -30,8 +37,15 @@ namespace Atlas::Editor {
 
     private:
         void renderToolbar();
+        void renderContextMenu(bool viewportHovered);
+        void renderLightBillboards(ImVec2 imageMin, ImVec2 imageSize);
         void renderObjectGizmo(ImVec2 imageMin, ImVec2 imageSize, bool viewportHovered);
         void renderViewGizmo(ImVec2 imageMin, ImVec2 imageSize);
+        void addPrimitive(ViewportPrimitive primitive);
+        AssetHandle<Mesh> primitiveMesh(ViewportPrimitive primitive);
+        AssetHandle<Texture> primitiveWhiteTexture();
+        glm::vec3 primitiveSpawnPosition();
+        std::string primitiveName(ViewportPrimitive primitive);
         void createViewportTexture();
         void destroyViewportTexture();
 

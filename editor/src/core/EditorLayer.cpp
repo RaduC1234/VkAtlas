@@ -16,7 +16,7 @@ namespace Atlas::Editor {
     }
 
     void EditorLayer::onAttach() {
-        hierarchyPanel = std::make_shared<HierarchyPanel>(projectLayer, selectedEntity);
+        hierarchyPanel = std::make_shared<HierarchyPanel>(projectLayer, selectedEntity, history);
         inspectorPanel = std::make_shared<InspectorPanel>(projectLayer, selectedEntity, history);
         viewportPanel = std::make_shared<ViewportPanel>(projectLayer, selectedEntity, history);
         renderSettingsPanel = std::make_shared<RenderSettingsPanel>(projectLayer);
@@ -48,10 +48,18 @@ namespace Atlas::Editor {
         }
 
         const ImGuiIO &io = ImGui::GetIO();
-        if (!io.KeyCtrl) {
+        if (ImGui::IsAnyItemActive()) {
             return;
         }
-        if (ImGui::IsAnyItemActive()) {
+
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+            if (hierarchyPanel) {
+                hierarchyPanel->deleteSelected();
+            }
+            return;
+        }
+
+        if (!io.KeyCtrl) {
             return;
         }
 

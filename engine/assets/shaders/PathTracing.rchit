@@ -237,10 +237,13 @@ void main() {
     if (dot(N, geometricNormal) < 0.0) N = -N;
 
     vec2 uv = v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z;
+    vec3 vertexColor = v0.color * bary.x + v1.color * bary.y + v2.color * bary.z;
 
     // ---- Sample textures ----
-    vec4 albedoSample = texture(textures[nonuniformEXT(obj.textureIndices.x)], uv);
-    vec3 albedo       = albedoSample.rgb * obj.baseColor.rgb;
+    vec4 albedoSample = obj.textureIndices.x == 0u
+        ? vec4(1.0)
+        : texture(textures[nonuniformEXT(obj.textureIndices.x)], uv);
+    vec3 albedo       = albedoSample.rgb * obj.baseColor.rgb * vertexColor;
 
     float metallic  = 0.0;
     float roughness = 0.5;

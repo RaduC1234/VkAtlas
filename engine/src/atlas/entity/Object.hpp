@@ -9,6 +9,8 @@ namespace Atlas {
         std::string name;
         entt::entity parent = entt::null;
         std::vector<entt::entity> children;
+        bool visible = true;
+        bool deleted = false;
     };
 
     struct TransformComponent {

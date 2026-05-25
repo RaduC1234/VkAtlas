@@ -16,6 +16,7 @@ namespace Atlas::Editor {
         void redo(entt::registry &registry);
 
         void recordName(entt::entity entity, std::string before, std::string after);
+        void recordVisibility(entt::entity entity, bool before, bool after);
         void recordTransform(entt::entity entity, const TransformComponent &before, const TransformComponent &after);
         void recordMaterial(entt::entity entity, const MaterialComponent &before, const MaterialComponent &after);
         void recordLight(entt::entity entity, const LightComponent &before, const LightComponent &after);
@@ -23,6 +24,7 @@ namespace Atlas::Editor {
     private:
         enum class EntryType {
             Name,
+            Visibility,
             Transform,
             Material,
             Light
@@ -33,6 +35,8 @@ namespace Atlas::Editor {
             entt::entity entity = entt::null;
             std::string beforeName;
             std::string afterName;
+            bool beforeVisible = true;
+            bool afterVisible = true;
             TransformComponent beforeTransform;
             TransformComponent afterTransform;
             MaterialComponent beforeMaterial;

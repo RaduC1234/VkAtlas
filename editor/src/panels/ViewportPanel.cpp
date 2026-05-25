@@ -5,6 +5,11 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include <imgui.h>
 #include <glm/gtc/constants.hpp>
@@ -65,6 +70,138 @@ namespace Atlas::Editor::ViewportGizmo {
 
         return ImViewGuizmo::TRANSFORM_TRANSLATE;
     }
+
+    bool projectWorldToViewport(
+        const glm::mat4 &viewProjection,
+        const glm::vec3 &worldPosition,
+        const ImVec2 imageMin,
+        const ImVec2 imageSize,
+        ImVec2 &screenPosition) {
+        const glm::vec4 clip = viewProjection * glm::vec4(worldPosition, 1.0f);
+        if (clip.w <= 0.0001f) {
+            return false;
+        }
+
+        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < 0.0f || ndc.z > 1.0f) {
+            return false;
+        }
+
+        screenPosition = {
+            imageMin.x + (ndc.x * 0.5f + 0.5f) * imageSize.x,
+            imageMin.y + (ndc.y * 0.5f + 0.5f) * imageSize.y
+        };
+        return true;
+    }
+
+    bool projectBillboardCorner(
+        const glm::mat4 &viewProjection,
+        const glm::vec3 &worldPosition,
+        const ImVec2 imageMin,
+        const ImVec2 imageSize,
+        ImVec2 &screenPosition) {
+        const glm::vec4 clip = viewProjection * glm::vec4(worldPosition, 1.0f);
+        if (clip.w <= 0.0001f) {
+            return false;
+        }
+
+        const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+        screenPosition = {
+            imageMin.x + (ndc.x * 0.5f + 0.5f) * imageSize.x,
+            imageMin.y + (ndc.y * 0.5f + 0.5f) * imageSize.y
+        };
+        return true;
+    }
+
+    ImU32 lightIconColor(const LightComponent &light) {
+        const glm::vec3 color = glm::clamp(light.color, glm::vec3{0.0f}, glm::vec3{1.0f});
+        return IM_COL32(
+            static_cast<int>(color.r * 255.0f),
+            static_cast<int>(color.g * 255.0f),
+            static_cast<int>(color.b * 255.0f),
+            255);
+    }
+
+    const char *lightTypeName(const LightType type) {
+        switch (type) {
+            case LightType::POINT:
+                return "Point Light";
+            case LightType::SPOT:
+                return "Spot Light";
+            case LightType::DIRECTIONAL:
+                return "Directional Light";
+            case LightType::RECT:
+                return "Rect Light";
+            case LightType::UNKNOWN:
+                break;
+        }
+
+        return "Light";
+    }
+
+    bool projectLightBillboard(
+        const Camera::Data &cameraData,
+        const glm::vec3 &worldPosition,
+        const ImVec2 imageMin,
+        const ImVec2 imageSize,
+        const float worldSize,
+        std::array<ImVec2, 4> &corners,
+        ImVec2 &screenCenter) {
+        const glm::mat4 inverseView = glm::inverse(cameraData.view);
+        const glm::vec3 cameraRight = glm::normalize(glm::vec3(inverseView * glm::vec4(1.0f, 0.0f, 0.0f, 0.0f)));
+        const glm::vec3 cameraUp = glm::normalize(glm::vec3(inverseView * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f)));
+        const float halfSize = worldSize * 0.5f;
+
+        const std::array<glm::vec3, 4> worldCorners = {
+            worldPosition + (-cameraRight + cameraUp) * halfSize,
+            worldPosition + ( cameraRight + cameraUp) * halfSize,
+            worldPosition + ( cameraRight - cameraUp) * halfSize,
+            worldPosition + (-cameraRight - cameraUp) * halfSize,
+        };
+
+        for (size_t i = 0; i < worldCorners.size(); ++i) {
+            if (!projectBillboardCorner(cameraData.viewProjection, worldCorners[i], imageMin, imageSize, corners[i])) {
+                return false;
+            }
+        }
+
+        return projectWorldToViewport(cameraData.viewProjection, worldPosition, imageMin, imageSize, screenCenter);
+    }
+
+    void drawLightBillboardIcon(ImDrawList &drawList, const std::array<ImVec2, 4> &corners, const ImVec2 center, const LightComponent &light, const bool selected) {
+        const ImU32 fill = lightIconColor(light);
+        const ImU32 fillDim = (fill & IM_COL32(255, 255, 255, 0)) | IM_COL32(0, 0, 0, 130);
+        const ImU32 outline = selected ? IM_COL32(255, 255, 255, 255) : IM_COL32(20, 20, 20, 230);
+        const float thickness = selected ? 2.2f : 1.4f;
+
+        drawList.AddQuadFilled(
+            ImVec2(corners[0].x + 1.0f, corners[0].y + 1.0f),
+            ImVec2(corners[1].x + 1.0f, corners[1].y + 1.0f),
+            ImVec2(corners[2].x + 1.0f, corners[2].y + 1.0f),
+            ImVec2(corners[3].x + 1.0f, corners[3].y + 1.0f),
+            IM_COL32(0, 0, 0, 95));
+        drawList.AddQuadFilled(corners[0], corners[1], corners[2], corners[3], fillDim);
+        drawList.AddQuad(corners[0], corners[1], corners[2], corners[3], outline, thickness);
+
+        const ImVec2 top((corners[0].x + corners[1].x) * 0.5f, (corners[0].y + corners[1].y) * 0.5f);
+        const ImVec2 right((corners[1].x + corners[2].x) * 0.5f, (corners[1].y + corners[2].y) * 0.5f);
+        const ImVec2 bottom((corners[2].x + corners[3].x) * 0.5f, (corners[2].y + corners[3].y) * 0.5f);
+        const ImVec2 left((corners[3].x + corners[0].x) * 0.5f, (corners[3].y + corners[0].y) * 0.5f);
+
+        drawList.AddQuadFilled(top, right, bottom, left, fill);
+        drawList.AddQuad(top, right, bottom, left, outline, 1.2f);
+
+        if (light.type == LightType::SPOT) {
+            drawList.AddLine(top, bottom, outline, 1.4f);
+            drawList.AddLine(left, right, outline, 1.4f);
+        } else if (light.type == LightType::DIRECTIONAL) {
+            drawList.AddLine(left, right, outline, 1.6f);
+            drawList.AddLine(right, top, outline, 1.6f);
+            drawList.AddLine(right, bottom, outline, 1.6f);
+        } else if (light.type == LightType::RECT) {
+            drawList.AddQuad(corners[0], corners[1], corners[2], corners[3], fill, 1.2f);
+        }
+    }
 }
 
 namespace Atlas::Editor {
@@ -108,8 +245,10 @@ namespace Atlas::Editor {
             ImGui::Image((ImTextureID) viewportTexture, size);
             const bool viewportHovered = ImGui::IsItemHovered();
             ImViewGuizmo::BeginFrame();
+            renderLightBillboards(imageMin, size);
             renderObjectGizmo(imageMin, size, viewportHovered);
             renderViewGizmo(imageMin, size);
+            renderContextMenu(viewportHovered && !ImViewGuizmo::IsOver() && !ImViewGuizmo::IsUsing());
         }
 
         ImGui::End();
@@ -179,6 +318,109 @@ namespace Atlas::Editor {
         ImGui::PopStyleVar();
 
         ImGui::EndChild();
+    }
+
+    void ViewportPanel::renderContextMenu(const bool viewportHovered) {
+        if (viewportHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+            ImGui::OpenPopup("##viewport_context_menu");
+        }
+
+        if (ImGui::BeginPopup("##viewport_context_menu")) {
+            if (ImGui::BeginMenu("Add")) {
+                if (ImGui::MenuItem("Cube")) {
+                    addPrimitive(ViewportPrimitive::Cube);
+                    ImGui::CloseCurrentPopup();
+                }
+
+                if (ImGui::MenuItem("Square")) {
+                    addPrimitive(ViewportPrimitive::Square);
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndMenu();
+            }
+
+            ImGui::EndPopup();
+        }
+    }
+
+    void ViewportPanel::renderLightBillboards(const ImVec2 imageMin, const ImVec2 imageSize) {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) {
+            return;
+        }
+
+        auto &registry = scene->getRegistry();
+        auto cameraView = registry.view<TransformComponent, CameraComponent>();
+        if (cameraView.begin() == cameraView.end()) {
+            return;
+        }
+
+        const entt::entity cameraEntity = *cameraView.begin();
+        const auto cameraData = registry.get<CameraComponent>(cameraEntity).camera.getData();
+        ImDrawList *drawList = ImGui::GetWindowDrawList();
+        const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
+
+        auto lightView = registry.view<TransformComponent, LightComponent>();
+        for (const entt::entity entity: lightView) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
+            const auto &transform = lightView.get<TransformComponent>(entity);
+            const auto &light = lightView.get<LightComponent>(entity);
+
+            std::array<ImVec2, 4> corners{};
+            ImVec2 screenPosition{};
+            const float billboardSize = selectedEntity == entity ? 0.42f : 0.32f;
+            if (!ViewportGizmo::projectLightBillboard(cameraData, transform.translation, imageMin, imageSize, billboardSize, corners, screenPosition)) {
+                continue;
+            }
+
+            ImVec2 hitMin = corners[0];
+            ImVec2 hitMax = corners[0];
+            for (const ImVec2 &corner: corners) {
+                hitMin.x = std::min(hitMin.x, corner.x);
+                hitMin.y = std::min(hitMin.y, corner.y);
+                hitMax.x = std::max(hitMax.x, corner.x);
+                hitMax.y = std::max(hitMax.y, corner.y);
+            }
+
+            const float minHitSize = 14.0f;
+            if (hitMax.x - hitMin.x < minHitSize) {
+                const float expand = (minHitSize - (hitMax.x - hitMin.x)) * 0.5f;
+                hitMin.x -= expand;
+                hitMax.x += expand;
+            }
+            if (hitMax.y - hitMin.y < minHitSize) {
+                const float expand = (minHitSize - (hitMax.y - hitMin.y)) * 0.5f;
+                hitMin.y -= expand;
+                hitMax.y += expand;
+            }
+
+            ImGui::SetCursorScreenPos(hitMin);
+            ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
+            const bool clicked = ImGui::InvisibleButton("light_billboard", ImVec2(hitMax.x - hitMin.x, hitMax.y - hitMin.y));
+            const bool hovered = ImGui::IsItemHovered();
+            ImGui::PopID();
+
+            if (clicked) {
+                selectedEntity = entity;
+            }
+
+            ViewportGizmo::drawLightBillboardIcon(*drawList, corners, screenPosition, light, selectedEntity == entity);
+
+            if (hovered) {
+                if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && !node->name.empty()) {
+                    ImGui::SetTooltip("%s", node->name.c_str());
+                } else {
+                    ImGui::SetTooltip("%s", ViewportGizmo::lightTypeName(light.type));
+                }
+            }
+        }
+
+        ImGui::SetCursorScreenPos(restoreCursor);
+        ImGui::Dummy(ImVec2(0.0f, 0.0f));
     }
 
     void ViewportPanel::renderObjectGizmo(const ImVec2 imageMin, const ImVec2 imageSize, const bool viewportHovered) {
@@ -344,6 +586,167 @@ namespace Atlas::Editor {
         if (ImViewGuizmo::IsOver() || ImViewGuizmo::IsUsing()) {
             ImGui::SetNextFrameWantCaptureMouse(true);
         }
+    }
+
+    void ViewportPanel::addPrimitive(const ViewportPrimitive primitive) {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) {
+            return;
+        }
+
+        auto &registry = scene->getRegistry();
+        const entt::entity entity = registry.create();
+
+        SceneNodeComponent node{};
+        node.name = primitiveName(primitive);
+        registry.emplace<SceneNodeComponent>(entity, std::move(node));
+
+        TransformComponent transform{};
+        transform.translation = primitiveSpawnPosition();
+        registry.emplace<TransformComponent>(entity, transform);
+
+        ModelComponent model{};
+        model.meshHandle = primitiveMesh(primitive);
+        registry.emplace<ModelComponent>(entity, model);
+
+        MaterialComponent material{};
+        material.baseColor = glm::vec4{0.82f, 0.82f, 0.78f, 1.0f};
+        material.albedoTexture = primitiveWhiteTexture();
+        registry.emplace<MaterialComponent>(entity, material);
+
+        selectedEntity = entity;
+    }
+
+    AssetHandle<Mesh> ViewportPanel::primitiveMesh(const ViewportPrimitive primitive) {
+        const auto makeVertex = [](const glm::vec3 position, const glm::vec3 normal, const glm::vec2 uv, const glm::vec4 tangent) {
+            Mesh::Vertex vertex{};
+            vertex.position = position;
+            vertex.color = glm::vec3{1.0f};
+            vertex.normal = normal;
+            vertex.uv = uv;
+            vertex.tangent = tangent;
+            return vertex;
+        };
+
+        std::vector<Mesh::Vertex> vertices;
+        std::vector<uint32_t> indices;
+
+        if (primitive == ViewportPrimitive::Cube) {
+            vertices.reserve(24);
+            indices.reserve(36);
+
+            const auto addFace = [&](const glm::vec3 a, const glm::vec3 b, const glm::vec3 c, const glm::vec3 d, const glm::vec3 normal, const glm::vec4 tangent) {
+                const uint32_t base = static_cast<uint32_t>(vertices.size());
+                vertices.push_back(makeVertex(a, normal, {0.0f, 0.0f}, tangent));
+                vertices.push_back(makeVertex(b, normal, {1.0f, 0.0f}, tangent));
+                vertices.push_back(makeVertex(c, normal, {1.0f, 1.0f}, tangent));
+                vertices.push_back(makeVertex(d, normal, {0.0f, 1.0f}, tangent));
+
+                indices.push_back(base + 0);
+                indices.push_back(base + 1);
+                indices.push_back(base + 2);
+                indices.push_back(base + 0);
+                indices.push_back(base + 2);
+                indices.push_back(base + 3);
+            };
+
+            constexpr float halfExtent = 0.5f;
+            const glm::vec3 left{-halfExtent, 0.0f, 0.0f};
+            const glm::vec3 right{halfExtent, 0.0f, 0.0f};
+            const glm::vec3 bottom{0.0f, -halfExtent, 0.0f};
+            const glm::vec3 top{0.0f, halfExtent, 0.0f};
+            const glm::vec3 back{0.0f, 0.0f, -halfExtent};
+            const glm::vec3 front{0.0f, 0.0f, halfExtent};
+
+            addFace(left + bottom + front, right + bottom + front, right + top + front, left + top + front, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f});
+            addFace(right + bottom + back, left + bottom + back, left + top + back, right + top + back, {0.0f, 0.0f, -1.0f}, {-1.0f, 0.0f, 0.0f, 1.0f});
+            addFace(right + bottom + front, right + bottom + back, right + top + back, right + top + front, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f, 1.0f});
+            addFace(left + bottom + back, left + bottom + front, left + top + front, left + top + back, {-1.0f, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f, 1.0f});
+            addFace(left + top + front, right + top + front, right + top + back, left + top + back, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f});
+            addFace(left + bottom + back, right + bottom + back, right + bottom + front, left + bottom + front, {0.0f, -1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f});
+
+            return projectLayer.assetManager().store<Mesh>(std::make_shared<Mesh>(vertices, indices), "##editor/primitives/cube");
+        }
+
+        vertices.reserve(8);
+        indices.reserve(12);
+        const glm::vec3 topNormal{0.0f, 1.0f, 0.0f};
+        const glm::vec3 bottomNormal{0.0f, -1.0f, 0.0f};
+        const glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
+        vertices.push_back(makeVertex({-0.5f, 0.0f, 0.5f}, topNormal, {0.0f, 0.0f}, tangent));
+        vertices.push_back(makeVertex({0.5f, 0.0f, 0.5f}, topNormal, {1.0f, 0.0f}, tangent));
+        vertices.push_back(makeVertex({0.5f, 0.0f, -0.5f}, topNormal, {1.0f, 1.0f}, tangent));
+        vertices.push_back(makeVertex({-0.5f, 0.0f, -0.5f}, topNormal, {0.0f, 1.0f}, tangent));
+        vertices.push_back(makeVertex({-0.5f, 0.0f, 0.5f}, bottomNormal, {0.0f, 0.0f}, tangent));
+        vertices.push_back(makeVertex({-0.5f, 0.0f, -0.5f}, bottomNormal, {0.0f, 1.0f}, tangent));
+        vertices.push_back(makeVertex({0.5f, 0.0f, -0.5f}, bottomNormal, {1.0f, 1.0f}, tangent));
+        vertices.push_back(makeVertex({0.5f, 0.0f, 0.5f}, bottomNormal, {1.0f, 0.0f}, tangent));
+        indices = {0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7};
+
+        return projectLayer.assetManager().store<Mesh>(std::make_shared<Mesh>(vertices, indices), "##editor/primitives/square_twosided");
+    }
+
+    AssetHandle<Texture> ViewportPanel::primitiveWhiteTexture() {
+        return projectLayer.assetManager().store<Texture>(Texture::default_(), "##editor/primitives/white");
+    }
+
+    glm::vec3 ViewportPanel::primitiveSpawnPosition() {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) {
+            return glm::vec3{0.0f};
+        }
+
+        auto view = scene->getRegistry().view<TransformComponent, CameraComponent>();
+        if (view.begin() == view.end()) {
+            return glm::vec3{0.0f};
+        }
+
+        const entt::entity cameraEntity = *view.begin();
+        const auto &transform = view.get<TransformComponent>(cameraEntity);
+        const float pitch = transform.rotation.x;
+        const float yaw = transform.rotation.y;
+        const glm::vec3 forward = glm::normalize(glm::vec3{
+            std::cos(pitch) * std::sin(yaw),
+            -std::sin(pitch),
+            std::cos(pitch) * std::cos(yaw)
+        });
+
+        return transform.translation + forward * 3.0f;
+    }
+
+    std::string ViewportPanel::primitiveName(const ViewportPrimitive primitive) {
+        auto *scene = projectLayer.project().scene();
+        const char *baseName = primitive == ViewportPrimitive::Cube ? "Cube" : "Square";
+        if (!scene) {
+            return baseName;
+        }
+
+        auto &registry = scene->getRegistry();
+        auto nameExists = [&](const std::string &name) {
+            for (const entt::entity entity: registry.view<SceneNodeComponent>()) {
+                const auto &node = registry.get<SceneNodeComponent>(entity);
+                if (!node.deleted && node.name == name) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        if (!nameExists(baseName)) {
+            return baseName;
+        }
+
+        char suffix[8]{};
+        for (uint32_t index = 1; index < 1000; ++index) {
+            std::snprintf(suffix, sizeof(suffix), ".%03u", index);
+            std::string candidate = std::string(baseName) + suffix;
+            if (!nameExists(candidate)) {
+                return candidate;
+            }
+        }
+
+        return std::string(baseName) + ".999";
     }
 
     void ViewportPanel::createViewportTexture() {

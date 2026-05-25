@@ -49,6 +49,7 @@ namespace Atlas {
         registry.on_destroy<LightComponent>().connect<&CullingStage::markDirty>(this);
         registry.on_update<LightComponent>().connect<&CullingStage::markDirty>(this);
 
+        registry.on_update<SceneNodeComponent>().connect<&CullingStage::markDirty>(this);
         registry.on_update<TransformComponent>().connect<&CullingStage::markDirty>(this);
         registry.on_construct<MaterialComponent>().connect<&CullingStage::markDirty>(this);
         registry.on_destroy<MaterialComponent>().connect<&CullingStage::markDirty>(this);
@@ -63,6 +64,10 @@ namespace Atlas {
         bool anyUnready = false;
 
         for (auto entity: registry.view<TransformComponent, MaterialComponent, ModelComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
             auto &transform = registry.get<TransformComponent>(entity);
             auto &material  = registry.get<MaterialComponent>(entity);
             auto &model     = registry.get<ModelComponent>(entity);
@@ -93,6 +98,10 @@ namespace Atlas {
         }
 
         for (auto entity: registry.view<TransformComponent, LightComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
             if (lightData_.size() >= MAX_LIGHTS) {
                 AT_WARN("CullingStage: MAX_LIGHTS reached");
                 break;

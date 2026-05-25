@@ -48,7 +48,9 @@ void main() {
         vec3 bary = vec3(1.0 - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
         vec2 uv = v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z;
 
-        float alpha = texture(textures[nonuniformEXT(obj.textureIndices.x)], uv).a * obj.baseColor.a;
+        float alpha = obj.textureIndices.x == 0u
+            ? obj.baseColor.a
+            : texture(textures[nonuniformEXT(obj.textureIndices.x)], uv).a * obj.baseColor.a;
         if (alpha < 0.5) {
             ignoreIntersectionEXT;
             return;
