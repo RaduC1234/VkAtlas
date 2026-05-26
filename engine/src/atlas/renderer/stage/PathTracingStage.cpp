@@ -180,17 +180,31 @@ namespace Atlas {
         cameraDestroyConnection = registry.on_destroy<CameraComponent>().connect<&PathTracingStage::onCameraDestroyed>(*this);
 
         auto skyboxView = registry.view<SkyboxComponent>();
-        if (skyboxView.empty()) {
+        entt::entity activeSkybox = entt::null;
+        uint32_t activeSkyboxCount = 0;
+        for (const entt::entity entity: skyboxView) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
+            if (activeSkybox == entt::null) {
+                activeSkybox = entity;
+            }
+            ++activeSkyboxCount;
+        }
+
+        if (activeSkybox == entt::null) {
             if (envHandle.valid() || envReady) {
                 envHandle = {};
                 envReady = false;
                 updateDescriptorSet();
+                reset();
             }
         } else {
-            if (skyboxView.size() > 1) {
+            if (activeSkyboxCount > 1) {
                 AT_WARN("PathTracingStage: multiple skyboxes detected, using the first one");
             }
-            const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
+            const auto &skybox = registry.get<SkyboxComponent>(activeSkybox);
             const bool skyboxReady = skybox.skyboxHandle.valid() && skybox.skyboxHandle.isReady();
             const bool updateEnvironment =
                 skybox.skyboxHandle != envHandle ||
@@ -200,6 +214,7 @@ namespace Atlas {
                 envHandle = skybox.skyboxHandle;
                 envReady = skyboxReady;
                 updateDescriptorSet();
+                reset();
             }
         }
 

@@ -321,7 +321,7 @@ namespace Atlas::Editor {
     }
 
     void ViewportPanel::renderContextMenu(const bool viewportHovered) {
-        if (viewportHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        if (viewportHovered && ImGui::Shortcut(ImGuiMod_Shift | ImGuiKey_A)) {
             ImGui::OpenPopup("##viewport_context_menu");
         }
 
@@ -335,6 +335,35 @@ namespace Atlas::Editor {
                 if (ImGui::MenuItem("Square")) {
                     addPrimitive(ViewportPrimitive::Square);
                     ImGui::CloseCurrentPopup();
+                }
+
+                if (ImGui::MenuItem("Sphere")) {
+                    addPrimitive(ViewportPrimitive::Sphere);
+                    ImGui::CloseCurrentPopup();
+                }
+
+                if (ImGui::BeginMenu("Lights")) {
+                    if (ImGui::MenuItem("Point")) {
+                        addLight(LightType::POINT);
+                        ImGui::CloseCurrentPopup();
+                    }
+
+                    if (ImGui::MenuItem("Spot")) {
+                        addLight(LightType::SPOT);
+                        ImGui::CloseCurrentPopup();
+                    }
+
+                    if (ImGui::MenuItem("Directional")) {
+                        addLight(LightType::DIRECTIONAL);
+                        ImGui::CloseCurrentPopup();
+                    }
+
+                    if (ImGui::MenuItem("Rectangle")) {
+                        addLight(LightType::RECT);
+                        ImGui::CloseCurrentPopup();
+                    }
+
+                    ImGui::EndMenu();
                 }
 
                 ImGui::EndMenu();
@@ -617,6 +646,34 @@ namespace Atlas::Editor {
         selectedEntity = entity;
     }
 
+    void ViewportPanel::addLight(const LightType type) {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) {
+            return;
+        }
+
+        auto &registry = scene->getRegistry();
+        const entt::entity entity = registry.create();
+
+        SceneNodeComponent node{};
+        node.name = lightName(type);
+        registry.emplace<SceneNodeComponent>(entity, std::move(node));
+
+        TransformComponent transform{};
+        transform.translation = primitiveSpawnPosition();
+        registry.emplace<TransformComponent>(entity, transform);
+
+        LightComponent light{};
+        light.type = type;
+        if (type == LightType::RECT) {
+            light.width = 1.0f;
+            light.height = 1.0f;
+        }
+        registry.emplace<LightComponent>(entity, light);
+
+        selectedEntity = entity;
+    }
+
     AssetHandle<Mesh> ViewportPanel::primitiveMesh(const ViewportPrimitive primitive) {
         const auto makeVertex = [](const glm::vec3 position, const glm::vec3 normal, const glm::vec2 uv, const glm::vec4 tangent) {
             Mesh::Vertex vertex{};
@@ -668,6 +725,52 @@ namespace Atlas::Editor {
             return projectLayer.assetManager().store<Mesh>(std::make_shared<Mesh>(vertices, indices), "##editor/primitives/cube");
         }
 
+        if (primitive == ViewportPrimitive::Sphere) {
+            constexpr uint32_t segments = 32;
+            constexpr uint32_t rings = 16;
+            constexpr float radius = 0.5f;
+
+            vertices.reserve((segments + 1) * (rings + 1));
+            indices.reserve(segments * rings * 6);
+
+            for (uint32_t ring = 0; ring <= rings; ++ring) {
+                const float v = static_cast<float>(ring) / static_cast<float>(rings);
+                const float theta = v * glm::pi<float>();
+                const float sinTheta = std::sin(theta);
+                const float cosTheta = std::cos(theta);
+
+                for (uint32_t segment = 0; segment <= segments; ++segment) {
+                    const float u = static_cast<float>(segment) / static_cast<float>(segments);
+                    const float phi = u * glm::two_pi<float>();
+                    const float sinPhi = std::sin(phi);
+                    const float cosPhi = std::cos(phi);
+
+                    glm::vec3 normal{sinTheta * cosPhi, cosTheta, sinTheta * sinPhi};
+                    glm::vec3 position = normal * radius;
+                    glm::vec4 tangent{-sinPhi, 0.0f, cosPhi, 1.0f};
+                    vertices.push_back(makeVertex(position, normal, {u, v}, tangent));
+                }
+            }
+
+            for (uint32_t ring = 0; ring < rings; ++ring) {
+                for (uint32_t segment = 0; segment < segments; ++segment) {
+                    const uint32_t a = ring * (segments + 1) + segment;
+                    const uint32_t b = (ring + 1) * (segments + 1) + segment;
+                    const uint32_t c = (ring + 1) * (segments + 1) + segment + 1;
+                    const uint32_t d = ring * (segments + 1) + segment + 1;
+
+                    indices.push_back(a);
+                    indices.push_back(d);
+                    indices.push_back(c);
+                    indices.push_back(a);
+                    indices.push_back(c);
+                    indices.push_back(b);
+                }
+            }
+
+            return projectLayer.assetManager().store<Mesh>(std::make_shared<Mesh>(vertices, indices), "##editor/primitives/sphere");
+        }
+
         vertices.reserve(8);
         indices.reserve(12);
         const glm::vec3 topNormal{0.0f, 1.0f, 0.0f};
@@ -716,7 +819,71 @@ namespace Atlas::Editor {
 
     std::string ViewportPanel::primitiveName(const ViewportPrimitive primitive) {
         auto *scene = projectLayer.project().scene();
-        const char *baseName = primitive == ViewportPrimitive::Cube ? "Cube" : "Square";
+        const char *baseName = "Primitive";
+        switch (primitive) {
+            case ViewportPrimitive::Cube:
+                baseName = "Cube";
+                break;
+            case ViewportPrimitive::Square:
+                baseName = "Square";
+                break;
+            case ViewportPrimitive::Sphere:
+                baseName = "Sphere";
+                break;
+        }
+
+        if (!scene) {
+            return baseName;
+        }
+
+        auto &registry = scene->getRegistry();
+        auto nameExists = [&](const std::string &name) {
+            for (const entt::entity entity: registry.view<SceneNodeComponent>()) {
+                const auto &node = registry.get<SceneNodeComponent>(entity);
+                if (!node.deleted && node.name == name) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        if (!nameExists(baseName)) {
+            return baseName;
+        }
+
+        char suffix[8]{};
+        for (uint32_t index = 1; index < 1000; ++index) {
+            std::snprintf(suffix, sizeof(suffix), ".%03u", index);
+            std::string candidate = std::string(baseName) + suffix;
+            if (!nameExists(candidate)) {
+                return candidate;
+            }
+        }
+
+        return std::string(baseName) + ".999";
+    }
+
+    std::string ViewportPanel::lightName(const LightType type) {
+        auto *scene = projectLayer.project().scene();
+        const char *baseName = "Light";
+        switch (type) {
+            case LightType::POINT:
+                baseName = "Point Light";
+                break;
+            case LightType::SPOT:
+                baseName = "Spot Light";
+                break;
+            case LightType::DIRECTIONAL:
+                baseName = "Directional Light";
+                break;
+            case LightType::RECT:
+                baseName = "Rectangle Light";
+                break;
+            case LightType::UNKNOWN:
+                break;
+        }
+
         if (!scene) {
             return baseName;
         }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <entt/entity/registry.hpp>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -91,9 +92,19 @@ namespace Atlas {
         void createPipelines();
         void createDescriptors();
 
+        AssetHandle<Texture> loadRawLookupTexture(const std::string &path, uint32_t width, uint32_t height, VkFormat format);
+        void loadLookupTextures();
         void updateTextureDescriptors();
+        void updateLookupTextureDescriptors();
         void updateSkyboxDescriptors(const SkyboxComponent &skybox);
 
         static VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
+
+        AssetHandle<Texture> ltcMatLUT;
+        AssetHandle<Texture> ltcAmpLUT;
+        AssetHandle<Texture> brdfLUT;
+        bool boundLtcMatReady = false;
+        bool boundLtcAmpReady = false;
+        bool boundBrdfReady = false;
     };
 } // namespace Atlas

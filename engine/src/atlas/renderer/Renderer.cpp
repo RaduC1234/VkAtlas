@@ -42,10 +42,12 @@ namespace Atlas {
         return getCurrentGraphicsCommandBuffer();
     }
 
-    void Renderer::setSceneOutputImage(VkImageView imageView, VkImageLayout imageLayout, VkExtent2D extent) {
+    void Renderer::setSceneOutputImage(VkImage image, VkImageView imageView, VkImageLayout imageLayout, VkFormat format, VkExtent2D extent) {
         sceneOutputImage = {
+            .image = image,
             .imageView = imageView,
             .imageLayout = imageLayout,
+            .format = format,
             .extent = extent
         };
     }

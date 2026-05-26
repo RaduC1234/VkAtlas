@@ -2,6 +2,9 @@
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <cstddef>
+#include <memory>
+
 #include <glm/glm.hpp>
 
 #include "asset/AssetManager.hpp"
@@ -56,29 +59,47 @@ namespace Atlas {
         createFramebuffer();
         createPipelineLayout();
         createPipelines();
+
+        loadLookupTextures();
     }
 
     void GeometryStage::onUpdate(entt::registry &registry) {
         updateTextureDescriptors();
+        updateLookupTextureDescriptors();
 
         auto skyboxView = registry.view<SkyboxComponent>();
-        if (skyboxView.empty()) {
-            AT_WARN("GeometryStage: no skybox entity found, IBL and skybox will be unavailable");
+        entt::entity activeSkybox = entt::null;
+        uint32_t activeSkyboxCount = 0;
+        for (const entt::entity entity: skyboxView) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
+            if (activeSkybox == entt::null) {
+                activeSkybox = entity;
+            }
+            ++activeSkyboxCount;
+        }
+
+        if (activeSkybox == entt::null) {
+            if (skyboxView.empty()) {
+                AT_WARN("GeometryStage: no skybox entity found, using the default environment");
+            }
             if (boundIrradianceHandle.valid() || boundPrefilterHandle.valid() || boundSkyboxHandle.valid()) {
                 updateSkyboxDescriptors({});
             }
         } else {
-            if (skyboxView.size() > 1) {
+            if (activeSkyboxCount > 1) {
                 AT_WARN("GeometryStage: multiple skyboxes detected, using the first one");
             }
-            const auto &skybox = registry.get<SkyboxComponent>(*skyboxView.begin());
+            const auto &skybox = registry.get<SkyboxComponent>(activeSkybox);
             updateSkyboxDescriptors(skybox);
         }
     }
 
     void GeometryStage::begin(VkCommandBuffer cmd) {
         std::array<VkClearValue, 2> clears{};
-        clears[0].color = {0.0151f, 0.0151f, 0.0151f, 1.0f};
+        clears[0].color = {0.050876f, 0.050876f, 0.050876f, 1.0f};
         clears[1].depthStencil = {1.0f, 0};
 
         VkRenderPassBeginInfo info{};
@@ -226,6 +247,9 @@ namespace Atlas {
             .addBinding(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // BRDF LUT
             .setBindingFlags(0, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
             .setBindingFlags(1, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
+            .setBindingFlags(2, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
+            .setBindingFlags(3, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
+            .setBindingFlags(4, VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT)
             .setLayoutFlags(VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT)
             .build();
 
@@ -329,6 +353,45 @@ namespace Atlas {
         vkUpdateDescriptorSets(device.device(), 1, &textureWrite, 0, nullptr);
     }
 
+    AssetHandle<Texture> GeometryStage::loadRawLookupTexture(
+        const std::string &path,
+        const uint32_t width,
+        const uint32_t height,
+        const VkFormat format) {
+        std::vector<std::byte> bytes = AssetManager::loadFileAs<std::byte>(path);
+        const size_t expectedSize = static_cast<size_t>(width) * height * 4u * sizeof(float);
+        if (bytes.size() != expectedSize) {
+            AT_ERROR("GeometryStage: invalid lookup texture '{}' size: got {} bytes, expected {}",
+                     path, bytes.size(), expectedSize);
+            return AssetHandle<Texture>::invalid();
+        }
+
+        return assets.store<Texture>(
+            std::make_shared<Texture>(
+                bytes,
+                width,
+                height,
+                format,
+                VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE),
+            path);
+    }
+
+    void GeometryStage::loadLookupTextures() {
+        constexpr uint32_t ltcLutSize = 64;
+
+        ltcMatLUT = loadRawLookupTexture(
+            "##engine/ltc_mat.lut.bin",
+            ltcLutSize,
+            ltcLutSize,
+            VK_FORMAT_R32G32B32A32_SFLOAT);
+        ltcAmpLUT = loadRawLookupTexture(
+            "##engine/ltc_amp.lut.bin",
+            ltcLutSize,
+            ltcLutSize,
+            VK_FORMAT_R32G32B32A32_SFLOAT);
+        brdfLUT = assets.store<Texture>("##engine/brdf.lut.hdr");
+    }
+
     void GeometryStage::createPipelineLayout() {
         const std::vector layouts = {
             globalSetLayout.getDescriptorSetLayout(),
@@ -425,6 +488,51 @@ namespace Atlas {
         }
 
         boundTextureRevision = textureRevision;
+    }
+
+    void GeometryStage::updateLookupTextureDescriptors() {
+        const bool ltcMatReady = ltcMatLUT.valid() && ltcMatLUT.isReady();
+        const bool ltcAmpReady = ltcAmpLUT.valid() && ltcAmpLUT.isReady();
+        const bool brdfReady = brdfLUT.valid() && brdfLUT.isReady();
+
+        if (ltcMatReady == boundLtcMatReady &&
+            ltcAmpReady == boundLtcAmpReady &&
+            brdfReady == boundBrdfReady) {
+            return;
+        }
+
+        VkDescriptorImageInfo matInfo = ltcMatLUT.valid()
+            ? ltcMatLUT.descriptor()
+            : IGPUResource::default_<GPUTexture>().descriptor();
+        VkDescriptorImageInfo ampInfo = ltcAmpLUT.valid()
+            ? ltcAmpLUT.descriptor()
+            : IGPUResource::default_<GPUTexture>().descriptor();
+        VkDescriptorImageInfo brdfInfo = brdfLUT.valid()
+            ? brdfLUT.descriptor()
+            : IGPUResource::default_<GPUTexture>().descriptor();
+
+        VkWriteDescriptorSet wMat{};
+        wMat.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        wMat.dstSet = environmentSet;
+        wMat.dstBinding = 2;
+        wMat.descriptorCount = 1;
+        wMat.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        wMat.pImageInfo = &matInfo;
+
+        VkWriteDescriptorSet wAmp = wMat;
+        wAmp.dstBinding = 3;
+        wAmp.pImageInfo = &ampInfo;
+
+        VkWriteDescriptorSet wBRDF = wMat;
+        wBRDF.dstBinding = 4;
+        wBRDF.pImageInfo = &brdfInfo;
+
+        const VkWriteDescriptorSet writes[] = {wMat, wAmp, wBRDF};
+        vkUpdateDescriptorSets(device.device(), std::size(writes), writes, 0, nullptr);
+
+        boundLtcMatReady = ltcMatReady;
+        boundLtcAmpReady = ltcAmpReady;
+        boundBrdfReady = brdfReady;
     }
 
     void GeometryStage::updateSkyboxDescriptors(const SkyboxComponent &skybox) {

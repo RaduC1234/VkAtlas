@@ -87,6 +87,8 @@ layout(location = 1) rayPayloadEXT   bool       shadowPayload;
 
 hitAttributeEXT vec2 barycentrics;
 
+const float FIREFLY_CLAMP = 8.0;
+
 // ---- RNG ----
 
 uint pcgHash(uint seed) {
@@ -121,7 +123,7 @@ vec3 fallbackTangent(vec3 N) {
 
 vec3 sanitizeColor(vec3 color) {
     if (hasInvalid(color)) return vec3(0.0);
-    return clamp(color, vec3(0.0), vec3(1.0e6));
+    return clamp(color, vec3(0.0), vec3(20.0));
 }
 
 vec3 offsetRayOrigin(vec3 position, vec3 geometricNormal, vec3 direction) {
@@ -349,7 +351,7 @@ void main() {
         vec3 kD       = (1.0 - F) * (1.0 - metallic);
         vec3 diffuse  = kD * albedo * INV_PI;
 
-        vec3 radiance = light.color.rgb * light.intensity * atten;
+        vec3 radiance = min(light.color.rgb * light.intensity * atten, FIREFLY_CLAMP);
         directLight  += (diffuse + specular) * radiance * NdotL;
     }
 

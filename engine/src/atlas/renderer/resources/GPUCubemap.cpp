@@ -8,15 +8,15 @@
 
 namespace Atlas {
     std::unique_ptr<GPUCubemap> GPUCubemap::createDefault(Device &device) {
-        constexpr uint8_t white[4] = {255, 255, 255, 255};
+        constexpr uint8_t blenderWorld[4] = {64, 64, 64, 255};
 
         std::vector<std::byte> pixels;
         pixels.reserve(4 * 6);
         for (uint32_t face = 0; face < 6; ++face) {
             pixels.insert(
                 pixels.end(),
-                reinterpret_cast<const std::byte *>(white),
-                reinterpret_cast<const std::byte *>(white) + 4
+                reinterpret_cast<const std::byte *>(blenderWorld),
+                reinterpret_cast<const std::byte *>(blenderWorld) + 4
             );
         }
 

@@ -24,7 +24,8 @@ namespace Atlas::Editor {
 
     enum class ViewportPrimitive {
         Cube,
-        Square
+        Square,
+        Sphere
     };
 
     class ViewportPanel final : public Panel {
@@ -42,10 +43,12 @@ namespace Atlas::Editor {
         void renderObjectGizmo(ImVec2 imageMin, ImVec2 imageSize, bool viewportHovered);
         void renderViewGizmo(ImVec2 imageMin, ImVec2 imageSize);
         void addPrimitive(ViewportPrimitive primitive);
+        void addLight(LightType type);
         AssetHandle<Mesh> primitiveMesh(ViewportPrimitive primitive);
         AssetHandle<Texture> primitiveWhiteTexture();
         glm::vec3 primitiveSpawnPosition();
         std::string primitiveName(ViewportPrimitive primitive);
+        std::string lightName(LightType type);
         void createViewportTexture();
         void destroyViewportTexture();
 

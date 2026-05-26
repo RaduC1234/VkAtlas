@@ -42,6 +42,18 @@ namespace Atlas {
             return tex;
         }
 
+        if (ext == ".lut.bin") {
+            constexpr uint32_t w = 64, h = 64;
+            constexpr size_t expected = w * h * 4 * sizeof(float);
+            if (raw.size() != expected) {
+                throw std::runtime_error("Texture::fromFile — unexpected .bin size: " + path);
+            }
+            return fromHDR(
+                {raw.begin(), raw.end()},
+                w, h, addressMode
+            );
+        }
+
         // PNG, JPG, BMP, TGA, etc.
         int w, h, channels;
         unsigned char *pixels = stbi_load_from_memory(

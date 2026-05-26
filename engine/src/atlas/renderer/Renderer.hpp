@@ -37,11 +37,13 @@ namespace Atlas {
         };
 
         struct SceneOutputImage {
+            VkImage image = VK_NULL_HANDLE;
             VkImageView imageView = VK_NULL_HANDLE;
             VkImageLayout imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            VkFormat format = VK_FORMAT_UNDEFINED;
             VkExtent2D extent{};
 
-            bool valid() const { return imageView != VK_NULL_HANDLE; }
+            bool valid() const { return image != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE; }
         };
 
         struct CreateInfo {
@@ -87,7 +89,7 @@ namespace Atlas {
         void endSwapChainRenderPass(VkCommandBuffer) const;
         void beginOverlayRenderPass(VkCommandBuffer commandBuffer, OverlayLoadOp loadOp = OverlayLoadOp::Load);
         void endOverlayRenderPass(VkCommandBuffer commandBuffer) const;
-        void setSceneOutputImage(VkImageView imageView, VkImageLayout imageLayout, VkExtent2D extent);
+        void setSceneOutputImage(VkImage image, VkImageView imageView, VkImageLayout imageLayout, VkFormat format, VkExtent2D extent);
         void setSceneViewportExtent(VkExtent2D extent) { sceneViewportExtent = extent; }
 
         CreateInfo createInfo;

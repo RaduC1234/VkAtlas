@@ -90,7 +90,14 @@ namespace Atlas {
         Camera camera{};
     };
 
+    enum class ShadingModel : uint32_t {
+        STANDARD_PBR = 0,
+        CLOTH = 1
+    };
+
     struct MaterialComponent {
+        ShadingModel shadingModel{ShadingModel::STANDARD_PBR};
+
         glm::vec4 baseColor = glm::vec4{1.0f};
         AssetHandle<Texture> albedoTexture;
         AssetHandle<Texture> normalMap;
@@ -98,6 +105,8 @@ namespace Atlas {
         AssetHandle<Texture> ambientOcclusion;
         bool alphaMasked{false};
         bool transparent{false};
+
+        float sheenStrength{0.0f};
     };
 
     struct SkyboxComponent {

@@ -21,6 +21,7 @@ namespace Atlas::Editor {
         void drawMaterial(entt::registry &registry);
         void drawLight(entt::registry &registry);
         void drawCamera(entt::registry &registry);
+        void drawSkybox(entt::registry &registry);
 
         bool beginComponent(const char *label);
         void endComponent();

@@ -143,6 +143,18 @@ namespace Atlas {
         }
     }
 
+    void GPUBuffer::invalidate(VkDeviceSize size, VkDeviceSize offset) {
+        if (size == VK_WHOLE_SIZE) {
+            size = totalSize_ - offset;
+        }
+        if (size == 0) {
+            return;
+        }
+        if (vmaInvalidateAllocation(device_.allocator(), allocation_, offset, size) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to invalidate buffer memory!");
+        }
+    }
+
     void GPUBuffer::writeToIndex(const void *data, int index) {
         assert(mapped_ && "Buffer must be mapped before writing");
         assert(index >= 0 && static_cast<uint32_t>(index) < instanceCount_);

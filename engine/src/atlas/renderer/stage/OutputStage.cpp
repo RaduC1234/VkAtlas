@@ -23,11 +23,21 @@ namespace Atlas {
             restoreLayout = sourceLayout;
         }
 
-        renderer.setSceneOutputImage(postColorSource->view(0), sourceLayout, postColorSource->extent());
+        renderer.setSceneOutputImage(
+            postColorSource->image(),
+            postColorSource->view(0),
+            sourceLayout,
+            postColorSource->format(),
+            postColorSource->extent());
     }
 
     void OutputStage::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {
-        renderer.setSceneOutputImage(postColorSource->view(0), sourceLayout, postColorSource->extent());
+        renderer.setSceneOutputImage(
+            postColorSource->image(),
+            postColorSource->view(0),
+            sourceLayout,
+            postColorSource->format(),
+            postColorSource->extent());
 
         if (renderer.createInfo.sceneOutputTarget == Renderer::SceneOutputTarget::Texture) {
             recordToTexture(cmd);

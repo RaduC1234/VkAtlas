@@ -20,8 +20,8 @@ namespace Atlas {
 
     class RenderSystemV2 {
     public:
-        static constexpr uint32_t G_BUFFER_HEIGHT = 1920;
-        static constexpr uint32_t G_BUFFER_WIDTH = 1080;
+        static constexpr uint32_t G_BUFFER_HEIGHT = 1080;
+        static constexpr uint32_t G_BUFFER_WIDTH = 1920;
 
         RenderSystemV2(Device &device, Renderer &renderer, AssetManager &assets);
         ~RenderSystemV2() = default;

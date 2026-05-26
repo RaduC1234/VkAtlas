@@ -10,6 +10,7 @@
 #include "core/Log.hpp"
 #include "project/ProjectCreator.hpp"
 #include "utils/FileDialogs.hpp"
+#include "utils/FramebufferExporter.hpp"
 
 namespace Atlas::Editor {
     EditorLayer::EditorLayer(ProjectLayer &projectLayer) : Layer("EditorLayer"), projectLayer(projectLayer) {
@@ -88,6 +89,10 @@ namespace Atlas::Editor {
 
             if (ImGui::MenuItem("Import into Level...")) {
                 importIntoLevel();
+            }
+
+            if (ImGui::MenuItem("Export Framebuffer...")) {
+                exportFramebuffer();
             }
 
             ImGui::EndMenu();
@@ -193,6 +198,21 @@ namespace Atlas::Editor {
         projectLayer.assetManager().importAsync(path, scene->getRegistry());
     }
 
+    void EditorLayer::exportFramebuffer() {
+        const std::string filter = buildFramebufferExportFilter();
+        const std::string path = FileDialogs::saveFile(filter.c_str());
+
+        if (path.empty()) {
+            return;
+        }
+
+        try {
+            FramebufferExporter::exportSceneOutput(projectLayer.getRenderer(), path);
+        } catch (const std::exception &error) {
+            AT_ERROR("EditorLayer: failed to export framebuffer: {}", error.what());
+        }
+    }
+
     std::string EditorLayer::buildProjectFilter() {
         std::string filter = "Atlas Project Manifest (*.atlas.json)";
         filter.push_back('\0');
@@ -229,6 +249,19 @@ namespace Atlas::Editor {
         filter += ")";
         filter.push_back('\0');
         filter += patterns;
+        filter.push_back('\0');
+        filter += "All Files (*.*)";
+        filter.push_back('\0');
+        filter += "*.*";
+        filter.push_back('\0');
+        filter.push_back('\0');
+        return filter;
+    }
+
+    std::string EditorLayer::buildFramebufferExportFilter() {
+        std::string filter = "PNG Image (*.png)";
+        filter.push_back('\0');
+        filter += "*.png";
         filter.push_back('\0');
         filter += "All Files (*.*)";
         filter.push_back('\0');

@@ -26,10 +26,12 @@ namespace Atlas::Editor {
         void drawMenuBar();
         void createNewProject();
         void importIntoLevel();
+        void exportFramebuffer();
         void undo();
         void redo();
         static std::string buildProjectFilter();
         static std::string buildImportFilter(const std::vector<std::string> &extensions);
+        static std::string buildFramebufferExportFilter();
         static bool hasSupportedExtension(const std::string &path, const std::vector<std::string> &extensions);
 
         ProjectLayer &projectLayer;

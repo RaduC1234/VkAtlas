@@ -59,6 +59,10 @@ namespace Atlas::Editor {
             drawCamera(registry);
         }
 
+        if (registry.all_of<SkyboxComponent>(selectedEntity)) {
+            drawSkybox(registry);
+        }
+
         ImGui::End();
     }
 
@@ -307,6 +311,32 @@ namespace Atlas::Editor {
 
         ImGui::LabelText("Near", "%.3f", data.nearPlane);
         ImGui::LabelText("Far", "%.3f", data.farPlane);
+        endComponent();
+    }
+
+    void InspectorPanel::drawSkybox(entt::registry &registry) {
+        if (!beginComponent("Skybox")) return;
+
+        if (auto *node = registry.try_get<SceneNodeComponent>(selectedEntity)) {
+            bool enabled = node->visible;
+            if (ImGui::Checkbox("Enabled", &enabled)) {
+                const bool before = node->visible;
+                registry.patch<SceneNodeComponent>(selectedEntity, [&](auto &sceneNode) {
+                    sceneNode.visible = enabled;
+                });
+                history.recordVisibility(selectedEntity, before, enabled);
+            }
+        }
+
+        const auto &skybox = registry.get<SkyboxComponent>(selectedEntity);
+        const auto status = [](const auto &handle) {
+            if (!handle.valid()) return "None";
+            return handle.isReady() ? "Ready" : "Loading";
+        };
+        ImGui::LabelText("Skybox", "%s", status(skybox.skyboxHandle));
+        ImGui::LabelText("Irradiance", "%s", status(skybox.irradianceHandle));
+        ImGui::LabelText("Prefilter", "%s", status(skybox.prefilterHandle));
+
         endComponent();
     }
 }
