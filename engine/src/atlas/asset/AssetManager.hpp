@@ -53,6 +53,12 @@ namespace Atlas {
         template<AssetType T>
         AssetHandle<T> store(const std::string &virtualPath);
 
+        template<AssetType T>
+        AssetHandle<T> find(const std::string &virtualPath);
+
+        template<AssetType T>
+        std::vector<std::string> assetPaths();
+
         std::filesystem::path rootPath() const;
         void overwriteRootPath(const std::filesystem::path &path);
         std::vector<std::string> importerExtensions() const;
@@ -184,6 +190,38 @@ namespace Atlas {
         } else {
             static_assert(std::same_as<T, Texture> || std::same_as<T, Cubemap>, "AssetManager::store(path) only supports file-loadable asset types");
         }
+    }
+
+    template<AssetType T>
+    AssetHandle<T> AssetManager::find(const std::string &virtualPath) {
+        std::lock_guard lock(pendingMutex_);
+
+        auto &byPath = pathMap<T>();
+        if (auto it = byPath.find(virtualPath); it != byPath.end()) {
+            if (auto state = it->second.lock()) {
+                return AssetHandle<T>(state);
+            }
+        }
+
+        return AssetHandle<T>::invalid();
+    }
+
+    template<AssetType T>
+    std::vector<std::string> AssetManager::assetPaths() {
+        std::lock_guard lock(pendingMutex_);
+
+        std::vector<std::string> paths;
+        auto &byPath = pathMap<T>();
+        paths.reserve(byPath.size());
+
+        for (const auto &[path, weakState]: byPath) {
+            if (!weakState.expired()) {
+                paths.push_back(path);
+            }
+        }
+
+        std::ranges::sort(paths);
+        return paths;
     }
 
     template<FileLoadable T>

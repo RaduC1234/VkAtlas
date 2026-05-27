@@ -18,7 +18,14 @@ namespace Atlas::Editor {
 
     void EditorLayer::onAttach() {
         hierarchyPanel = std::make_shared<HierarchyPanel>(projectLayer, selectedEntity, history);
-        inspectorPanel = std::make_shared<InspectorPanel>(projectLayer, selectedEntity, history);
+        inspectorPanel = std::make_shared<InspectorPanel>(
+            projectLayer,
+            selectedEntity,
+            history,
+            [this](entt::entity ownerEntity, AssetHandle<Material> materialHandle) {
+                openMaterialEditor(ownerEntity, materialHandle);
+            }
+        );
         viewportPanel = std::make_shared<ViewportPanel>(projectLayer, selectedEntity, history);
         renderSettingsPanel = std::make_shared<RenderSettingsPanel>(projectLayer);
     }
@@ -40,6 +47,7 @@ namespace Atlas::Editor {
         if (viewportPanel) viewportPanel->onImGuiRender();
         if (hierarchyPanel) hierarchyPanel->onImGuiRender();
         if (inspectorPanel) inspectorPanel->onImGuiRender();
+        drawMaterialEditorWindow();
     }
 
     void EditorLayer::handleShortcuts() {
@@ -211,6 +219,81 @@ namespace Atlas::Editor {
         } catch (const std::exception &error) {
             AT_ERROR("EditorLayer: failed to export framebuffer: {}", error.what());
         }
+    }
+
+    void EditorLayer::openMaterialEditor(entt::entity ownerEntity, AssetHandle<Material> materialHandle) {
+        if (!materialHandle.valid()) {
+            return;
+        }
+
+        flushMaterialEditorEdit();
+        materialEditorOpen = true;
+        materialEditorOwner = ownerEntity;
+        materialEditorHandle = materialHandle;
+        materialEditState = {};
+    }
+
+    void EditorLayer::drawMaterialEditorWindow() {
+        if (!materialEditorOpen) {
+            return;
+        }
+
+        if (!materialEditorHandle.valid()) {
+            flushMaterialEditorEdit();
+            materialEditorOpen = false;
+            materialEditorOwner = entt::null;
+            materialEditorHandle = {};
+            materialEditState = {};
+            return;
+        }
+
+        auto *scene = projectLayer.project().scene();
+        entt::registry *registry = scene ? &scene->getRegistry() : nullptr;
+
+        std::string title = "Material Editor";
+        if (Material *material = materialEditorHandle.get()) {
+            if (!material->name.empty()) {
+                title = "Material Editor - " + material->name;
+            }
+        }
+        title += "###Material Editor";
+
+        ImGui::SetNextWindowSize(ImVec2(420.0f, 560.0f), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin(title.c_str(), &materialEditorOpen)) {
+            MaterialEditor::drawProperties(
+                projectLayer,
+                history,
+                registry,
+                materialEditorOwner,
+                materialEditorHandle,
+                materialEditState
+            );
+        }
+        ImGui::End();
+
+        if (!materialEditorOpen) {
+            flushMaterialEditorEdit();
+            materialEditorOwner = entt::null;
+            materialEditorHandle = {};
+            materialEditState = {};
+        }
+    }
+
+    void EditorLayer::flushMaterialEditorEdit() {
+        if (!materialEditState.active || !materialEditState.handle.valid()) {
+            return;
+        }
+
+        if (Material *material = materialEditState.handle.get()) {
+            history.recordMaterialAsset(
+                materialEditorOwner,
+                materialEditState.handle,
+                materialEditState.before,
+                *material
+            );
+        }
+
+        materialEditState = {};
     }
 
     std::string EditorLayer::buildProjectFilter() {

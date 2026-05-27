@@ -534,6 +534,11 @@ namespace Atlas {
                         ? "Material_" + std::to_string(prim.material)
                         : mat.name;
 
+                    if (mat.extensions.contains("KHR_materials_sheen") ||
+                        mat.extensions.contains("KHR_material_sheen")) {
+                        materialAsset->shadingModel = ShadingModel::CLOTH_CHARLIE;
+                    }
+
                     // Base color factor
                     if (pbr.baseColorFactor.size() == 4) {
                         materialAsset->baseColor = glm::vec4(
@@ -556,7 +561,10 @@ namespace Atlas {
                 } else {
                     materialAsset->name = "Material";
                 }
-                const std::string materialPath = sourcePath + "#material/" + std::to_string(nodeIdx) + "/" + std::to_string(primIdx);
+                const std::string materialPath = sourcePath + "#material/" +
+                                                 (prim.material >= 0
+                                                      ? std::to_string(prim.material)
+                                                      : "default");
                 material.materialHandle = assets.store<Material>(std::move(materialAsset), materialPath);
                 buffer.add(material);
 

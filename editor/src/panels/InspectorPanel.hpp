@@ -5,12 +5,20 @@
 
 #include <Atlas.hpp>
 
+#include <functional>
 #include <string>
 
 namespace Atlas::Editor {
     class InspectorPanel final : public Panel {
     public:
-        InspectorPanel(ProjectLayer &projectLayer, entt::entity &selectedEntity, EditorHistory &history);
+        using OpenMaterialEditorCallback = std::function<void(entt::entity, AssetHandle<Material>)>;
+
+        InspectorPanel(
+            ProjectLayer &projectLayer,
+            entt::entity &selectedEntity,
+            EditorHistory &history,
+            OpenMaterialEditorCallback openMaterialEditor
+        );
 
         void onImGuiRender() override;
 
@@ -25,20 +33,16 @@ namespace Atlas::Editor {
 
         bool beginComponent(const char *label);
         void endComponent();
-        bool drawTextureSlot(const char *label, AssetHandle<Texture> &texture);
-        static std::string buildTextureFilter();
 
         ProjectLayer &projectLayer;
         entt::entity &selectedEntity;
         EditorHistory &history;
+        OpenMaterialEditorCallback openMaterialEditor;
 
         bool nameEditActive = false;
         std::string nameEditBefore;
         bool transformEditActive = false;
         TransformComponent transformEditBefore;
-        bool materialEditActive = false;
-        AssetHandle<Material> materialEditHandle;
-        Material materialEditBefore;
         bool lightEditActive = false;
         LightComponent lightEditBefore;
     };

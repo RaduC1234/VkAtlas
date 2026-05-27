@@ -11,6 +11,7 @@
 #include "panels/InspectorPanel.hpp"
 #include "panels/ViewportPanel.hpp"
 #include "panels/RenderSettingsPanel.hpp"
+#include "widgets/MaterialEditor.hpp"
 
 namespace Atlas::Editor {
     class EditorLayer final : public Layer {
@@ -27,6 +28,9 @@ namespace Atlas::Editor {
         void createNewProject();
         void importIntoLevel();
         void exportFramebuffer();
+        void openMaterialEditor(entt::entity ownerEntity, AssetHandle<Material> materialHandle);
+        void drawMaterialEditorWindow();
+        void flushMaterialEditorEdit();
         void undo();
         void redo();
         static std::string buildProjectFilter();
@@ -37,6 +41,10 @@ namespace Atlas::Editor {
         ProjectLayer &projectLayer;
         entt::entity selectedEntity = entt::null;
         EditorHistory history;
+        bool materialEditorOpen = false;
+        entt::entity materialEditorOwner = entt::null;
+        AssetHandle<Material> materialEditorHandle;
+        MaterialEditState materialEditState;
 
         std::shared_ptr<HierarchyPanel> hierarchyPanel;
         std::shared_ptr<InspectorPanel> inspectorPanel;

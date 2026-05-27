@@ -121,7 +121,7 @@ namespace Atlas::Editor {
     }
 
     void EditorHistory::apply(entt::registry &registry, const Entry &entry, const bool redo) {
-        if (entry.entity == entt::null || !registry.valid(entry.entity)) {
+        if (entry.type != EntryType::MaterialAsset && (entry.entity == entt::null || !registry.valid(entry.entity))) {
             return;
         }
 
@@ -156,8 +156,11 @@ namespace Atlas::Editor {
             case EntryType::MaterialAsset:
                 if (Material *material = entry.materialHandle.get()) {
                     *material = redo ? entry.afterMaterialAsset : entry.beforeMaterialAsset;
-                    if (registry.all_of<MaterialComponent>(entry.entity)) {
-                        registry.patch<MaterialComponent>(entry.entity);
+                    auto view = registry.view<MaterialComponent>();
+                    for (const entt::entity entity: view) {
+                        if (view.get<MaterialComponent>(entity).materialHandle == entry.materialHandle) {
+                            registry.patch<MaterialComponent>(entity);
+                        }
                     }
                 }
                 break;

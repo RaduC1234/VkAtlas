@@ -28,6 +28,7 @@ namespace Atlas {
         createInfo.projectModule = modulePath;
         createInfo.rendererCreateInfo.window.title = createInfo.name;
         createInfo.rendererCreateInfo.window.properties = Window::Properties::Decorated | Window::Properties::Resizeable;
+        //createInfo.rendererCreateInfo.window.iconPath = "##editor/icons/editor.png";
         createInfo.enableImGui = true;
         createInfo.enableDockspace = true;
 
