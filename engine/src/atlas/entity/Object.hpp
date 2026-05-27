@@ -1,8 +1,13 @@
 #pragma once
 
-#include "asset/AssetManager.hpp"
-#include "core/Core.hpp"
+#include <string>
+#include <vector>
+
+#include <entt/entity/entity.hpp>
+
+#include "asset/AssetHandle.hpp"
 #include "renderer/Camera.hpp"
+
 
 namespace Atlas {
     struct SceneNodeComponent {
@@ -90,23 +95,8 @@ namespace Atlas {
         Camera camera{};
     };
 
-    enum class ShadingModel : uint32_t {
-        STANDARD_PBR = 0,
-        CLOTH = 1
-    };
-
     struct MaterialComponent {
-        ShadingModel shadingModel{ShadingModel::STANDARD_PBR};
-
-        glm::vec4 baseColor = glm::vec4{1.0f};
-        AssetHandle<Texture> albedoTexture;
-        AssetHandle<Texture> normalMap;
-        AssetHandle<Texture> metallicRoughnessMap;
-        AssetHandle<Texture> ambientOcclusion;
-        bool alphaMasked{false};
-        bool transparent{false};
-
-        float sheenStrength{0.0f};
+        AssetHandle<Material> materialHandle;
     };
 
     struct SkyboxComponent {

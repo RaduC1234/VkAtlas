@@ -72,19 +72,25 @@ namespace Atlas::Editor {
     }
 
     void EditorHistory::recordMaterial(entt::entity entity, const MaterialComponent &before, const MaterialComponent &after) {
-        if (before.baseColor == after.baseColor &&
-            before.albedoTexture == after.albedoTexture &&
-            before.normalMap == after.normalMap &&
-            before.metallicRoughnessMap == after.metallicRoughnessMap &&
-            before.ambientOcclusion == after.ambientOcclusion &&
-            before.alphaMasked == after.alphaMasked &&
-            before.transparent == after.transparent) {
+        if (before.materialHandle == after.materialHandle) {
             return;
         }
 
         Entry entry{.type = EntryType::Material, .entity = entity};
         entry.beforeMaterial = before;
         entry.afterMaterial = after;
+        push(std::move(entry));
+    }
+
+    void EditorHistory::recordMaterialAsset(entt::entity entity, AssetHandle<Material> material, const Material &before, const Material &after) {
+        if (!material || before.getHash() == after.getHash()) {
+            return;
+        }
+
+        Entry entry{.type = EntryType::MaterialAsset, .entity = entity};
+        entry.materialHandle = material;
+        entry.beforeMaterialAsset = before;
+        entry.afterMaterialAsset = after;
         push(std::move(entry));
     }
 
@@ -145,6 +151,14 @@ namespace Atlas::Editor {
                     registry.patch<MaterialComponent>(entry.entity, [&](auto &material) {
                         material = redo ? entry.afterMaterial : entry.beforeMaterial;
                     });
+                }
+                break;
+            case EntryType::MaterialAsset:
+                if (Material *material = entry.materialHandle.get()) {
+                    *material = redo ? entry.afterMaterialAsset : entry.beforeMaterialAsset;
+                    if (registry.all_of<MaterialComponent>(entry.entity)) {
+                        registry.patch<MaterialComponent>(entry.entity);
+                    }
                 }
                 break;
             case EntryType::Light:

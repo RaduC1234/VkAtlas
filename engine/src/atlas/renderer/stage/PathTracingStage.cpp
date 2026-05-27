@@ -268,9 +268,15 @@ namespace Atlas {
 
             auto &transform = registry.get<TransformComponent>(entity);
             auto &model = registry.get<ModelComponent>(entity);
-            auto &material = registry.get<MaterialComponent>(entity);
+            auto &materialComponent = registry.get<MaterialComponent>(entity);
 
-            if (material.transparent && !material.alphaMasked) continue;
+            const Material fallbackMaterial{};
+            const Material *material = materialComponent.materialHandle.get();
+            if (!material) {
+                material = &fallbackMaterial;
+            }
+
+            if (material->alphaMode == AlphaMode::BLEND) continue;
 
             if (!model.meshHandle.valid() || !model.meshHandle.isReady()) continue;
             model.meshHandle.buildAccelerationStructure();
@@ -303,16 +309,16 @@ namespace Atlas {
                 .modelMatrix = m,
                 .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
                 .textureIndices = glm::uvec4(
-                    registerTexture(material.albedoTexture),
-                    registerTexture(material.normalMap),
-                    registerTexture(material.metallicRoughnessMap),
-                    registerTexture(material.ambientOcclusion)
+                    registerTexture(material->baseColorTexture),
+                    registerTexture(material->normalTexture),
+                    registerTexture(material->metallicRoughnessTexture),
+                    registerTexture(material->occlusionTexture)
                 ),
-                .baseColor = material.baseColor,
+                .baseColor = material->baseColor,
                 .firstIndex = firstIndex,
                 .indexCount = static_cast<uint32_t>(model.meshHandle->indices().size()),
                 .firstVertex = firstVertex,
-                .flags = material.alphaMasked ? MATERIAL_FLAG_ALPHA_MASKED : 0u,
+                .flags = material->alphaMode == AlphaMode::MASK ? MATERIAL_FLAG_ALPHA_MASKED : 0u,
             });
         }
 
@@ -799,9 +805,15 @@ namespace Atlas {
 
             const auto &transform = registry.get<TransformComponent>(entity);
             const auto &model = registry.get<ModelComponent>(entity);
-            const auto &material = registry.get<MaterialComponent>(entity);
+            const auto &materialComponent = registry.get<MaterialComponent>(entity);
 
-            if (material.transparent && !material.alphaMasked) {
+            const Material fallbackMaterial{};
+            const Material *material = materialComponent.materialHandle.get();
+            if (!material) {
+                material = &fallbackMaterial;
+            }
+
+            if (material->alphaMode == AlphaMode::BLEND) {
                 continue;
             }
             if (!model.meshHandle.valid()) {
@@ -814,13 +826,13 @@ namespace Atlas {
             hashVec3(seed, transform.translation);
             hashVec3(seed, transform.scale);
             hashVec3(seed, transform.rotation);
-            hashVec4(seed, material.baseColor);
-            hashHandle(seed, material.albedoTexture);
-            hashHandle(seed, material.normalMap);
-            hashHandle(seed, material.metallicRoughnessMap);
-            hashHandle(seed, material.ambientOcclusion);
-            hashValue(seed, material.alphaMasked);
-            hashValue(seed, material.transparent);
+            hashVec4(seed, material->baseColor);
+            hashHandle(seed, material->baseColorTexture);
+            hashHandle(seed, material->normalTexture);
+            hashHandle(seed, material->metallicRoughnessTexture);
+            hashHandle(seed, material->occlusionTexture);
+            hashValue(seed, material->alphaMode == AlphaMode::MASK);
+            hashValue(seed, material->alphaMode == AlphaMode::BLEND);
 
             if (!model.meshHandle.isReady()) {
                 waitingForMeshes = true;

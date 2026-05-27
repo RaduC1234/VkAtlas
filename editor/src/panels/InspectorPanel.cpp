@@ -1,9 +1,14 @@
 #include "InspectorPanel.hpp"
 
 #include <cstring>
+#include <exception>
+#include <string>
 
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
+
+#include "core/Log.hpp"
+#include "utils/FileDialogs.hpp"
 
 namespace Atlas::Editor {
     InspectorPanel::InspectorPanel(ProjectLayer &projectLayer, entt::entity &selectedEntity, EditorHistory &history)
@@ -110,6 +115,59 @@ namespace Atlas::Editor {
         ImGui::TreePop();
     }
 
+    bool InspectorPanel::drawTextureSlot(const char *label, AssetHandle<Texture> &texture) {
+        bool changed = false;
+
+        ImGui::PushID(label);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(label);
+        ImGui::SameLine(160.0f);
+        ImGui::TextUnformatted(texture.valid() ? (texture.isReady() ? "Assigned" : "Loading") : "None");
+        ImGui::SameLine();
+
+        if (ImGui::Button("Select")) {
+            const std::string filter = buildTextureFilter();
+            const std::string path = FileDialogs::openFile(filter.c_str());
+            if (!path.empty()) {
+                try {
+                    texture = projectLayer.assetManager().store<Texture>(path);
+                    changed = true;
+                } catch (const std::exception &error) {
+                    AT_ERROR("InspectorPanel: failed to load texture '{}': {}", path, error.what());
+                }
+            }
+        }
+
+        ImGui::SameLine();
+        const bool hadTexture = texture.valid();
+        if (!hadTexture) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Clear")) {
+            texture = AssetHandle<Texture>::invalid();
+            changed = true;
+        }
+        if (!hadTexture) {
+            ImGui::EndDisabled();
+        }
+
+        ImGui::PopID();
+        return changed;
+    }
+
+    std::string InspectorPanel::buildTextureFilter() {
+        std::string filter = "Image Files (*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.ktx;*.ktx2)";
+        filter.push_back('\0');
+        filter += "*.png;*.jpg;*.jpeg;*.tga;*.bmp;*.hdr;*.ktx;*.ktx2";
+        filter.push_back('\0');
+        filter += "All Files (*.*)";
+        filter.push_back('\0');
+        filter += "*.*";
+        filter.push_back('\0');
+        filter.push_back('\0');
+        return filter;
+    }
+
     // -------------------------------------------------------------------------
 
     void InspectorPanel::drawTransform(entt::registry &registry) {
@@ -173,47 +231,207 @@ namespace Atlas::Editor {
     void InspectorPanel::drawMaterial(entt::registry &registry) {
         if (!beginComponent("Material")) return;
 
-        auto &mat = registry.get<MaterialComponent>(selectedEntity);
-        const MaterialComponent before = mat;
+        auto &component = registry.get<MaterialComponent>(selectedEntity);
+        Material *mat = component.materialHandle.get();
+        if (!mat) {
+            ImGui::LabelText("Material", "None");
+            endComponent();
+            return;
+        }
+
+        const Material before = *mat;
         bool changed = false;
         bool finished = false;
 
-        bool itemChanged = ImGui::ColorEdit4("Base Color", glm::value_ptr(mat.baseColor));
+        auto beginMaterialEdit = [&]() {
+            if (!materialEditActive || materialEditHandle != component.materialHandle) {
+                materialEditActive = true;
+                materialEditHandle = component.materialHandle;
+                materialEditBefore = before;
+            }
+        };
+
+        char nameBuffer[256]{};
+        std::strncpy(nameBuffer, mat->name.c_str(), sizeof(nameBuffer) - 1);
+        bool itemChanged = ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer));
         changed |= itemChanged;
-        if (ImGui::IsItemActivated() && !materialEditActive) {
-            materialEditActive = true;
-            materialEditBefore = before;
+        if (ImGui::IsItemActivated()) {
+            beginMaterialEdit();
+        }
+        if (itemChanged) {
+            beginMaterialEdit();
+            mat->name = nameBuffer;
         }
         finished |= ImGui::IsItemDeactivatedAfterEdit();
 
-        itemChanged = ImGui::Checkbox("Alpha Masked", &mat.alphaMasked);
+        constexpr const char *shadingModelNames[] = {
+            "Standard PBR",
+            "Cloth Charlie",
+            "Unlit"
+        };
+        int shadingModel = static_cast<int>(mat->shadingModel);
+        itemChanged = ImGui::Combo("Shading", &shadingModel, shadingModelNames, IM_ARRAYSIZE(shadingModelNames));
         changed |= itemChanged;
-        if (itemChanged && !materialEditActive) {
-            materialEditActive = true;
-            materialEditBefore = before;
+        if (itemChanged) {
+            beginMaterialEdit();
+            mat->shadingModel = static_cast<ShadingModel>(shadingModel);
+            finished = true;
         }
-        finished |= ImGui::IsItemDeactivatedAfterEdit() || (itemChanged && !ImGui::IsItemActive());
 
-        itemChanged = ImGui::Checkbox("Transparent", &mat.transparent);
+        const bool standardPbr = mat->shadingModel == ShadingModel::STANDARD_PBR;
+        const bool clothCharlie = mat->shadingModel == ShadingModel::CLOTH_CHARLIE;
+        const bool unlit = mat->shadingModel == ShadingModel::UNLIT;
+
+        itemChanged = ImGui::ColorEdit4("Base Color", glm::value_ptr(mat->baseColor));
         changed |= itemChanged;
-        if (itemChanged && !materialEditActive) {
-            materialEditActive = true;
-            materialEditBefore = before;
+        if (ImGui::IsItemActivated()) {
+            beginMaterialEdit();
         }
-        finished |= ImGui::IsItemDeactivatedAfterEdit() || (itemChanged && !ImGui::IsItemActive());
+        if (itemChanged) {
+            beginMaterialEdit();
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
 
-        ImGui::LabelText("Albedo", "%s", mat.albedoTexture.valid() ? "Assigned" : "None");
-        ImGui::LabelText("Normal", "%s", mat.normalMap.valid() ? "Assigned" : "None");
-        ImGui::LabelText("Metallic/Roughness", "%s", mat.metallicRoughnessMap.valid() ? "Assigned" : "None");
-        ImGui::LabelText("AO", "%s", mat.ambientOcclusion.valid() ? "Assigned" : "None");
+        if (standardPbr) {
+            itemChanged = ImGui::DragFloat("Metallic", &mat->metallic, 0.01f, 0.0f, 1.0f);
+            changed |= itemChanged;
+            if (ImGui::IsItemActivated()) {
+                beginMaterialEdit();
+            }
+            if (itemChanged) {
+                beginMaterialEdit();
+            }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+        }
+
+        if (!unlit) {
+            itemChanged = ImGui::DragFloat("Roughness", &mat->roughness, 0.01f, 0.04f, 1.0f);
+            changed |= itemChanged;
+            if (ImGui::IsItemActivated()) {
+                beginMaterialEdit();
+            }
+            if (itemChanged) {
+                beginMaterialEdit();
+            }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+        }
+
+        constexpr const char *alphaModeNames[] = {
+            "Opaque",
+            "Alpha Masked",
+            "Transparent"
+        };
+        int alphaMode = static_cast<int>(mat->alphaMode);
+        itemChanged = ImGui::Combo("Alpha Mode", &alphaMode, alphaModeNames, IM_ARRAYSIZE(alphaModeNames));
+        changed |= itemChanged;
+        if (itemChanged) {
+            beginMaterialEdit();
+            mat->alphaMode = static_cast<AlphaMode>(alphaMode);
+            finished = true;
+        }
+
+        if (mat->alphaMode == AlphaMode::MASK) {
+            itemChanged = ImGui::DragFloat("Alpha Cutoff", &mat->alphaCutoff, 0.01f, 0.0f, 1.0f);
+            changed |= itemChanged;
+            if (ImGui::IsItemActivated()) {
+                beginMaterialEdit();
+            }
+            if (itemChanged) {
+                beginMaterialEdit();
+            }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+        }
+
+        if (clothCharlie) {
+            itemChanged = ImGui::DragFloat("Sheen", &mat->sheenStrength, 0.01f, 0.0f, 1.0f);
+            changed |= itemChanged;
+            if (ImGui::IsItemActivated()) {
+                beginMaterialEdit();
+            }
+            if (itemChanged) {
+                beginMaterialEdit();
+            }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+
+            itemChanged = ImGui::ColorEdit3("Sheen Color", glm::value_ptr(mat->sheenColor));
+            changed |= itemChanged;
+            if (ImGui::IsItemActivated()) {
+                beginMaterialEdit();
+            }
+            if (itemChanged) {
+                beginMaterialEdit();
+            }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+        }
+
+        itemChanged = ImGui::ColorEdit3("Emission", glm::value_ptr(mat->emissiveColor));
+        changed |= itemChanged;
+        if (ImGui::IsItemActivated()) {
+            beginMaterialEdit();
+        }
+        if (itemChanged) {
+            beginMaterialEdit();
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
+
+        itemChanged = ImGui::DragFloat("Emission Strength", &mat->emissiveStrength, 0.1f, 0.0f, 100.0f);
+        changed |= itemChanged;
+        if (ImGui::IsItemActivated()) {
+            beginMaterialEdit();
+        }
+        if (itemChanged) {
+            beginMaterialEdit();
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
+
+        ImGui::Separator();
+        if (drawTextureSlot("Albedo", mat->baseColorTexture)) {
+            beginMaterialEdit();
+            changed = true;
+            finished = true;
+        }
+
+        if (!unlit) {
+            if (drawTextureSlot("Normal", mat->normalTexture)) {
+                beginMaterialEdit();
+                changed = true;
+                finished = true;
+            }
+        }
+
+        if (standardPbr) {
+            if (drawTextureSlot("Metallic/Roughness", mat->metallicRoughnessTexture)) {
+                beginMaterialEdit();
+                changed = true;
+                finished = true;
+            }
+        }
+
+        if (!unlit) {
+            if (drawTextureSlot("AO", mat->occlusionTexture)) {
+                beginMaterialEdit();
+                changed = true;
+                finished = true;
+            }
+        }
+
+        if (drawTextureSlot("Emissive", mat->emissiveTexture)) {
+            beginMaterialEdit();
+            changed = true;
+            finished = true;
+        }
 
         if (changed) {
+            if (!materialEditActive) {
+                beginMaterialEdit();
+            }
             registry.patch<MaterialComponent>(selectedEntity);
         }
 
-        if (materialEditActive && finished) {
-            history.recordMaterial(selectedEntity, materialEditBefore, mat);
+        if (materialEditActive && materialEditHandle == component.materialHandle && finished) {
+            history.recordMaterialAsset(selectedEntity, component.materialHandle, materialEditBefore, *mat);
             materialEditActive = false;
+            materialEditHandle = {};
         }
 
         endComponent();

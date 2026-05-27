@@ -25,6 +25,8 @@ namespace Atlas::Editor {
 
         bool beginComponent(const char *label);
         void endComponent();
+        bool drawTextureSlot(const char *label, AssetHandle<Texture> &texture);
+        static std::string buildTextureFilter();
 
         ProjectLayer &projectLayer;
         entt::entity &selectedEntity;
@@ -35,7 +37,8 @@ namespace Atlas::Editor {
         bool transformEditActive = false;
         TransformComponent transformEditBefore;
         bool materialEditActive = false;
-        MaterialComponent materialEditBefore;
+        AssetHandle<Material> materialEditHandle;
+        Material materialEditBefore;
         bool lightEditActive = false;
         LightComponent lightEditBefore;
     };

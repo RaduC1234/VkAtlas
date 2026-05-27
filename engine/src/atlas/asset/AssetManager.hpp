@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <concepts>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -16,158 +17,21 @@
 
 #include "Cubemap.hpp"
 #include "EntityBuffer.hpp"
+#include "AssetHandle.hpp"
+#include "Material.hpp"
 #include "Mesh.hpp"
 #include "Texture.hpp"
 #include "accessors/IAssetAccessor.hpp"
 #include "core/Log.hpp"
 #include "entt/entity/entity.hpp"
-#include "renderer/resources/GPUCubemap.hpp"
-#include "renderer/resources/GPUMesh.hpp"
-#include "renderer/resources/GPUTexture.hpp"
 
 
 namespace Atlas {
-    template<typename T>
-    concept AssetType = std::same_as<T, Texture> || std::same_as<T, Mesh> || std::same_as<T, Cubemap>;
+    class ExecutorService;
+    class ResourceManager;
 
     template<typename T>
     concept FileLoadable = (std::signed_integral<T> || std::unsigned_integral<T> || std::same_as<T, std::byte>) && !std::same_as<T, bool>;
-
-    template<AssetType T>
-    class AssetHandle {
-    public:
-        AssetHandle() = default;
-
-        static AssetHandle invalid() { return {}; }
-
-        bool valid() const { return state_ != nullptr; }
-
-        explicit operator bool() const { return valid(); }
-
-        // True if GPU upload is complete and resource is safe to sample/bind
-        bool isReady() const {
-            return state_ && state_->gpu && state_->gpu->isReady();
-        }
-
-        const T *get() const { return state_ ? state_->asset.get() : nullptr; }
-        const T *operator->() const { return get(); }
-        const T &operator*() const { return *get(); }
-
-        VkDescriptorImageInfo descriptor() const requires std::same_as<T, Texture> || std::same_as<T, Cubemap> {
-            if (!state_ || !state_->gpu || !state_->gpu->isReady()) {
-                if constexpr (std::same_as<T, Texture>) {
-                    return IGPUResource::default_<GPUTexture>().descriptor();
-                } else {
-                    return IGPUResource::default_<GPUCubemap>().descriptor();
-                }
-            }
-
-            auto &gpu = static_cast<std::conditional_t<std::same_as<T, Texture>, GPUTexture, GPUCubemap> &>(*state_->gpu);
-            return {gpu.getSampler(), gpu.getImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        }
-
-        void registerBindlessSlot(VkDevice device, VkDescriptorSet set, uint32_t binding, uint32_t arrayElement) const requires std::same_as<T, Texture> || std::same_as<T, Cubemap>;
-
-        VkDescriptorBufferInfo vertexBufferInfo() const requires std::same_as<T, Mesh> {
-            if (!state_ || !state_->gpu || !isReady()) return {};
-            auto &gpu = static_cast<GPUMesh &>(*state_->gpu);
-            return {gpu.getVertexBuffer(), 0, VK_WHOLE_SIZE};
-        }
-
-        VkDescriptorBufferInfo indexBufferInfo() const requires std::same_as<T, Mesh> {
-            if (!state_ || !state_->gpu || !isReady()) return {};
-            auto &gpu = static_cast<GPUMesh &>(*state_->gpu);
-            return {gpu.getIndexBuffer(), 0, VK_WHOLE_SIZE};
-        }
-
-        void bind(VkCommandBuffer cmd) const requires std::same_as<T, Mesh> {
-            if (!state_ || !state_->gpu || !isReady()) return;
-            static_cast<GPUMesh &>(*state_->gpu).bind(cmd);
-        }
-
-        void draw(VkCommandBuffer cmd) const requires std::same_as<T, Mesh> {
-            if (!state_ || !state_->gpu || !isReady()) return;
-            static_cast<GPUMesh &>(*state_->gpu).draw(cmd);
-        }
-
-        VkDeviceAddress blasAddress() const requires std::same_as<T, Mesh> {
-            if (!state_ || !state_->gpu || !isReady()) return 0;
-            return static_cast<GPUMesh &>(*state_->gpu).accelerationStructure().deviceAddress();
-        }
-
-        void buildAccelerationStructure() const requires std::same_as<T, Mesh> {
-            if (!state_ || !state_->gpu || !isReady()) return;
-            static_cast<GPUMesh &>(*state_->gpu).buildAccelerationStructure();
-        }
-
-        // -------------------------------------------------------------------------
-        // Comparison — handles to the same asset are equal
-        // -------------------------------------------------------------------------
-        bool operator==(const AssetHandle &other) const {
-            return state_ == other.state_;
-        }
-
-        bool operator!=(const AssetHandle &other) const {
-            return state_ != other.state_;
-        }
-
-        const void *identity() const {
-            return state_.get();
-        }
-
-    private:
-        friend class AssetManager;
-
-        struct State {
-            struct BindlessSlot {
-                VkDevice device = VK_NULL_HANDLE;
-                VkDescriptorSet set = VK_NULL_HANDLE;
-                uint32_t binding = 0;
-                uint32_t arrayElement = 0;
-            };
-
-            std::shared_ptr<T> asset; // CPU data
-            std::shared_ptr<IGPUResource> gpu; // null until AssetManager::update() runs
-            std::vector<BindlessSlot> bindlessSlots;
-        };
-
-        // Only AssetManager can construct a valid Handle
-        explicit AssetHandle(std::shared_ptr<State> state) : state_(std::move(state)) {
-        }
-
-        std::shared_ptr<State> state_;
-    };
-
-    template<AssetType T>
-    void AssetHandle<T>::registerBindlessSlot(VkDevice device, VkDescriptorSet set, uint32_t binding, uint32_t arrayElement) const requires std::same_as<T, Texture> || std::same_as<T, Cubemap> {
-        if (!state_) return;
-
-        typename AssetHandle<T>::State::BindlessSlot slot{
-            .device = device,
-            .set = set,
-            .binding = binding,
-            .arrayElement = arrayElement,
-        };
-
-        const auto it = std::ranges::find_if(state_->bindlessSlots, [&](const typename AssetHandle<T>::State::BindlessSlot &other) {
-            return other.device == slot.device &&
-                   other.set == slot.set &&
-                   other.binding == slot.binding &&
-                   other.arrayElement == slot.arrayElement;
-        });
-
-        if (it == state_->bindlessSlots.end()) {
-            state_->bindlessSlots.push_back(slot);
-        }
-
-        if (!state_->gpu) return;
-
-        if constexpr (std::same_as<T, Texture>) {
-            static_cast<GPUTexture &>(*state_->gpu).registerBindlessSlot(device, set, binding, arrayElement);
-        } else {
-            static_cast<GPUCubemap &>(*state_->gpu).registerBindlessSlot(device, set, binding, arrayElement);
-        }
-    }
 
     class AssetManager {
     public:
@@ -216,9 +80,10 @@ namespace Atlas {
             if constexpr (std::same_as<T, Texture>) return textureByPath_;
             if constexpr (std::same_as<T, Mesh>) return meshByPath_;
             if constexpr (std::same_as<T, Cubemap>) return cubemapByPath_;
+            if constexpr (std::same_as<T, Material>) return materialByPath_;
         }
 
-        template<typename T>
+        template<GPUAssetType T>
         auto &pendingList() {
             if constexpr (std::same_as<T, Texture>) return pendingTextures_;
             if constexpr (std::same_as<T, Mesh>) return pendingMeshes_;
@@ -243,6 +108,7 @@ namespace Atlas {
         std::unordered_map<std::string, WeakState<Texture> > textureByPath_;
         std::unordered_map<std::string, WeakState<Mesh> > meshByPath_;
         std::unordered_map<std::string, WeakState<Cubemap> > cubemapByPath_;
+        std::unordered_map<std::string, WeakState<Material> > materialByPath_;
 
         std::mutex pendingMutex_;
         std::vector<WeakState<Texture> > pendingTextures_;
@@ -262,8 +128,6 @@ namespace Atlas {
 
     template<AssetType T>
     AssetHandle<T> AssetManager::store(std::shared_ptr<T> asset, const std::string &virtualPath) {
-        const uint64_t hash = asset->getHash();
-
         std::lock_guard lock(pendingMutex_);
 
         // 1. Dedup by path — if this exact path is already tracked and still alive, return it
@@ -275,27 +139,40 @@ namespace Atlas {
             }
         }
 
-        // 2. Dedup by hash — same content under a different path
-        auto &byHash = hashMap<T>();
-        if (auto it = byHash.find(hash); it != byHash.end()) {
-            if (auto state = it->second.lock()) {
-                AT_TRACE("Asset dedup hit (hash: {}), aliasing path: {}", hash, virtualPath);
-                byPath[virtualPath] = state; // register the new path alias
-                return AssetHandle<T>(state);
+        if constexpr (GPUAssetType<T>) {
+            const uint64_t hash = asset->getHash();
+
+            // 2. Dedup by hash — same content under a different path
+            auto &byHash = hashMap<T>();
+            if (auto it = byHash.find(hash); it != byHash.end()) {
+                if (auto state = it->second.lock()) {
+                    AT_TRACE("Asset dedup hit (hash: {}), aliasing path: {}", hash, virtualPath);
+                    byPath[virtualPath] = state; // register the new path alias
+                    return AssetHandle<T>(state);
+                }
             }
+
+            // 3. New GPU asset
+            auto state = std::make_shared<typename AssetHandle<T>::State>();
+            state->asset = std::move(asset);
+            state->gpu = nullptr; // filled by update()
+
+            byHash[hash] = state;
+            byPath[virtualPath] = state;
+            pendingList<T>().push_back(state);
+
+            AT_TRACE("Stored asset (path: {}, hash: {})", virtualPath, hash);
+            return AssetHandle<T>(state);
+        } else {
+            // CPU assets are mutable, so path identity is the stable key.
+            auto state = std::make_shared<typename AssetHandle<T>::State>();
+            state->asset = std::move(asset);
+            state->gpu = nullptr;
+            byPath[virtualPath] = state;
+
+            AT_TRACE("Stored CPU asset (path: {})", virtualPath);
+            return AssetHandle<T>(state);
         }
-
-        // 3. New asset
-        auto state = std::make_shared<typename AssetHandle<T>::State>();
-        state->asset = std::move(asset);
-        state->gpu = nullptr; // filled by update()
-
-        byHash[hash] = state;
-        byPath[virtualPath] = state;
-        pendingList<T>().push_back(state);
-
-        AT_TRACE("Stored asset (path: {}, hash: {})", virtualPath, hash);
-        return AssetHandle<T>(state);
     }
 
     template<AssetType T>
@@ -364,13 +241,4 @@ namespace Atlas {
             AT_ERROR("Exception while saving file: {}", e.what());
         }
     }
-}
-
-namespace std {
-    template<Atlas::AssetType T>
-    struct hash<Atlas::AssetHandle<T> > {
-        size_t operator()(const Atlas::AssetHandle<T> &h) const noexcept {
-            return std::hash<const void *>{}(h.identity());
-        }
-    };
 }

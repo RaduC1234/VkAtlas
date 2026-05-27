@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <numeric>
 #include <utility>
@@ -329,7 +330,7 @@ namespace Atlas {
         if (sceneIdx < static_cast<int>(model.scenes.size())) {
             for (int nodeIdx : model.scenes[sceneIdx].nodes) {
                 processNode(buffer, model, nodeIdx, glm::mat4(1.0f),
-                            meshHandles, imageHandles);
+                            meshHandles, imageHandles, path);
             }
         }
 
@@ -481,7 +482,8 @@ namespace Atlas {
         int32_t                                          nodeIdx,
         const glm::mat4                                 &parentTransform,
         const std::vector<std::vector<AssetHandle<Mesh>>> &meshHandles,
-        const std::vector<AssetHandle<Texture>>          &imageHandles) {
+        const std::vector<AssetHandle<Texture>>          &imageHandles,
+        const std::string                                &sourcePath) {
 
         const tinygltf::Node &node = model.nodes[nodeIdx];
 
@@ -521,29 +523,41 @@ namespace Atlas {
 
                 // Material component
                 MaterialComponent material{};
-                material.baseColor = glm::vec4(1.0f);
+                auto materialAsset = std::make_shared<Material>();
+                materialAsset->baseColor = glm::vec4(1.0f);
 
                 const tinygltf::Primitive &prim = gltfMesh.primitives[primIdx];
                 if (prim.material >= 0 && prim.material < static_cast<int>(model.materials.size())) {
                     const tinygltf::Material &mat = model.materials[prim.material];
                     const auto &pbr = mat.pbrMetallicRoughness;
+                    materialAsset->name = mat.name.empty()
+                        ? "Material_" + std::to_string(prim.material)
+                        : mat.name;
 
                     // Base color factor
                     if (pbr.baseColorFactor.size() == 4) {
-                        material.baseColor = glm::vec4(
+                        materialAsset->baseColor = glm::vec4(
                             pbr.baseColorFactor[0], pbr.baseColorFactor[1],
                             pbr.baseColorFactor[2], pbr.baseColorFactor[3]);
                     }
 
-                    material.albedoTexture          = resolveTexture(model, pbr.baseColorTexture.index,       imageHandles);
-                    material.normalMap              = resolveTexture(model, mat.normalTexture.index,           imageHandles);
-                    material.metallicRoughnessMap   = resolveTexture(model, pbr.metallicRoughnessTexture.index, imageHandles);
-                    material.ambientOcclusion       = resolveTexture(model, mat.occlusionTexture.index,        imageHandles);
-                    material.alphaMasked            = mat.alphaMode == "MASK";
-                    material.transparent            = mat.alphaMode == "BLEND" ||
-                                                      material.alphaMasked ||
-                                                      material.baseColor.a < 1.0f;
+                    materialAsset->baseColorTexture = resolveTexture(model, pbr.baseColorTexture.index, imageHandles);
+                    materialAsset->normalTexture = resolveTexture(model, mat.normalTexture.index, imageHandles);
+                    materialAsset->metallicRoughnessTexture = resolveTexture(model, pbr.metallicRoughnessTexture.index, imageHandles);
+                    materialAsset->occlusionTexture = resolveTexture(model, mat.occlusionTexture.index, imageHandles);
+                    materialAsset->metallic = static_cast<float>(pbr.metallicFactor);
+                    materialAsset->roughness = static_cast<float>(pbr.roughnessFactor);
+                    materialAsset->alphaCutoff = static_cast<float>(mat.alphaCutoff);
+                    if (mat.alphaMode == "MASK") {
+                        materialAsset->alphaMode = AlphaMode::MASK;
+                    } else if (mat.alphaMode == "BLEND") {
+                        materialAsset->alphaMode = AlphaMode::BLEND;
+                    }
+                } else {
+                    materialAsset->name = "Material";
                 }
+                const std::string materialPath = sourcePath + "#material/" + std::to_string(nodeIdx) + "/" + std::to_string(primIdx);
+                material.materialHandle = assets.store<Material>(std::move(materialAsset), materialPath);
                 buffer.add(material);
 
                 buffer.next();
@@ -656,7 +670,7 @@ namespace Atlas {
         // ---- Recurse into children ------------------------------------------
         for (int childIdx : node.children) {
             processNode(buffer, model, childIdx, worldTransform,
-                        meshHandles, imageHandles);
+                        meshHandles, imageHandles, sourcePath);
         }
     }
 

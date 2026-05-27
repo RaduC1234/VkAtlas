@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <iomanip>
+#include <memory>
 #include <sstream>
 #include <tiny_obj_loader.h>
 #include <unordered_map>
@@ -439,16 +440,22 @@ namespace Atlas {
                 buffer.add(model);
 
                 MaterialComponent material{};
+                auto materialAsset = std::make_shared<Material>();
                 if (bucket.materialId >= 0 && bucket.materialId < static_cast<int>(materials.size())) {
                     const auto &mat = materials[bucket.materialId];
-                    material.baseColor = glm::vec4(objMaterialDiffuseColor(mat), objMaterialAlpha(mat));
-                    material.albedoTexture = albedoHandles[bucket.materialId];
-                    material.normalMap = normalHandles[bucket.materialId];
-                    material.metallicRoughnessMap = metallicHandles[bucket.materialId] ? metallicHandles[bucket.materialId] : roughnessHandles[bucket.materialId];
-                    material.ambientOcclusion = ambientHandles[bucket.materialId];
-                    material.alphaMasked = mat.dissolve < 1.0f;
-                    material.transparent = mat.dissolve < 1.0f;
+                    materialAsset->name = mat.name.empty() ? "Material_" + std::to_string(bucket.materialId) : mat.name;
+                    materialAsset->baseColor = glm::vec4(objMaterialDiffuseColor(mat), objMaterialAlpha(mat));
+                    materialAsset->baseColorTexture = albedoHandles[bucket.materialId];
+                    materialAsset->normalTexture = normalHandles[bucket.materialId];
+                    materialAsset->metallicRoughnessTexture = metallicHandles[bucket.materialId] ? metallicHandles[bucket.materialId] : roughnessHandles[bucket.materialId];
+                    materialAsset->occlusionTexture = ambientHandles[bucket.materialId];
+                    if (mat.dissolve < 1.0f) {
+                        materialAsset->alphaMode = AlphaMode::BLEND;
+                    }
+                } else {
+                    materialAsset->name = "Material";
                 }
+                material.materialHandle = assets.store<Material>(std::move(materialAsset), path + "/material/" + std::to_string(bucket.materialId));
                 buffer.add(material);
                 buffer.next();
 
@@ -507,7 +514,8 @@ namespace Atlas {
                 reverseWinding = glm::determinant(glm::mat3(modelMatrix)) < 0.0f;
             }
 
-            const glm::vec4 baseColor = material ? material->baseColor : glm::vec4(1.0f);
+            const Material *materialAsset = material ? material->materialHandle.get() : nullptr;
+            const glm::vec4 baseColor = materialAsset ? materialAsset->baseColor : glm::vec4(1.0f);
 
             obj << "\n";
             obj << "o " << entityName << "\n";

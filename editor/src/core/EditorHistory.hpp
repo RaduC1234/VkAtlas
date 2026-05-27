@@ -19,6 +19,7 @@ namespace Atlas::Editor {
         void recordVisibility(entt::entity entity, bool before, bool after);
         void recordTransform(entt::entity entity, const TransformComponent &before, const TransformComponent &after);
         void recordMaterial(entt::entity entity, const MaterialComponent &before, const MaterialComponent &after);
+        void recordMaterialAsset(entt::entity entity, AssetHandle<Material> material, const Material &before, const Material &after);
         void recordLight(entt::entity entity, const LightComponent &before, const LightComponent &after);
 
     private:
@@ -27,6 +28,7 @@ namespace Atlas::Editor {
             Visibility,
             Transform,
             Material,
+            MaterialAsset,
             Light
         };
 
@@ -41,6 +43,9 @@ namespace Atlas::Editor {
             TransformComponent afterTransform;
             MaterialComponent beforeMaterial;
             MaterialComponent afterMaterial;
+            AssetHandle<Material> materialHandle;
+            Material beforeMaterialAsset;
+            Material afterMaterialAsset;
             LightComponent beforeLight;
             LightComponent afterLight;
         };

@@ -639,8 +639,14 @@ namespace Atlas::Editor {
         registry.emplace<ModelComponent>(entity, model);
 
         MaterialComponent material{};
-        material.baseColor = glm::vec4{0.82f, 0.82f, 0.78f, 1.0f};
-        material.albedoTexture = primitiveWhiteTexture();
+        auto materialAsset = std::make_shared<Material>();
+        materialAsset->name = primitiveName(primitive) + " Material";
+        materialAsset->baseColor = glm::vec4{0.82f, 0.82f, 0.78f, 1.0f};
+        materialAsset->baseColorTexture = primitiveWhiteTexture();
+        const std::string materialPath = "##editor/materials/" + materialAsset->name;
+        material.materialHandle = projectLayer.assetManager().store<Material>(
+            std::move(materialAsset),
+            materialPath);
         registry.emplace<MaterialComponent>(entity, material);
 
         selectedEntity = entity;

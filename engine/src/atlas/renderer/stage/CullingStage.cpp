@@ -69,7 +69,7 @@ namespace Atlas {
             }
 
             auto &transform = registry.get<TransformComponent>(entity);
-            auto &material  = registry.get<MaterialComponent>(entity);
+            auto &materialComponent = registry.get<MaterialComponent>(entity);
             auto &model     = registry.get<ModelComponent>(entity);
 
             if (!model.meshHandle.valid() || !model.meshHandle.isReady()) {
@@ -77,20 +77,26 @@ namespace Atlas {
                 continue;
             }
 
-            const uint32_t albedoIdx = registerTexture(material.albedoTexture);
-            const uint32_t normalIdx = registerTexture(material.normalMap);
-            const uint32_t mrIdx     = registerTexture(material.metallicRoughnessMap);
-            const uint32_t aoIdx     = registerTexture(material.ambientOcclusion);
+            const Material fallbackMaterial{};
+            const Material *material = materialComponent.materialHandle.get();
+            if (!material) {
+                material = &fallbackMaterial;
+            }
+
+            const uint32_t albedoIdx = registerTexture(material->baseColorTexture);
+            const uint32_t normalIdx = registerTexture(material->normalTexture);
+            const uint32_t mrIdx     = registerTexture(material->metallicRoughnessTexture);
+            const uint32_t aoIdx     = registerTexture(material->occlusionTexture);
 
             const glm::mat4 m = transform.mat4();
             const GPUObjectData data{
                 .modelMatrix    = m,
                 .normalMatrix   = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
                 .textureIndices = glm::uvec4(albedoIdx, normalIdx, mrIdx, aoIdx),
-                .baseColor      = material.baseColor,
+                .baseColor      = material->baseColor,
             };
 
-            if (material.baseColor.w >= 1.0f) {
+            if (material->baseColor.w >= 1.0f && material->alphaMode != AlphaMode::BLEND) {
                 const uint32_t idx = static_cast<uint32_t>(objectData_.size());
                 objectData_.push_back(data);
                 draws_.push_back({model.meshHandle, idx});

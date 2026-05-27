@@ -159,6 +159,7 @@ namespace Atlas {
             std::erase_if(textureByPath_, [](const auto &kv) { return kv.second.expired(); });
             std::erase_if(meshByPath_, [](const auto &kv) { return kv.second.expired(); });
             std::erase_if(cubemapByPath_, [](const auto &kv) { return kv.second.expired(); });
+            std::erase_if(materialByPath_, [](const auto &kv) { return kv.second.expired(); });
         }
     }
 
@@ -181,6 +182,7 @@ namespace Atlas {
         textureByPath_.clear();
         meshByPath_.clear();
         cubemapByPath_.clear();
+        materialByPath_.clear();
     }
 
     std::string AssetManager::loadFileAsString(const std::string &path) {
