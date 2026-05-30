@@ -16,6 +16,7 @@ struct ObjectData {
     mat4  normalMatrix;
     uvec4 textureIndices;
     vec4  baseColor;
+    vec4  sheenColorStrength;
     uint  firstIndex;
     uint  indexCount;
     uint  firstVertex;

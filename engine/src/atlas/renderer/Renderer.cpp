@@ -167,9 +167,7 @@ namespace Atlas {
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         const bool clearOverlay = loadOp == OverlayLoadOp::Clear;
         renderPassInfo.renderPass = getOverlayRenderPass(loadOp);
-        renderPassInfo.framebuffer = clearOverlay
-            ? swapChain_->getOverlayClearFrameBuffer(currentImageIndex)
-            : swapChain_->getOverlayFrameBuffer(currentImageIndex);
+        renderPassInfo.framebuffer = clearOverlay ? swapChain_->getOverlayClearFrameBuffer(currentImageIndex) : swapChain_->getOverlayFrameBuffer(currentImageIndex);
         renderPassInfo.renderArea.offset = {0, 0};
         renderPassInfo.renderArea.extent = swapChain_->getSwapChainExtent();
         renderPassInfo.clearValueCount = 1;
@@ -213,14 +211,16 @@ namespace Atlas {
             device_->device(),
             device_->getGraphicsCommandPool(),
             static_cast<uint32_t>(graphicsCommandBuffers_.size()),
-            graphicsCommandBuffers_.data());
+            graphicsCommandBuffers_.data()
+        );
         graphicsCommandBuffers_.clear();
 
         vkFreeCommandBuffers(
             device_->device(),
             device_->getComputeCommandPool(),
             static_cast<uint32_t>(computeCommandBuffers.size()),
-            computeCommandBuffers.data());
+            computeCommandBuffers.data()
+        );
         computeCommandBuffers.clear();
     }
 
@@ -265,5 +265,4 @@ namespace Atlas {
             }
         }
     }
-
 }

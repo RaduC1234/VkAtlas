@@ -456,6 +456,8 @@ namespace Atlas {
     }
 
     void DesktopWindow::setTheme(Theme theme) {
+        this->theme = theme;
+
         HWND hwnd = glfwGetWin32Window(glfwWindow);
         if (!hwnd) return;
         BOOL dark = (theme == Theme::Dark) ? TRUE : FALSE;

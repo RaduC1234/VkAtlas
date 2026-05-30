@@ -4,7 +4,7 @@
 
 namespace Atlas {
     OutputStage::OutputStage(Device &device, Renderer &renderer)
-        : IRenderStage(Queue::GRAPHICS), device(device), renderer(renderer) {
+        : RenderStage(Queue::GRAPHICS), device(device), renderer(renderer) {
     }
 
     void OutputStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {

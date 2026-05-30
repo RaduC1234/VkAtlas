@@ -14,14 +14,14 @@ namespace Atlas {
         auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
             .addStage<CullingStage>(device, assets)
             .addStage<GeometryStage>(device, assets, *globalSetLayout)
-            .addStage<PostProcessPass>(device, *globalSetLayout)
+            .addStage<PostProcessPass>(device, *globalSetLayout, false)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));
 
         auto rayTracingGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
             .addStage<PathTracingStage>(device, assets, *globalSetLayout)
-            .addStage<PostProcessPass>(device, *globalSetLayout)
+            .addStage<PostProcessPass>(device, *globalSetLayout, true)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));

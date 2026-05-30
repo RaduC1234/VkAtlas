@@ -48,14 +48,30 @@ namespace Atlas {
         };
 
         auto view = registry.view<TransformComponent, CameraComponent>();
+        auto editorView = registry.view<TransformComponent, CameraComponent, EditorCameraComponent>();
+        auto isCameraUsable = [&](entt::entity entity) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                return false;
+            }
 
-        if (view.size_hint() > 1) {
-            AT_WARN("Multiple camera entities detected. All will be updated but only one used for rendering.");
+            return true;
+        };
+
+        bool useEditorCamera = false;
+        for (const entt::entity entity: editorView) {
+            if (isCameraUsable(entity)) {
+                useEditorCamera = true;
+                break;
+            }
         }
 
-        for (auto entity: view) {
-            auto &tf = view.get<TransformComponent>(entity);
+        if (!useEditorCamera && view.size_hint() > 1) {
+            AT_WARN("Multiple camera entities detected. All will be updated but only one used for rendering.");
+        } else if (useEditorCamera && editorView.size_hint() > 1) {
+            AT_WARN("Multiple editor camera entities detected. All editor cameras will be updated but only one used for rendering.");
+        }
 
+        auto updateCamera = [&](entt::entity entity, TransformComponent &tf) {
             if (glm::dot(rotationDt, rotationDt) > std::numeric_limits<float>::epsilon()) {
                 tf.rotation += lookSpeed * referenceLookDeltaTime * rotationDt;
             }
@@ -99,6 +115,27 @@ namespace Atlas {
                 camComp.camera.setViewYXZ(tf.translation, tf.rotation);
                 camComp.camera.setPerspectiveProjection(glm::radians(50.0f), screenAspect, 0.1f, 100.0f);
             });
+        };
+
+        if (useEditorCamera) {
+            for (auto entity: editorView) {
+                if (!isCameraUsable(entity)) {
+                    continue;
+                }
+
+                auto &tf = editorView.get<TransformComponent>(entity);
+                updateCamera(entity, tf);
+            }
+            return;
+        }
+
+        for (auto entity: view) {
+            if (!isCameraUsable(entity) || registry.all_of<TransientComponent>(entity)) {
+                continue;
+            }
+
+            auto &tf = view.get<TransformComponent>(entity);
+            updateCamera(entity, tf);
         }
     }
 }

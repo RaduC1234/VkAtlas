@@ -54,6 +54,7 @@ namespace Atlas {
         virtual void setWindowIcon(const std::string &iconPath) { assert(true && "Method not implemented"); }
 
         virtual void setTheme(Theme theme) { assert(true && "Method not implemented"); }
+        virtual Theme getTheme() const { assert(true && "Method not implemented"); return Theme::Dark; }
 
         bool wasWindowResized() const { return framebufferResized; }
         void resetWindowResizedFlag() { this->framebufferResized = false; }

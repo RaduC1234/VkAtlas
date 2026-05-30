@@ -1,64 +1,21 @@
 #include "AssetManager.hpp"
 
 #include <algorithm>
-#include <cctype>
 #include <cstring>
-#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <utility>
 
 #include "core/Log.hpp"
-#include "accessors/GLTFAccessor.hpp"
-#include "accessors/OBJAccessor.hpp"
 #include "renderer/ResourceManager.hpp"
 #include "renderer/resources/GPUCubemap.hpp"
 
 namespace Atlas {
-    AssetManager::AssetManager(ResourceManager &resourceManager, ExecutorService &executorService) : resourceManager_(resourceManager), executor_(executorService) {
-        registerLoader<GLTFAccessor>(*this, executorService);
-        registerLoader<OBJAccessor>(*this, executorService);
+    AssetManager::AssetManager(ResourceManager &resourceManager) : resourceManager_(resourceManager) {
     }
 
     AssetManager::~AssetManager() {
         clearCaches();
-    }
-
-    std::vector<entt::entity> AssetManager::importAsset(const std::string &virtualPath, entt::registry &registry, entt::entity parentEntity) {
-        (void) parentEntity;
-
-        std::string ext = std::filesystem::path(virtualPath).extension().string();
-        std::ranges::transform(ext, ext.begin(), ::tolower);
-
-        auto it = accessors_.find(ext);
-        if (it == accessors_.end()) {
-            AT_ERROR("No loader registered for extension: {}", ext);
-            return {};
-        }
-
-        EntityBuffer buffer;
-        it->second->importAsset(virtualPath, buffer);
-        return buffer.flush(registry);
-    }
-
-    std::future<void> AssetManager::importAsync(const std::string &virtualPath, entt::registry &registry) {
-        std::string ext = std::filesystem::path(virtualPath).extension().string();
-        std::ranges::transform(ext, ext.begin(), ::tolower);
-
-        auto it = accessors_.find(ext);
-        if (it == accessors_.end()) {
-            AT_ERROR("No loader registered for extension: {}", ext);
-            return {};
-        }
-
-        auto accessor = it->second;
-        return executor_.submit([this, accessor = std::move(accessor), virtualPath, registry = &registry]() {
-            EntityBuffer buffer;
-            accessor->importAsset(virtualPath, buffer);
-
-            std::lock_guard lock(pendingFlushMutex_);
-            pendingFlushes_.emplace_back(std::move(buffer), registry);
-        });
     }
 
     std::filesystem::path AssetManager::rootPath() const {
@@ -69,33 +26,8 @@ namespace Atlas {
         rootPath_ = path;
     }
 
-    std::vector<std::string> AssetManager::importerExtensions() const {
-        std::vector<std::string> extensions;
-        extensions.reserve(accessors_.size());
-
-        for (const auto &[extension, accessor]: accessors_) {
-            (void)accessor;
-            extensions.push_back(extension);
-        }
-
-        std::ranges::sort(extensions);
-        return extensions;
-    }
-
     void AssetManager::update() {
         constexpr size_t maxGpuCreatesPerFrame = 1;
-
-        std::vector<std::pair<EntityBuffer, entt::registry*>> pendingFlushes;
-        {
-            std::lock_guard lock(pendingFlushMutex_);
-            pendingFlushes.swap(pendingFlushes_);
-        }
-
-        for (auto &[buffer, registry]: pendingFlushes) {
-            if (registry) {
-                buffer.flush(*registry);
-            }
-        }
 
         std::vector<WeakState<Texture> > textures;
         std::vector<WeakState<Mesh> > meshes;
@@ -127,7 +59,7 @@ namespace Atlas {
 
         for (auto &weak: textures) {
             auto state = weak.lock();
-            if (!state || !state->asset) continue; // all handles dropped before upload — skip
+            if (!state || !state->asset) continue; // all handles dropped before upload - skip
             auto gpu = resourceManager_.add(state->asset);
             state->gpu = gpu;
             for (const auto &slot: state->bindlessSlots) {
@@ -164,11 +96,6 @@ namespace Atlas {
     }
 
     void AssetManager::clearCaches() {
-        {
-            std::lock_guard lock(pendingFlushMutex_);
-            pendingFlushes_.clear();
-        }
-
         std::lock_guard lock(pendingMutex_);
 
         pendingTextures_.clear();
@@ -183,6 +110,27 @@ namespace Atlas {
         meshByPath_.clear();
         cubemapByPath_.clear();
         materialByPath_.clear();
+    }
+
+    std::filesystem::path AssetManager::resolveAssetPath(const std::string &path) const {
+        const std::filesystem::path filePath(path);
+        if (filePath.is_absolute() || path.starts_with("##")) {
+            return filePath;
+        }
+
+        if (!rootPath_.empty()) {
+            std::string normalized = filePath.generic_string();
+            const std::string rootName = rootPath_.filename().generic_string();
+            if (!rootName.empty() && (normalized == rootName || normalized.starts_with(rootName + "/"))) {
+                normalized = normalized.size() == rootName.size()
+                    ? std::string{}
+                    : normalized.substr(rootName.size() + 1);
+            }
+
+            return (rootPath_ / normalized).lexically_normal();
+        }
+
+        return filePath;
     }
 
     std::string AssetManager::loadFileAsString(const std::string &path) {

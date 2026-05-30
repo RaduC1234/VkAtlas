@@ -9,7 +9,7 @@
 
 namespace Atlas {
     CullingStage::CullingStage(Device &, AssetManager &assets)
-        : IRenderStage(Queue::GRAPHICS), assets_(assets) {
+        : RenderStage(Queue::GRAPHICS), assets_(assets) {
     }
 
     void CullingStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {

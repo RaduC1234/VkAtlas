@@ -2,8 +2,6 @@
   "name": "{{PROJECT_NAME}}",
   "engineVersion": "{{ENGINE_VERSION}}",
   "assetRoot": "assets",
-  "codeModule": "{{PROJECT_MODULE}}",
-  "startupScene": "{{STARTUP_LEVEL}}",
   "startupLevel": "{{STARTUP_LEVEL_PATH}}",
   "levels": [
     "{{STARTUP_LEVEL_PATH}}"

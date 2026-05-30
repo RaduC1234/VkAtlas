@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -52,6 +53,8 @@ namespace Atlas {
 
         T *get() { return state_ ? state_->asset.get() : nullptr; }
         T *get() const { return state_ ? state_->asset.get() : nullptr; }
+        const std::string &path() const { return path_; }
+        bool hasPath() const { return !path_.empty(); }
         T *operator->() { return get(); }
         T *operator->() const { return get(); }
         T &operator*() { return *get(); }
@@ -132,10 +135,11 @@ namespace Atlas {
             std::vector<BindlessSlot> bindlessSlots;
         };
 
-        explicit AssetHandle(std::shared_ptr<State> state) : state_(std::move(state)) {
+        AssetHandle(std::shared_ptr<State> state, std::string path) : state_(std::move(state)), path_(std::move(path)) {
         }
 
         std::shared_ptr<State> state_;
+        std::string path_;
     };
 
     template<AssetType T>

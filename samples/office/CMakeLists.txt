@@ -2,14 +2,8 @@ cmake_minimum_required(VERSION 3.22)
 
 project("AtlasOfficeProject")
 
-set(ATLAS_OFFICE_SCENE_SOURCES
-        src/scenes/OfficeScene.cpp
-        src/scenes/OfficeScene.hpp
-)
-
 add_library(atlas_office_project SHARED
         src/core/OfficeProject.cpp
-        ${ATLAS_OFFICE_SCENE_SOURCES}
 )
 
 target_link_libraries(atlas_office_project PRIVATE atlas_engine)

@@ -34,12 +34,14 @@ namespace Atlas {
         void setCursorMode(CursorMode cursorMode) override;
         void setWindowIcon(const std::string &iconPath) override;
         void setTheme(Theme theme) override;
+        Theme getTheme() const override { return theme; }
         void *getNativeHandle() const override;
 
         GLFWwindow *glfwWindow         = nullptr;
         void       *originalWindowProc = nullptr;
         bool        customTitleBar     = false;
         CaptionBar  captionBar;
+        Theme theme;
 
         void installCustomTitleBar();
         void removeCustomTitleBar();

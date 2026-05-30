@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <entt/entity/entity.hpp>
+#include <nlohmann/json.hpp>
 
 #include "asset/AssetHandle.hpp"
 #include "renderer/Camera.hpp"
@@ -95,6 +96,12 @@ namespace Atlas {
         Camera camera{};
     };
 
+    struct EditorCameraComponent {
+    };
+
+    struct TransientComponent {
+    };
+
     struct MaterialComponent {
         AssetHandle<Material> materialHandle;
     };
@@ -144,5 +151,15 @@ namespace Atlas {
         float contrast{1.0f};
         float saturation{1.0};
         glm::vec3 colorTint = {1.0f, 1.0f, 1.0f};
+    };
+
+    struct ScriptBinding {
+        std::string type;
+        bool enabled = true;
+        nlohmann::json properties = nlohmann::json::object();
+    };
+
+    struct ScriptComponent {
+        std::vector<ScriptBinding> scripts;
     };
 }

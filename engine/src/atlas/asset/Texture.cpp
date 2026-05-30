@@ -1,6 +1,7 @@
 #include "Texture.hpp"
 
 #include <cstring>
+#include <filesystem>
 #include <stdexcept>
 
 #include <ktx.h>
@@ -32,7 +33,7 @@ namespace Atlas {
             );
 
             if (!pixels) {
-                throw std::runtime_error("Texture::fromFile — HDR decode failed: " + path);
+                throw std::runtime_error("Texture::fromFile - HDR decode failed: " + path);
             }
 
             const auto span = std::span(pixels, w * h * 4);
@@ -46,7 +47,7 @@ namespace Atlas {
             constexpr uint32_t w = 64, h = 64;
             constexpr size_t expected = w * h * 4 * sizeof(float);
             if (raw.size() != expected) {
-                throw std::runtime_error("Texture::fromFile — unexpected .bin size: " + path);
+                throw std::runtime_error("Texture::fromFile - unexpected .bin size: " + path);
             }
             return fromHDR(
                 {raw.begin(), raw.end()},
@@ -63,7 +64,7 @@ namespace Atlas {
         );
 
         if (!pixels) {
-            throw std::runtime_error("Texture::fromFile — decode failed: " + path);
+            throw std::runtime_error("Texture::fromFile - decode failed: " + path);
         }
 
         const auto span = std::span(pixels, w * h * 4);
@@ -111,6 +112,49 @@ namespace Atlas {
         ktxTexture_Destroy(ktxTexture(ktx));
 
         return std::make_shared<Texture>(bytes, width, height, format, addressMode);
+    }
+
+    void Texture::saveKtx2(const Texture &texture, const std::string &path) {
+        const std::filesystem::path filePath(path);
+        if (filePath.has_parent_path()) {
+            std::filesystem::create_directories(filePath.parent_path());
+        }
+
+        ktxTextureCreateInfo info{};
+        info.vkFormat = static_cast<ktx_uint32_t>(texture.format());
+        info.baseWidth = texture.width();
+        info.baseHeight = texture.height();
+        info.baseDepth = 1;
+        info.numDimensions = 2;
+        info.numLevels = 1;
+        info.numLayers = 1;
+        info.numFaces = 1;
+        info.isArray = KTX_FALSE;
+        info.generateMipmaps = KTX_FALSE;
+
+        ktxTexture2 *ktx = nullptr;
+        ktxResult result = ktxTexture2_Create(&info, KTX_TEXTURE_CREATE_ALLOC_STORAGE, &ktx);
+        if (result != KTX_SUCCESS) {
+            throw std::runtime_error("Failed to create KTX2 texture: " + path);
+        }
+
+        result = ktxTexture_SetImageFromMemory(
+            ktxTexture(ktx),
+            0,
+            0,
+            0,
+            reinterpret_cast<const ktx_uint8_t *>(texture.pixels().data()),
+            texture.pixels().size());
+        if (result != KTX_SUCCESS) {
+            ktxTexture_Destroy(ktxTexture(ktx));
+            throw std::runtime_error("Failed to fill KTX2 texture: " + path);
+        }
+
+        result = ktxTexture_WriteToNamedFile(ktxTexture(ktx), filePath.string().c_str());
+        ktxTexture_Destroy(ktxTexture(ktx));
+        if (result != KTX_SUCCESS) {
+            throw std::runtime_error("Failed to write KTX2 texture: " + path);
+        }
     }
 
     std::shared_ptr<Texture> Texture::default_() {

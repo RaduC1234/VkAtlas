@@ -8,13 +8,6 @@
 #include <imgui.h>
 
 namespace Atlas {
-    static ImVec4 srgb(ImVec4 c) {
-        auto toLinear = [](float x) {
-            return x <= 0.04045f ? x / 12.92f : std::pow((x + 0.055f) / 1.055f, 2.4f);
-        };
-        return ImVec4(toLinear(c.x), toLinear(c.y), toLinear(c.z), c.w);
-    }
-
     class ImGuiLayer {
     public:
         ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount);
@@ -25,7 +18,7 @@ namespace Atlas {
 
         void beginFrame(bool createDockSpace);
         void endFrame();
-        void renderDrawData(VkCommandBuffer commandBuffer);
+        void render(VkCommandBuffer commandBuffer);
 
         static VkDescriptorSet addTexture(VkImageView imageView, VkImageLayout imageLayout);
         static VkDescriptorSet addTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout);
@@ -33,7 +26,8 @@ namespace Atlas {
 
     private:
         void createDescriptorPool(Device &device);
-        void setStyle();
+        void setStyleWhite();
+        void setStyleDark();
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkDevice device = VK_NULL_HANDLE;

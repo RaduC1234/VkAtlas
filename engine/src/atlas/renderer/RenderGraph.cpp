@@ -24,7 +24,7 @@ namespace Atlas {
             Node node;
             node.stage = stage.get();
 
-            std::vector<IRenderStage::Resource::Description> outputs;
+            std::vector<RenderStage::Resource::Description> outputs;
             std::vector<std::string> inputs;
             stage->getDeclaredOutputs(outputs);
             stage->getDeclaredInputs(inputs);
@@ -56,7 +56,7 @@ namespace Atlas {
 
     void RenderGraph::bakeResources() {
         for (auto &stage: stages_) {
-            std::vector<IRenderStage::Resource::Description> outputs;
+            std::vector<RenderStage::Resource::Description> outputs;
             stage->getDeclaredOutputs(outputs);
 
             for (auto &output: outputs) {
@@ -64,7 +64,7 @@ namespace Atlas {
                     continue;
                 }
 
-                if (output.kind() == IRenderStage::Resource::Kind::GPU_IMAGE) {
+                if (output.kind() == RenderStage::Resource::Kind::GPU_IMAGE) {
                     const uint32_t w = output.width ? output.width : width;
                     const uint32_t h = output.height ? output.height : height;
 
@@ -74,16 +74,16 @@ namespace Atlas {
                             .setUsage(output.imageUsage)
                             .setDebugName(output.name);
 
-                    if (output.type == IRenderStage::Resource::Type::ATTACHMENT_DEPTH) {
+                    if (output.type == RenderStage::Resource::Type::ATTACHMENT_DEPTH) {
                         builder.addView(VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
                                 .addView(VK_IMAGE_ASPECT_STENCIL_BIT);
                     } else {
                         builder.addView(VK_IMAGE_ASPECT_COLOR_BIT);
                     }
-                    ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(builder.build())});
+                    ownedResources_.emplace(output.name, RenderStage::Resource{output.type, std::move(builder.build())});
                 }
 
-                if (output.kind() == IRenderStage::Resource::Kind::GPU_BUFFER) {
+                if (output.kind() == RenderStage::Resource::Kind::GPU_BUFFER) {
                     GPUBuffer buf = output.hostVisible
                         ? GPUBuffer::Builder(device)
                               .setSize(output.size)
@@ -99,30 +99,30 @@ namespace Atlas {
                               .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
                               .build();
 
-                    ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buf)});
+                    ownedResources_.emplace(output.name, RenderStage::Resource{output.type, std::move(buf)});
                 }
 
-                if (output.kind() == IRenderStage::Resource::Kind::CPU_BUFFER) {
+                if (output.kind() == RenderStage::Resource::Kind::CPU_BUFFER) {
                     CPUBuffer buf = CPUBuffer::Builder()
                         .setSize(output.size)
                         .setInitialData(output.cpuInitial)
                         .build();
 
-                    ownedResources_.emplace(output.name, IRenderStage::Resource{output.type, std::move(buf)});
+                    ownedResources_.emplace(output.name, RenderStage::Resource{output.type, std::move(buf)});
                 }
             }
         }
 
-        std::unordered_map<std::string, std::reference_wrapper<IRenderStage::Resource> > refs;
+        std::unordered_map<std::string, std::reference_wrapper<RenderStage::Resource> > refs;
         for (auto &[name, img]: ownedResources_) {
             refs.emplace(name, std::ref(img));
         }
 
         // Compute finalLayouts and lastWrittenBy by simulating the barrier pass
         std::unordered_map<std::string, VkImageLayout> finalLayouts;
-        std::unordered_map<std::string, IRenderStage::Queue> lastWrittenBy;
+        std::unordered_map<std::string, RenderStage::Queue> lastWrittenBy;
         for (auto &node: nodes_) {
-            std::vector<IRenderStage::Resource::Description> stageOutputs;
+            std::vector<RenderStage::Resource::Description> stageOutputs;
             node.stage->getDeclaredOutputs(stageOutputs);
             for (auto &output: stageOutputs) {
                 finalLayouts[output.name] = writeLayoutFor(output.type);
@@ -130,7 +130,7 @@ namespace Atlas {
             }
         }
 
-        IRenderStage::Context ctx{refs, finalLayouts, lastWrittenBy};
+        RenderStage::Context ctx{refs, finalLayouts, lastWrittenBy};
         for (auto &stage: stages_) {
             stage->onResourcesCreated(ctx);
         }
@@ -144,15 +144,15 @@ namespace Atlas {
 
     void RenderGraph::bakeBarriers() {
         std::unordered_map<std::string, VkImageLayout> currentLayouts;
-        std::unordered_map<std::string, IRenderStage::Queue> lastWrittenBy;
+        std::unordered_map<std::string, RenderStage::Queue> lastWrittenBy;
 
         for (auto &node: nodes_) {
-            std::vector<IRenderStage::Resource::Description> outputs;
+            std::vector<RenderStage::Resource::Description> outputs;
             std::vector<std::string> inputs;
             node.stage->getDeclaredOutputs(outputs);
             node.stage->getDeclaredInputs(inputs);
 
-            const bool isCompute = node.stage->queue() == IRenderStage::Queue::COMPUTE;
+            const bool isCompute = node.stage->queue() == RenderStage::Queue::COMPUTE;
 
             for (auto &input: inputs) {
                 auto resIt = ownedResources_.find(input);
@@ -160,12 +160,12 @@ namespace Atlas {
                     continue;
                 }
 
-                if (resIt->second.kind() == IRenderStage::Resource::Kind::GPU_BUFFER) {
-                    if (resIt->second.type() == IRenderStage::Resource::Type::BUFFER_VERTEX || resIt->second.type() == IRenderStage::Resource::Type::BUFFER_INDEX) {
+                if (resIt->second.kind() == RenderStage::Resource::Kind::GPU_BUFFER) {
+                    if (resIt->second.type() == RenderStage::Resource::Type::BUFFER_VERTEX || resIt->second.type() == RenderStage::Resource::Type::BUFFER_INDEX) {
                         continue; // Vertex and index buffers are only read by the GPU
                     }
 
-                    if (resIt->second.type() == IRenderStage::Resource::Type::BUFFER_STORAGE) {
+                    if (resIt->second.type() == RenderStage::Resource::Type::BUFFER_STORAGE) {
                         Barrier barrier{};
                         barrier.resourceName = input;
                         barrier.isBuffer = true;
@@ -351,21 +351,21 @@ namespace Atlas {
         }
     }
 
-    VkImageLayout RenderGraph::writeLayoutFor(IRenderStage::Resource::Type type) {
+    VkImageLayout RenderGraph::writeLayoutFor(RenderStage::Resource::Type type) {
         switch (type) {
-            case IRenderStage::Resource::Type::ATTACHMENT_COLOR: return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            case IRenderStage::Resource::Type::ATTACHMENT_DEPTH: return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            case IRenderStage::Resource::Type::SHADER_WRITE: return VK_IMAGE_LAYOUT_GENERAL;
+            case RenderStage::Resource::Type::ATTACHMENT_COLOR: return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            case RenderStage::Resource::Type::ATTACHMENT_DEPTH: return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            case RenderStage::Resource::Type::SHADER_WRITE: return VK_IMAGE_LAYOUT_GENERAL;
             default: return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         }
     }
 
-    VkImageLayout RenderGraph::readLayoutFor(IRenderStage::Resource::Type type) {
+    VkImageLayout RenderGraph::readLayoutFor(RenderStage::Resource::Type type) {
         switch (type) {
-            case IRenderStage::Resource::Type::ATTACHMENT_DEPTH:
-            case IRenderStage::Resource::Type::SHADER_READ:
+            case RenderStage::Resource::Type::ATTACHMENT_DEPTH:
+            case RenderStage::Resource::Type::SHADER_READ:
                 return VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            case IRenderStage::Resource::Type::SHADER_WRITE:
+            case RenderStage::Resource::Type::SHADER_WRITE:
                 // Storage images written by compute stay in GENERAL.
                 // Consumers (e.g. OutputStage) transition from GENERAL themselves.
                 return VK_IMAGE_LAYOUT_GENERAL;
@@ -394,9 +394,9 @@ namespace Atlas {
         }
     }
 
-    VkImageAspectFlags RenderGraph::aspectFor(IRenderStage::Resource::Type type) {
+    VkImageAspectFlags RenderGraph::aspectFor(RenderStage::Resource::Type type) {
         switch (type) {
-            case IRenderStage::Resource::Type::ATTACHMENT_DEPTH: return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            case RenderStage::Resource::Type::ATTACHMENT_DEPTH: return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
             default: return VK_IMAGE_ASPECT_COLOR_BIT;
         }
     }

@@ -71,9 +71,7 @@ namespace Atlas {
 
         VkRenderPass getSwapChainRenderPass() const { return swapChain_->getRenderPass(); }
         VkRenderPass getOverlayRenderPass(OverlayLoadOp loadOp = OverlayLoadOp::Load) const {
-            return loadOp == OverlayLoadOp::Clear
-                ? swapChain_->getOverlayClearRenderPass()
-                : swapChain_->getOverlayRenderPass();
+            return loadOp == OverlayLoadOp::Clear ? swapChain_->getOverlayClearRenderPass() : swapChain_->getOverlayRenderPass();
         }
         float getAspectRatio() const;
         size_t getImageCount() const { return swapChain_->imageCount(); }

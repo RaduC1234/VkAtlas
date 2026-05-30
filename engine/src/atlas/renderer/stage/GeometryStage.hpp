@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "IRenderStage.hpp"
+#include "RenderStage.hpp"
 #include "entity/Object.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
@@ -14,7 +14,7 @@
 #include "renderer/abstraction/Pipeline.hpp"
 
 namespace Atlas {
-    class GeometryStage : public IRenderStage {
+    class GeometryStage : public RenderStage {
     public:
         GeometryStage(Device &device, AssetManager &assets,
                       const DescriptorSetLayout &globalSetLayout);
@@ -82,6 +82,7 @@ namespace Atlas {
         bool boundPrefilterReady = false;
         AssetHandle<Cubemap> boundSkyboxHandle;
         bool boundSkyboxReady = false;
+        bool drawSkybox = false;
 
         void begin(VkCommandBuffer cmd);
         void end(VkCommandBuffer cmd);

@@ -2,16 +2,19 @@
 
 #include <Atlas.hpp>
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "EditorHistory.hpp"
-#include "panels/HierarchyPanel.hpp"
-#include "panels/InspectorPanel.hpp"
-#include "panels/ViewportPanel.hpp"
-#include "panels/RenderSettingsPanel.hpp"
-#include "widgets/MaterialEditor.hpp"
+#include "IconRegistry.hpp"
+#include "ui/panels/AssetExplorerPanel.hpp"
+#include "ui/panels/HierarchyPanel.hpp"
+#include "ui/panels/InspectorPanel.hpp"
+#include "ui/panels/ViewportPanel.hpp"
+#include "ui/panels/RenderSettingsPanel.hpp"
+#include "ui/widgets/MaterialEditor.hpp"
 
 namespace Atlas::Editor {
     class EditorLayer final : public Layer {
@@ -26,6 +29,11 @@ namespace Atlas::Editor {
         void handleShortcuts();
         void drawMenuBar();
         void createNewProject();
+        void openProject();
+        void loadProject(const std::filesystem::path &manifestPath);
+        void processPendingProjectLoad();
+        void ensureEditorCamera();
+        void saveLevel();
         void importIntoLevel();
         void exportFramebuffer();
         void openMaterialEditor(entt::entity ownerEntity, AssetHandle<Material> materialHandle);
@@ -45,10 +53,14 @@ namespace Atlas::Editor {
         entt::entity materialEditorOwner = entt::null;
         AssetHandle<Material> materialEditorHandle;
         MaterialEditState materialEditState;
+        bool pendingProjectLoad = false;
+        std::filesystem::path pendingProjectManifestPath;
 
+        std::unique_ptr<IconRegistry> iconRegistry;
         std::shared_ptr<HierarchyPanel> hierarchyPanel;
         std::shared_ptr<InspectorPanel> inspectorPanel;
         std::shared_ptr<ViewportPanel> viewportPanel;
         std::shared_ptr<RenderSettingsPanel> renderSettingsPanel;
+        std::shared_ptr<AssetExplorerPanel> assetExplorerPanel;
     };
 }

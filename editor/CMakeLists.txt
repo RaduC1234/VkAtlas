@@ -5,6 +5,9 @@ project("atlas_editor")
 file(GLOB_RECURSE EDITOR_SOURCES CONFIGURE_DEPENDS "src/*.cpp" "src/*.hpp")
 list(REMOVE_ITEM EDITOR_SOURCES "src/EditorEntryPoint.cpp")
 
+set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "Disable LunaSVG examples" FORCE)
+add_subdirectory(dependencies/lunasvg)
+
 add_library(atlas_editor_module STATIC ${EDITOR_SOURCES})
 atlas_set_output_dirs(atlas_editor_module)
 
@@ -15,6 +18,12 @@ target_include_directories(atlas_editor_module PRIVATE
 
 target_link_libraries(atlas_editor_module PUBLIC
         atlas_engine
+)
+
+target_link_libraries(atlas_editor_module PRIVATE
+        tinyobjloader
+        tinygltf
+        lunasvg::lunasvg
 )
 
 target_compile_definitions(atlas_editor_module PRIVATE

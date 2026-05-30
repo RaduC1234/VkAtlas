@@ -48,6 +48,7 @@ namespace Atlas {
         glm::mat4 normalMatrix;
         glm::uvec4 textureIndices;
         glm::vec4 baseColor;
+        glm::vec4 sheenColorStrength;
         uint32_t firstIndex;
         uint32_t indexCount;
         uint32_t firstVertex;
@@ -77,9 +78,10 @@ namespace Atlas {
     };
 
     constexpr uint32_t MATERIAL_FLAG_ALPHA_MASKED = 1u << 0u;
+    constexpr uint32_t MATERIAL_FLAG_CLOTH_CHARLIE = 1u << 1u;
 
     PathTracingStage::PathTracingStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout)
-        : IRenderStage(Queue::GRAPHICS), device(device), assets(assets), globalSetLayout(globalSetLayout) {
+        : RenderStage(Queue::GRAPHICS), device(device), assets(assets), globalSetLayout(globalSetLayout) {
         objectBuffer = std::make_unique<GPUBuffer>(
             GPUBuffer::simple(device)
             .setSize(sizeof(PTObjectData) * MAX_OBJECTS)
@@ -135,8 +137,9 @@ namespace Atlas {
 
     PathTracingStage::~PathTracingStage() {
         vkDestroySampler(device.device(), envSampler, nullptr);
-        if (pipelineLayout != VK_NULL_HANDLE)
+        if (pipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
+        }
     }
 
     void PathTracingStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
@@ -305,6 +308,14 @@ namespace Atlas {
                 allIndices.push_back(i);
             }
 
+            uint32_t flags = 0u;
+            if (material->alphaMode == AlphaMode::MASK) {
+                flags |= MATERIAL_FLAG_ALPHA_MASKED;
+            }
+            if (material->shadingModel == ShadingModel::CLOTH_CHARLIE) {
+                flags |= MATERIAL_FLAG_CLOTH_CHARLIE;
+            }
+
             cpuObjects.push_back({
                 .modelMatrix = m,
                 .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
@@ -315,10 +326,11 @@ namespace Atlas {
                     registerTexture(material->occlusionTexture)
                 ),
                 .baseColor = material->baseColor,
+                .sheenColorStrength = glm::vec4(material->sheenColor, material->sheenStrength),
                 .firstIndex = firstIndex,
                 .indexCount = static_cast<uint32_t>(model.meshHandle->indices().size()),
                 .firstVertex = firstVertex,
-                .flags = material->alphaMode == AlphaMode::MASK ? MATERIAL_FLAG_ALPHA_MASKED : 0u,
+                .flags = flags,
             });
         }
 
@@ -425,13 +437,13 @@ namespace Atlas {
 
         // Transition display + accumulation images to GENERAL every frame.
         // On sample 0 their contents are discarded; subsequent samples preserve
-        // the HDR accumulation while OutputStage restores post_color to GENERAL.
+        // the HDR accumulation while later stages read geometry_color in GENERAL.
         {
             const bool preserveAccumulation = currentSample > 0;
 
             std::array<VkImageMemoryBarrier, 2> barriers{};
             barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-            barriers[0].oldLayout = preserveAccumulation ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
+            barriers[0].oldLayout = preserveAccumulation ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
             barriers[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
             barriers[0].srcAccessMask = preserveAccumulation ? VK_ACCESS_SHADER_READ_BIT : 0;
             barriers[0].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
@@ -492,7 +504,7 @@ namespace Atlas {
 
         pre[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         pre[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-        pre[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        pre[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
         pre[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
         pre[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         pre[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -512,7 +524,7 @@ namespace Atlas {
 
         vkCmdPipelineBarrier(cmd,
                              VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
                              0, 0, nullptr, 0, nullptr, 2, pre);
 
         VkClearDepthStencilValue clearDS{1.0f, 0};
@@ -764,6 +776,10 @@ namespace Atlas {
     }
 
     void PathTracingStage::onCameraUpdated(entt::registry &registry, entt::entity entity) {
+        if (entity != activeCamera(registry)) {
+            return;
+        }
+
         const auto &camera = registry.get<CameraComponent>(entity).camera;
         const auto cameraData = camera.getData();
 
@@ -777,6 +793,29 @@ namespace Atlas {
     void PathTracingStage::onCameraDestroyed(entt::registry &, entt::entity) {
         hasCameraData = false;
         reset();
+    }
+
+    entt::entity PathTracingStage::activeCamera(entt::registry &registry) const {
+        for (const entt::entity entity: registry.view<CameraComponent, EditorCameraComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+
+            return entity;
+        }
+
+        for (const entt::entity entity: registry.view<CameraComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
+                continue;
+            }
+            if (registry.all_of<EditorCameraComponent>(entity) || registry.all_of<TransientComponent>(entity)) {
+                continue;
+            }
+
+            return entity;
+        }
+
+        return entt::null;
     }
 
     bool PathTracingStage::cameraDataChanged(const Camera::Data &lhs, const Camera::Data &rhs) {
@@ -827,6 +866,9 @@ namespace Atlas {
             hashVec3(seed, transform.scale);
             hashVec3(seed, transform.rotation);
             hashVec4(seed, material->baseColor);
+            hashValue(seed, static_cast<uint32_t>(material->shadingModel));
+            hashValue(seed, material->sheenStrength);
+            hashVec3(seed, material->sheenColor);
             hashHandle(seed, material->baseColorTexture);
             hashHandle(seed, material->normalTexture);
             hashHandle(seed, material->metallicRoughnessTexture);

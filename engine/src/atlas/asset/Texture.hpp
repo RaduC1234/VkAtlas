@@ -22,6 +22,7 @@ namespace Atlas {
         static std::shared_ptr<Texture> fromRGBA8(const std::vector<std::byte> &data, uint32_t width, uint32_t height, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
         static std::shared_ptr<Texture> fromHDR(const std::vector<std::byte> &data, uint32_t width, uint32_t height, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
         static std::shared_ptr<Texture> fromKtx2(const std::vector<std::byte> &fileData, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+        static void saveKtx2(const Texture &texture, const std::string &path);
         static std::shared_ptr<Texture> default_();
     private:
         static uint64_t computeHash(const std::vector<std::byte> &pixels, uint32_t width, uint32_t height, VkFormat format, VkSamplerAddressMode addressMode);

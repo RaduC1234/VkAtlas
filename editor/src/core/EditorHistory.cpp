@@ -72,7 +72,7 @@ namespace Atlas::Editor {
     }
 
     void EditorHistory::recordMaterial(entt::entity entity, const MaterialComponent &before, const MaterialComponent &after) {
-        if (before.materialHandle == after.materialHandle) {
+        if (before.materialHandle == after.materialHandle && before.materialHandle.path() == after.materialHandle.path()) {
             return;
         }
 

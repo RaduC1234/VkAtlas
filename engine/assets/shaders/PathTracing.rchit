@@ -28,6 +28,7 @@ struct ObjectData {
     mat4  normalMatrix;
     uvec4 textureIndices;
     vec4  baseColor;
+    vec4  sheenColorStrength;
     uint  firstIndex;
     uint  indexCount;
     uint  firstVertex;
@@ -59,6 +60,8 @@ const uint LIGHT_TYPE_POINT       = 1u;
 const uint LIGHT_TYPE_SPOT        = 2u;
 const uint LIGHT_TYPE_DIRECTIONAL = 3u;
 const uint LIGHT_TYPE_RECT        = 4u;
+
+const uint MATERIAL_FLAG_CLOTH_CHARLIE = 1u << 1u;
 
 // ---- Descriptors ----
 
@@ -146,6 +149,17 @@ float V_SmithGGXCorrelated(float NdotV, float NdotL, float roughness) {
     float v  = NdotL * sqrt(NdotV * NdotV * (1.0 - a2) + a2);
     float l  = NdotV * sqrt(NdotL * NdotL * (1.0 - a2) + a2);
     return 0.5 / max(v + l, EPSILON);
+}
+
+float D_Charlie(float NdotH, float roughness) {
+    float alpha = clamp(roughness, 0.04, 1.0);
+    float invAlpha = 1.0 / alpha;
+    float sinTheta = sqrt(max(1.0 - NdotH * NdotH, 0.0));
+    return (2.0 + invAlpha) * pow(sinTheta, invAlpha) / (2.0 * PI);
+}
+
+float V_Charlie(float NdotV, float NdotL) {
+    return 1.0 / max(4.0 * (NdotL + NdotV - NdotL * NdotV), EPSILON);
 }
 
 vec3 F_Schlick(float cosTheta, vec3 F0) {
@@ -275,6 +289,9 @@ void main() {
 
     vec3 V  = safeNormalize(-payload.direction, geometricNormal);
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    bool clothCharlie = (obj.flags & MATERIAL_FLAG_CLOTH_CHARLIE) != 0u;
+    vec3 sheenColor = obj.sheenColorStrength.rgb;
+    float sheenStrength = obj.sheenColorStrength.a;
 
     // ---- NEE — direct light sampling ----
     vec3 directLight = vec3(0.0);
@@ -343,13 +360,22 @@ void main() {
         float NdotH = max(dot(N, H), 0.0);
         float HdotV = max(dot(H, V), 0.0);
 
-        float D   = D_GGX(NdotH, roughness);
-        float Vis = V_SmithGGXCorrelated(NdotV, NdotL, roughness);
-        vec3  F   = F_Schlick(HdotV, F0);
+        vec3 diffuse;
+        vec3 specular;
+        if (clothCharlie) {
+            float D = D_Charlie(NdotH, roughness);
+            float Vis = V_Charlie(NdotV, NdotL);
+            diffuse = albedo * INV_PI;
+            specular = sheenColor * sheenStrength * D * Vis;
+        } else {
+            float D   = D_GGX(NdotH, roughness);
+            float Vis = V_SmithGGXCorrelated(NdotV, NdotL, roughness);
+            vec3  F   = F_Schlick(HdotV, F0);
 
-        vec3 specular = D * Vis * F;
-        vec3 kD       = (1.0 - F) * (1.0 - metallic);
-        vec3 diffuse  = kD * albedo * INV_PI;
+            specular = D * Vis * F;
+            vec3 kD  = (1.0 - F) * (1.0 - metallic);
+            diffuse  = kD * albedo * INV_PI;
+        }
 
         vec3 radiance = min(light.color.rgb * light.intensity * atten, FIREFLY_CLAMP);
         directLight  += (diffuse + specular) * radiance * NdotL;
@@ -358,8 +384,8 @@ void main() {
     payload.radiance = sanitizeColor(payload.radiance + payload.throughput * directLight);
 
     // ---- Indirect — sample next bounce direction ----
-    float specularWeight = length(F_Schlick(max(dot(N, V), 0.0), F0));
-    float diffuseWeight  = (1.0 - metallic);
+    float specularWeight = clothCharlie ? 0.0 : length(F_Schlick(max(dot(N, V), 0.0), F0));
+    float diffuseWeight  = clothCharlie ? 1.0 : (1.0 - metallic);
     float totalWeight    = specularWeight + diffuseWeight + EPSILON;
 
     vec3  nextDir;
@@ -386,9 +412,13 @@ void main() {
         float NdotL = max(dot(N, nextDir), 0.0);
         vec3  H     = safeNormalize(V + nextDir, N);
         float HdotV = max(dot(H, V), 0.0);
-        vec3  F     = F_Schlick(HdotV, F0);
-        vec3  kD    = (1.0 - F) * (1.0 - metallic);
-        brdfWeight  = kD * albedo;
+        if (clothCharlie) {
+            brdfWeight = albedo + sheenColor * sheenStrength;
+        } else {
+            vec3  F     = F_Schlick(HdotV, F0);
+            vec3  kD    = (1.0 - F) * (1.0 - metallic);
+            brdfWeight  = kD * albedo;
+        }
         pdf         = diffuseWeight / totalWeight;
     }
 

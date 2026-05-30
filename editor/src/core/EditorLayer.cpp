@@ -4,11 +4,13 @@
 #include <cctype>
 #include <exception>
 #include <filesystem>
+#include <utility>
 
 #include <imgui.h>
 
 #include "core/Log.hpp"
 #include "project/ProjectCreator.hpp"
+#include "project/ProjectResourceImporter.hpp"
 #include "utils/FileDialogs.hpp"
 #include "utils/FramebufferExporter.hpp"
 
@@ -17,6 +19,7 @@ namespace Atlas::Editor {
     }
 
     void EditorLayer::onAttach() {
+        iconRegistry = std::make_unique<IconRegistry>(projectLayer.getRenderer().device());
         hierarchyPanel = std::make_shared<HierarchyPanel>(projectLayer, selectedEntity, history);
         inspectorPanel = std::make_shared<InspectorPanel>(
             projectLayer,
@@ -26,8 +29,9 @@ namespace Atlas::Editor {
                 openMaterialEditor(ownerEntity, materialHandle);
             }
         );
-        viewportPanel = std::make_shared<ViewportPanel>(projectLayer, selectedEntity, history);
+        viewportPanel = std::make_shared<ViewportPanel>(projectLayer, selectedEntity, history, *iconRegistry);
         renderSettingsPanel = std::make_shared<RenderSettingsPanel>(projectLayer);
+        assetExplorerPanel = std::make_shared<AssetExplorerPanel>(projectLayer);
     }
 
     void EditorLayer::onDetach() {
@@ -35,9 +39,13 @@ namespace Atlas::Editor {
         if (inspectorPanel) inspectorPanel->onDetach();
         if (viewportPanel) viewportPanel->onDetach();
         if (renderSettingsPanel) renderSettingsPanel->onDetach();
+        if (assetExplorerPanel) assetExplorerPanel->onDetach();
+        iconRegistry.reset();
     }
 
     void EditorLayer::onUpdate(float) {
+        processPendingProjectLoad();
+        ensureEditorCamera();
     }
 
     void EditorLayer::onImGuiRender() {
@@ -47,6 +55,7 @@ namespace Atlas::Editor {
         if (viewportPanel) viewportPanel->onImGuiRender();
         if (hierarchyPanel) hierarchyPanel->onImGuiRender();
         if (inspectorPanel) inspectorPanel->onImGuiRender();
+        if (assetExplorerPanel) assetExplorerPanel->onImGuiRender();
         drawMaterialEditorWindow();
     }
 
@@ -92,6 +101,13 @@ namespace Atlas::Editor {
             if (ImGui::MenuItem("New Project...")) {
                 createNewProject();
             }
+            if (ImGui::MenuItem("Open Project...")) {
+                openProject();
+            }
+
+            if (ImGui::MenuItem("Save Level")) {
+                saveLevel();
+            }
 
             ImGui::Separator();
 
@@ -123,6 +139,7 @@ namespace Atlas::Editor {
                 if (inspectorPanel) inspectorPanel->visible = true;
                 if (viewportPanel) viewportPanel->visible = true;
                 if (renderSettingsPanel) renderSettingsPanel->visible = true;
+                if (assetExplorerPanel) assetExplorerPanel->visible = true;
             }
 
             ImGui::Separator();
@@ -138,6 +155,9 @@ namespace Atlas::Editor {
             }
             if (ImGui::MenuItem("Render Settings", nullptr, renderSettingsPanel && renderSettingsPanel->visible)) {
                 if (renderSettingsPanel) renderSettingsPanel->visible = true;
+            }
+            if (ImGui::MenuItem("Asset Explorer", nullptr, assetExplorerPanel && assetExplorerPanel->visible)) {
+                if (assetExplorerPanel) assetExplorerPanel->visible = true;
             }
 
             ImGui::EndMenu();
@@ -158,6 +178,36 @@ namespace Atlas::Editor {
         }
     }
 
+    void EditorLayer::saveLevel() {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) {
+            AT_WARN("EditorLayer: cannot save level, no level is loaded");
+            return;
+        }
+
+        const ProjectManifest &manifest = projectLayer.project().manifest();
+        if (manifest.startupLevel.empty()) {
+            AT_WARN("EditorLayer: cannot save level, project manifest has no startupLevel");
+            return;
+        }
+
+        const std::filesystem::path levelPath = std::filesystem::path(manifest.startupLevel).is_absolute()
+            ? std::filesystem::path(manifest.startupLevel)
+            : projectLayer.project().rootPath() / manifest.startupLevel;
+
+        if (levelPath.extension() != ".atlaslevel") {
+            AT_WARN("EditorLayer: startup target '{}' is not a serialized Atlas level", manifest.startupLevel);
+            return;
+        }
+
+        try {
+            LevelSerializer::save(levelPath, scene->getRegistry());
+            AT_INFO("EditorLayer: saved level '{}'", levelPath.string());
+        } catch (const std::exception &error) {
+            AT_ERROR("EditorLayer: failed to save level '{}': {}", levelPath.string(), error.what());
+        }
+    }
+
     void EditorLayer::createNewProject() {
         const std::string filter = buildProjectFilter();
         const std::string manifestPath = FileDialogs::saveFile(filter.c_str());
@@ -172,15 +222,82 @@ namespace Atlas::Editor {
             info.name = ProjectCreator::defaultNameForPath(info.manifestPath);
 
             const ProjectCreateResult result = ProjectCreator::create(info);
-            AT_INFO(
-                "EditorLayer: created project '{}' at '{}'. Build '{}' before loading the project.",
-                result.name,
-                result.rootPath.string(),
-                result.targetName
-            );
+            loadProject(result.manifestPath);
+            AT_INFO("EditorLayer: created project '{}' at '{}'", result.name, result.rootPath.string());
         } catch (const std::exception &error) {
             AT_ERROR("EditorLayer: failed to create project: {}", error.what());
         }
+    }
+
+    void EditorLayer::openProject() {
+        const std::string filter = buildProjectFilter();
+        const std::string manifestPath = FileDialogs::openFile(filter.c_str());
+
+        if (manifestPath.empty()) {
+            return;
+        }
+
+        loadProject(manifestPath);
+    }
+
+    void EditorLayer::loadProject(const std::filesystem::path &manifestPath) {
+        pendingProjectManifestPath = manifestPath;
+        pendingProjectLoad = true;
+    }
+
+    void EditorLayer::processPendingProjectLoad() {
+        if (!pendingProjectLoad) {
+            return;
+        }
+
+        const std::filesystem::path manifestPath = pendingProjectManifestPath;
+        pendingProjectManifestPath.clear();
+        pendingProjectLoad = false;
+
+        flushMaterialEditorEdit();
+        selectedEntity = entt::null;
+        history.clear();
+        materialEditorOpen = false;
+        materialEditorOwner = entt::null;
+        materialEditorHandle = {};
+        materialEditState = {};
+
+        try {
+            projectLayer.loadProject(manifestPath);
+            AT_INFO("EditorLayer: opened project '{}'", manifestPath.string());
+        } catch (const std::exception &error) {
+            AT_ERROR("EditorLayer: failed to open project '{}': {}", manifestPath.string(), error.what());
+        }
+    }
+
+    void EditorLayer::ensureEditorCamera() {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) {
+            return;
+        }
+
+        auto &registry = scene->getRegistry();
+        for (const entt::entity entity: registry.view<EditorCameraComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && node->deleted) {
+                continue;
+            }
+
+            return;
+        }
+
+        const entt::entity cameraEntity = registry.create();
+
+        SceneNodeComponent node{};
+        node.name = "Editor Camera";
+        registry.emplace<SceneNodeComponent>(cameraEntity, std::move(node));
+
+        TransformComponent transform{};
+        transform.translation = {0.0f, 0.0f, 3.0f};
+        registry.emplace<TransformComponent>(cameraEntity, transform);
+
+        registry.emplace<CameraComponent>(cameraEntity);
+        registry.emplace<EditorCameraComponent>(cameraEntity);
+        registry.emplace<TransientComponent>(cameraEntity);
     }
 
     void EditorLayer::importIntoLevel() {
@@ -190,7 +307,7 @@ namespace Atlas::Editor {
             return;
         }
 
-        const auto extensions = projectLayer.assetManager().importerExtensions();
+        const auto extensions = ProjectResourceImporter::supportedExtensions();
         const std::string filter = buildImportFilter(extensions);
         const std::string path = FileDialogs::openFile(filter.c_str());
 
@@ -203,7 +320,13 @@ namespace Atlas::Editor {
             return;
         }
 
-        projectLayer.assetManager().importAsync(path, scene->getRegistry());
+        try {
+            auto &registry = scene->getRegistry();
+            const std::vector<entt::entity> importedEntities = ProjectResourceImporter::importIntoProject(projectLayer, path, registry);
+            AT_INFO("EditorLayer: imported {} entities from '{}'", importedEntities.size(), path);
+        } catch (const std::exception &error) {
+            AT_ERROR("EditorLayer: failed to import '{}': {}", path, error.what());
+        }
     }
 
     void EditorLayer::exportFramebuffer() {
@@ -291,6 +414,24 @@ namespace Atlas::Editor {
                 materialEditState.before,
                 *material
             );
+
+            auto *scene = projectLayer.project().scene();
+            if (scene && scene->getRegistry().valid(materialEditorOwner)) {
+                if (const auto *component = scene->getRegistry().try_get<MaterialComponent>(materialEditorOwner);
+                    component && component->materialHandle.hasPath()) {
+                    const std::filesystem::path materialHandlePath(component->materialHandle.path());
+                    if (!component->materialHandle.path().starts_with("##")) {
+                        const std::filesystem::path materialPath = materialHandlePath.is_absolute()
+                            ? materialHandlePath
+                            : projectLayer.project().assetsPath() / materialHandlePath;
+                        try {
+                            Material::saveFile(*material, materialPath.string());
+                        } catch (const std::exception &error) {
+                            AT_ERROR("EditorLayer: failed to save material '{}': {}", materialPath.string(), error.what());
+                        }
+                    }
+                }
+            }
         }
 
         materialEditState = {};

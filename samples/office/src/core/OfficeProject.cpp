@@ -1,24 +1,21 @@
-#include "scenes/OfficeScene.hpp"
+#include <Atlas.hpp>
 
+#include <filesystem>
+#include <string>
 
 class OfficeProject final : public Atlas::IProjectModule {
 public:
-    void onProjectLoaded(Atlas::ProjectContext & /*context*/) override {
-    }
+    Atlas::IScene *createScene(Atlas::ProjectContext &context, const std::string &levelPath) override {
+        const std::filesystem::path resolvedLevelPath = std::filesystem::path(levelPath).is_absolute()
+            ? std::filesystem::path(levelPath)
+            : context.projectRoot / levelPath;
 
-    Atlas::IScene *createScene(Atlas::ProjectContext &context, const std::string &sceneId) override {
-        if (sceneId != "OfficeScene" && sceneId != "LookdevScene") {
-            AT_WARN("OfficeProjectModule: unknown scene '{}', falling back to OfficeScene", sceneId);
-        }
-
-        return new Atlas::OfficeScene(context.renderer, context.assets);
-    }
-
-    void destroyScene(Atlas::IScene *scene) override {
-        delete scene;
-    }
-
-    void onProjectUnloaded(Atlas::ProjectContext & /*context*/) override {
+        return new Atlas::LevelScene(
+            context.renderer,
+            context.assets,
+            resolvedLevelPath,
+            context.projectRoot,
+            context.assetRoot);
     }
 };
 

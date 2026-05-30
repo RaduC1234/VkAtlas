@@ -5,8 +5,6 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
-#include <functional>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -16,18 +14,14 @@
 #include <vector>
 
 #include "Cubemap.hpp"
-#include "EntityBuffer.hpp"
 #include "AssetHandle.hpp"
 #include "Material.hpp"
 #include "Mesh.hpp"
 #include "Texture.hpp"
-#include "accessors/IAssetAccessor.hpp"
 #include "core/Log.hpp"
-#include "entt/entity/entity.hpp"
 
 
 namespace Atlas {
-    class ExecutorService;
     class ResourceManager;
 
     template<typename T>
@@ -35,17 +29,13 @@ namespace Atlas {
 
     class AssetManager {
     public:
-        AssetManager(ResourceManager &resourceManager, ExecutorService &executorService);
+        explicit AssetManager(ResourceManager &resourceManager);
         ~AssetManager();
 
         AssetManager(const AssetManager &) = delete;
         AssetManager &operator=(const AssetManager &) = delete;
         AssetManager(AssetManager &&) = delete;
         AssetManager &operator=(AssetManager &&) = delete;
-
-
-        std::vector<entt::entity> importAsset(const std::string &virtualPath, entt::registry &registry, entt::entity parentEntity = entt::null);
-        std::future<void> importAsync(const std::string &virtualPath, entt::registry &registry);
 
         template<AssetType T>
         AssetHandle<T> store(std::shared_ptr<T> asset, const std::string &virtualPath);
@@ -61,7 +51,6 @@ namespace Atlas {
 
         std::filesystem::path rootPath() const;
         void overwriteRootPath(const std::filesystem::path &path);
-        std::vector<std::string> importerExtensions() const;
 
         void update();
         void clearCaches();
@@ -96,14 +85,6 @@ namespace Atlas {
             if constexpr (std::same_as<T, Cubemap>) return pendingCubemaps_;
         }
 
-        template<typename T, typename... Args>
-        void registerLoader(Args &&... args) {
-            auto loader = std::make_shared<T>(std::forward<Args>(args)...);
-            for (auto &ext: loader->extensions()) {
-                accessors_.emplace(ext, loader);
-            }
-        }
-
         template<typename T>
         using WeakState = std::weak_ptr<typename AssetHandle<T>::State>;
 
@@ -122,39 +103,35 @@ namespace Atlas {
         std::vector<WeakState<Cubemap> > pendingCubemaps_;
 
         ResourceManager &resourceManager_;
-        ExecutorService &executor_;
         std::filesystem::path rootPath_;
-        std::unordered_map<std::string, std::shared_ptr<IAccessor> > accessors_;
-
-        std::mutex pendingFlushMutex_;
-        std::vector<std::pair<EntityBuffer, entt::registry*>> pendingFlushes_;
 
         static std::filesystem::path resolveFilePath(const std::string &path);
+        std::filesystem::path resolveAssetPath(const std::string &path) const;
     };
 
     template<AssetType T>
     AssetHandle<T> AssetManager::store(std::shared_ptr<T> asset, const std::string &virtualPath) {
         std::lock_guard lock(pendingMutex_);
 
-        // 1. Dedup by path — if this exact path is already tracked and still alive, return it
+        // 1. Dedup by path - if this exact path is already tracked and still alive, return it
         auto &byPath = pathMap<T>();
         if (auto it = byPath.find(virtualPath); it != byPath.end()) {
             if (auto state = it->second.lock()) {
                 AT_TRACE("Asset dedup hit (path: {})", virtualPath);
-                return AssetHandle<T>(state);
+                return AssetHandle<T>(state, virtualPath);
             }
         }
 
         if constexpr (GPUAssetType<T>) {
             const uint64_t hash = asset->getHash();
 
-            // 2. Dedup by hash — same content under a different path
+            // 2. Dedup by hash - same content under a different path
             auto &byHash = hashMap<T>();
             if (auto it = byHash.find(hash); it != byHash.end()) {
                 if (auto state = it->second.lock()) {
                     AT_TRACE("Asset dedup hit (hash: {}), aliasing path: {}", hash, virtualPath);
                     byPath[virtualPath] = state; // register the new path alias
-                    return AssetHandle<T>(state);
+                    return AssetHandle<T>(state, virtualPath);
                 }
             }
 
@@ -168,7 +145,7 @@ namespace Atlas {
             pendingList<T>().push_back(state);
 
             AT_TRACE("Stored asset (path: {}, hash: {})", virtualPath, hash);
-            return AssetHandle<T>(state);
+            return AssetHandle<T>(state, virtualPath);
         } else {
             // CPU assets are mutable, so path identity is the stable key.
             auto state = std::make_shared<typename AssetHandle<T>::State>();
@@ -177,18 +154,22 @@ namespace Atlas {
             byPath[virtualPath] = state;
 
             AT_TRACE("Stored CPU asset (path: {})", virtualPath);
-            return AssetHandle<T>(state);
+            return AssetHandle<T>(state, virtualPath);
         }
     }
 
     template<AssetType T>
     AssetHandle<T> AssetManager::store(const std::string &virtualPath) {
         if constexpr (std::is_same_v<T, Texture>) {
-            return store(Texture::fromFile(virtualPath), virtualPath);
+            return store(Texture::fromFile(resolveAssetPath(virtualPath).string()), virtualPath);
         } else if constexpr (std::is_same_v<T, Cubemap>) {
-            return store(Cubemap::fromFile(virtualPath), virtualPath);
+            return store(Cubemap::fromFile(resolveAssetPath(virtualPath).string()), virtualPath);
+        } else if constexpr (std::is_same_v<T, Mesh>) {
+            return store(Mesh::fromFile(resolveAssetPath(virtualPath).string()), virtualPath);
+        } else if constexpr (std::is_same_v<T, Material>) {
+            return store(Material::fromFile(resolveAssetPath(virtualPath).string(), *this), virtualPath);
         } else {
-            static_assert(std::same_as<T, Texture> || std::same_as<T, Cubemap>, "AssetManager::store(path) only supports file-loadable asset types");
+            static_assert(AssetType<T>, "AssetManager::store(path) only supports Atlas asset types");
         }
     }
 
@@ -199,7 +180,7 @@ namespace Atlas {
         auto &byPath = pathMap<T>();
         if (auto it = byPath.find(virtualPath); it != byPath.end()) {
             if (auto state = it->second.lock()) {
-                return AssetHandle<T>(state);
+                return AssetHandle<T>(state, virtualPath);
             }
         }
 

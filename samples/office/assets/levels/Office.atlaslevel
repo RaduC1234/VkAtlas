@@ -1,0 +1,41 @@
+{
+  "entities": [
+    {
+      "components": {
+        "Camera": {},
+        "Transform": {
+          "rotation": {
+            "x": -0.14374999701976776,
+            "y": 2.3894364833831787,
+            "z": 0.0
+          },
+          "scale": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          },
+          "translation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 3.0
+          }
+        }
+      },
+      "id": "0",
+      "name": "Camera"
+    },
+    {
+      "components": {
+        "Skybox": {
+          "irradiance": "cubemaps/citrus_orchard_road_puresky_2k_irradiance.ktx2",
+          "prefilter": "cubemaps/citrus_orchard_road_puresky_2k_prefilter.ktx2",
+          "skybox": "cubemaps/citrus_orchard_road_puresky_2k.hdr"
+        }
+      },
+      "id": "1",
+      "name": "Skybox"
+    }
+  ],
+  "name": "Office",
+  "version": 1
+}

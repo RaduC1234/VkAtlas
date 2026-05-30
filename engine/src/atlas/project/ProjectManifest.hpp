@@ -8,10 +8,10 @@ namespace Atlas {
     struct ProjectManifest {
         std::string name = "Untitled Project";
         std::string engineVersion;
-        std::string startupScene;
+        std::string startupLevel;
         std::string assetRoot = "assets";
         std::string codeModule;
-        std::vector<std::string> scenes;
+        std::vector<std::string> levels;
     };
 
     ProjectManifest loadProjectManifest(const std::filesystem::path &manifestPath);

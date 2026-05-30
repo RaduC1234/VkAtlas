@@ -1,11 +1,11 @@
 #pragma once
 
-#include "IRenderStage.hpp"
+#include "RenderStage.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/Renderer.hpp"
 
 namespace Atlas {
-    class OutputStage : public IRenderStage {
+    class OutputStage : public RenderStage {
     public:
         OutputStage(Device &device, Renderer &renderer);
         ~OutputStage() override = default;

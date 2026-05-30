@@ -18,6 +18,8 @@
 #include "renderer/Renderer.hpp"
 
 #include "scene/IScene.hpp"
+#include "scene/LevelScene.hpp"
+#include "scene/LevelSerializer.hpp"
 
 #include "system/CameraSystem.hpp"
 #include "system/RenderSystemV2.hpp"

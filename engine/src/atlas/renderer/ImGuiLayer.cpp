@@ -3,6 +3,8 @@
 #include <array>
 #include <stdexcept>
 
+#include "core/Window.hpp"
+
 #if defined(ATLAS_PLATFORM_DESKTOP)
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -11,6 +13,13 @@
 #endif
 
 namespace Atlas {
+    static constexpr ImVec4 srgb(ImVec4 c) {
+        auto toLinear = [](float x) {
+            return x <= 0.04045f ? x / 12.92f : std::pow((x + 0.055f) / 1.055f, 2.4f);
+        };
+        return ImVec4(toLinear(c.x), toLinear(c.y), toLinear(c.z), c.w);
+    }
+
 #if defined(ATLAS_PLATFORM_DESKTOP)
     ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()), nativeWindow(window.getNativeHandle()) {
         createDescriptorPool(device);
@@ -22,7 +31,11 @@ namespace Atlas {
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         io.Fonts->AddFontFromFileTTF("assets/engine/Roboto-Medium.ttf", 15.0f);
 
-        setStyle();
+        if (window.getTheme() == Window::Theme::Light) {
+            setStyleWhite();
+        } else {
+            setStyleDark();
+        }
 
         ImGui_ImplGlfw_InitForVulkan(static_cast<GLFWwindow *>(window.getNativeHandle()), true);
 
@@ -94,7 +107,7 @@ namespace Atlas {
         ImGui::Render();
     }
 
-    void ImGuiLayer::renderDrawData(VkCommandBuffer commandBuffer) {
+    void ImGuiLayer::render(VkCommandBuffer commandBuffer) {
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
     }
 
@@ -130,86 +143,250 @@ namespace Atlas {
             throw std::runtime_error("Failed to create ImGui descriptor pool");
     }
 
-    void ImGuiLayer::setStyle() {
+    void ImGuiLayer::setStyleWhite() {
         ImGuiStyle &style = ImGui::GetStyle();
-        style.WindowRounding = 0.0f;
-        style.ChildRounding = 0.0f;
-        style.PopupRounding = 2.0f;
-        style.FrameRounding = 1.0f;
-        style.GrabRounding = 2.0f;
-        style.TabRounding = 1.0f;
-        style.ScrollbarRounding = 2.0f;
-        style.WindowBorderSize = 1.0f;
-        style.FrameBorderSize = 0.0f;
-        style.TabBorderSize = 0.0f;
-        style.WindowPadding = ImVec2(7.0f, 5.0f);
-        style.FramePadding = ImVec2(6.0f, 3.0f);
-        style.ItemSpacing = ImVec2(6.0f, 3.0f);
-        style.ScrollbarSize = 10.0f;
 
+        // -- Shape --
+        style.WindowRounding = 6.0f;
+        style.ChildRounding = 4.0f;
+        style.PopupRounding = 6.0f;
+        style.FrameRounding = 4.0f;
+        style.GrabRounding = 4.0f;
+        style.TabRounding = 4.0f;
+        style.ScrollbarRounding = 4.0f;
+
+        // -- Borders --
+        style.WindowBorderSize = 0.5f;
+        style.FrameBorderSize = 0.5f;
+        style.TabBorderSize = 0.0f;
+        style.PopupBorderSize = 0.5f;
+
+        // -- Spacing --
+        style.WindowPadding = ImVec2(12.0f, 10.0f);
+        style.FramePadding = ImVec2(8.0f, 4.0f);
+        style.ItemSpacing = ImVec2(8.0f, 5.0f);
+        style.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
+        style.IndentSpacing = 18.0f;
+        style.ScrollbarSize = 8.0f;
+        style.GrabMinSize = 8.0f;
+
+        // -- Colors --
+        // Light neutral surface palette, matches the mockup.
+        // All values are sRGB; pass through your srgb() linearise helper.
         ImVec4 *c = style.Colors;
-        c[ImGuiCol_Text] = srgb(ImVec4(0.860f, 0.860f, 0.840f, 1.00f));
-        c[ImGuiCol_TextDisabled] = srgb(ImVec4(0.460f, 0.460f, 0.440f, 1.00f));
-        c[ImGuiCol_WindowBg] = srgb(ImVec4(0.190f, 0.190f, 0.190f, 1.00f));
-        c[ImGuiCol_ChildBg] = srgb(ImVec4(0.190f, 0.190f, 0.190f, 1.00f));
-        c[ImGuiCol_PopupBg] = srgb(ImVec4(0.070f, 0.070f, 0.070f, 1.00f));
-        c[ImGuiCol_Border] = srgb(ImVec4(0.300f, 0.300f, 0.285f, 1.00f));
+
+        // Text
+        c[ImGuiCol_Text] = srgb(ImVec4(0.100f, 0.100f, 0.100f, 1.00f)); // near-black
+        c[ImGuiCol_TextDisabled] = srgb(ImVec4(0.580f, 0.580f, 0.580f, 1.00f));
+
+        // Backgrounds
+        c[ImGuiCol_WindowBg] = srgb(ImVec4(0.960f, 0.960f, 0.960f, 1.00f)); // primary surface
+        c[ImGuiCol_ChildBg] = srgb(ImVec4(0.960f, 0.960f, 0.960f, 1.00f));
+        c[ImGuiCol_PopupBg] = srgb(ImVec4(0.980f, 0.980f, 0.980f, 1.00f));
+
+        // Borders — very subtle, like 0.5px lines
+        c[ImGuiCol_Border] = srgb(ImVec4(0.800f, 0.800f, 0.800f, 0.60f));
         c[ImGuiCol_BorderShadow] = srgb(ImVec4(0.000f, 0.000f, 0.000f, 0.00f));
 
-        c[ImGuiCol_FrameBg] = srgb(ImVec4(0.070f, 0.070f, 0.070f, 1.00f));
-        c[ImGuiCol_FrameBgHovered] = srgb(ImVec4(0.105f, 0.105f, 0.105f, 1.00f));
-        c[ImGuiCol_FrameBgActive] = srgb(ImVec4(0.120f, 0.320f, 0.500f, 1.00f));
+        // Frame (inputs, combos, etc.)
+        c[ImGuiCol_FrameBg] = srgb(ImVec4(0.920f, 0.920f, 0.920f, 1.00f));
+        c[ImGuiCol_FrameBgHovered] = srgb(ImVec4(0.880f, 0.888f, 0.900f, 1.00f));
+        c[ImGuiCol_FrameBgActive] = srgb(ImVec4(0.840f, 0.870f, 0.920f, 1.00f));
 
-        c[ImGuiCol_TitleBg] = srgb(ImVec4(0.020f, 0.020f, 0.020f, 1.00f));
-        c[ImGuiCol_TitleBgActive] = srgb(ImVec4(0.020f, 0.020f, 0.020f, 1.00f));
-        c[ImGuiCol_TitleBgCollapsed] = srgb(ImVec4(0.020f, 0.020f, 0.020f, 1.00f));
-        c[ImGuiCol_MenuBarBg] = srgb(ImVec4(0.020f, 0.020f, 0.020f, 1.00f));
+        // Title bar — same as window, no contrast stripe
+        c[ImGuiCol_TitleBg] = srgb(ImVec4(0.930f, 0.930f, 0.930f, 1.00f));
+        c[ImGuiCol_TitleBgActive] = srgb(ImVec4(0.930f, 0.930f, 0.930f, 1.00f));
+        c[ImGuiCol_TitleBgCollapsed] = srgb(ImVec4(0.930f, 0.930f, 0.930f, 1.00f));
+        c[ImGuiCol_MenuBarBg] = srgb(ImVec4(0.980f, 0.980f, 0.980f, 1.00f));
 
-        c[ImGuiCol_ScrollbarBg] = srgb(ImVec4(0.135f, 0.135f, 0.135f, 1.00f));
-        c[ImGuiCol_ScrollbarGrab] = srgb(ImVec4(0.400f, 0.400f, 0.385f, 0.75f));
-        c[ImGuiCol_ScrollbarGrabHovered] = srgb(ImVec4(0.470f, 0.470f, 0.455f, 0.85f));
-        c[ImGuiCol_ScrollbarGrabActive] = srgb(ImVec4(0.550f, 0.550f, 0.535f, 1.00f));
+        // Scrollbar
+        c[ImGuiCol_ScrollbarBg] = srgb(ImVec4(0.940f, 0.940f, 0.940f, 1.00f));
+        c[ImGuiCol_ScrollbarGrab] = srgb(ImVec4(0.720f, 0.720f, 0.720f, 1.00f));
+        c[ImGuiCol_ScrollbarGrabHovered] = srgb(ImVec4(0.620f, 0.620f, 0.620f, 1.00f));
+        c[ImGuiCol_ScrollbarGrabActive] = srgb(ImVec4(0.500f, 0.500f, 0.500f, 1.00f));
 
-        c[ImGuiCol_CheckMark] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 1.00f));
-        c[ImGuiCol_SliderGrab] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 1.00f));
-        c[ImGuiCol_SliderGrabActive] = srgb(ImVec4(0.370f, 0.710f, 1.000f, 1.00f));
+        // Accent — single blue used for all interactive highlights
+        // matches the play-button / axis accent in the mockup
+        const ImVec4 accent = srgb(ImVec4(0.220f, 0.530f, 0.860f, 1.00f));
+        const ImVec4 accentHover = srgb(ImVec4(0.280f, 0.590f, 0.920f, 1.00f));
+        const ImVec4 accentDim = srgb(ImVec4(0.220f, 0.530f, 0.860f, 0.35f));
 
-        c[ImGuiCol_Button] = srgb(ImVec4(0.280f, 0.280f, 0.270f, 1.00f));
-        c[ImGuiCol_ButtonHovered] = srgb(ImVec4(0.340f, 0.340f, 0.325f, 1.00f));
-        c[ImGuiCol_ButtonActive] = srgb(ImVec4(0.120f, 0.320f, 0.500f, 1.00f));
+        c[ImGuiCol_CheckMark] = accent;
+        c[ImGuiCol_SliderGrab] = accent;
+        c[ImGuiCol_SliderGrabActive] = accentHover;
 
-        c[ImGuiCol_Header] = srgb(ImVec4(0.300f, 0.300f, 0.290f, 1.00f));
-        c[ImGuiCol_HeaderHovered] = srgb(ImVec4(0.360f, 0.360f, 0.345f, 1.00f));
-        c[ImGuiCol_HeaderActive] = srgb(ImVec4(0.100f, 0.290f, 0.460f, 1.00f));
+        // Buttons — neutral surface, accent on press
+        c[ImGuiCol_Button] = srgb(ImVec4(0.900f, 0.900f, 0.900f, 1.00f));
+        c[ImGuiCol_ButtonHovered] = srgb(ImVec4(0.860f, 0.870f, 0.890f, 1.00f));
+        c[ImGuiCol_ButtonActive] = srgb(ImVec4(0.820f, 0.850f, 0.920f, 1.00f));
 
-        c[ImGuiCol_Separator] = srgb(ImVec4(0.330f, 0.330f, 0.310f, 1.00f));
-        c[ImGuiCol_SeparatorHovered] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 1.00f));
-        c[ImGuiCol_SeparatorActive] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 1.00f));
-        c[ImGuiCol_ResizeGrip] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 0.35f));
-        c[ImGuiCol_ResizeGripHovered] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 0.70f));
-        c[ImGuiCol_ResizeGripActive] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 1.00f));
+        // Headers (tree nodes, selectables, collapsing headers)
+        c[ImGuiCol_Header] = srgb(ImVec4(0.900f, 0.900f, 0.900f, 1.00f));
+        c[ImGuiCol_HeaderHovered] = srgb(ImVec4(0.870f, 0.878f, 0.895f, 1.00f));
+        c[ImGuiCol_HeaderActive] = srgb(ImVec4(0.820f, 0.850f, 0.920f, 1.00f));
 
-        c[ImGuiCol_Tab] = srgb(ImVec4(0.260f, 0.260f, 0.250f, 1.00f));
-        c[ImGuiCol_TabHovered] = srgb(ImVec4(0.350f, 0.350f, 0.335f, 1.00f));
-        c[ImGuiCol_TabActive] = srgb(ImVec4(0.300f, 0.300f, 0.290f, 1.00f));
-        c[ImGuiCol_TabUnfocused] = srgb(ImVec4(0.210f, 0.210f, 0.200f, 1.00f));
-        c[ImGuiCol_TabUnfocusedActive] = srgb(ImVec4(0.260f, 0.260f, 0.250f, 1.00f));
+        // Separator
+        c[ImGuiCol_Separator] = srgb(ImVec4(0.800f, 0.800f, 0.800f, 0.60f));
+        c[ImGuiCol_SeparatorHovered] = accent;
+        c[ImGuiCol_SeparatorActive] = accent;
 
-        c[ImGuiCol_DockingPreview] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 0.45f));
-        c[ImGuiCol_DockingEmptyBg] = srgb(ImVec4(0.190f, 0.190f, 0.190f, 1.00f));
-        c[ImGuiCol_PlotLines] = srgb(ImVec4(0.530f, 0.700f, 0.860f, 1.00f));
-        c[ImGuiCol_PlotLinesHovered] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 1.00f));
-        c[ImGuiCol_PlotHistogram] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 1.00f));
-        c[ImGuiCol_PlotHistogramHovered] = srgb(ImVec4(0.370f, 0.710f, 1.000f, 1.00f));
-        c[ImGuiCol_TableHeaderBg] = srgb(ImVec4(0.300f, 0.300f, 0.290f, 1.00f));
-        c[ImGuiCol_TableBorderStrong] = srgb(ImVec4(0.330f, 0.330f, 0.310f, 1.00f));
-        c[ImGuiCol_TableBorderLight] = srgb(ImVec4(0.260f, 0.260f, 0.250f, 1.00f));
+        // Resize grip
+        c[ImGuiCol_ResizeGrip] = accentDim;
+        c[ImGuiCol_ResizeGripHovered] = accent;
+        c[ImGuiCol_ResizeGripActive] = accentHover;
+
+        // Tabs — panel tabs as in the bottom bar of the mockup
+        c[ImGuiCol_Tab] = srgb(ImVec4(0.940f, 0.940f, 0.940f, 1.00f));
+        c[ImGuiCol_TabHovered] = srgb(ImVec4(0.900f, 0.905f, 0.915f, 1.00f));
+        c[ImGuiCol_TabActive] = srgb(ImVec4(0.960f, 0.960f, 0.960f, 1.00f)); // lifted = active
+        c[ImGuiCol_TabUnfocused] = srgb(ImVec4(0.930f, 0.930f, 0.930f, 1.00f));
+        c[ImGuiCol_TabUnfocusedActive] = srgb(ImVec4(0.950f, 0.950f, 0.950f, 1.00f));
+
+        // Docking
+        c[ImGuiCol_DockingPreview] = srgb(ImVec4(0.220f, 0.530f, 0.860f, 0.30f));
+        c[ImGuiCol_DockingEmptyBg] = srgb(ImVec4(0.920f, 0.920f, 0.920f, 1.00f));
+
+        // Plots
+        c[ImGuiCol_PlotLines] = accent;
+        c[ImGuiCol_PlotLinesHovered] = accentHover;
+        c[ImGuiCol_PlotHistogram] = accent;
+        c[ImGuiCol_PlotHistogramHovered] = accentHover;
+
+        // Tables
+        c[ImGuiCol_TableHeaderBg] = srgb(ImVec4(0.920f, 0.922f, 0.928f, 1.00f));
+        c[ImGuiCol_TableBorderStrong] = srgb(ImVec4(0.780f, 0.780f, 0.780f, 1.00f));
+        c[ImGuiCol_TableBorderLight] = srgb(ImVec4(0.860f, 0.860f, 0.860f, 1.00f));
         c[ImGuiCol_TableRowBg] = srgb(ImVec4(0.000f, 0.000f, 0.000f, 0.00f));
-        c[ImGuiCol_TableRowBgAlt] = srgb(ImVec4(1.000f, 1.000f, 1.000f, 0.03f));
-        c[ImGuiCol_TextSelectedBg] = srgb(ImVec4(0.150f, 0.390f, 0.610f, 0.65f));
-        c[ImGuiCol_DragDropTarget] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 0.90f));
-        c[ImGuiCol_NavHighlight] = srgb(ImVec4(0.260f, 0.610f, 0.900f, 1.00f));
-        c[ImGuiCol_ModalWindowDimBg] = srgb(ImVec4(0.000f, 0.000f, 0.000f, 0.55f));
+        c[ImGuiCol_TableRowBgAlt] = srgb(ImVec4(0.000f, 0.000f, 0.000f, 0.02f));
+
+        // Misc
+        c[ImGuiCol_TextSelectedBg] = srgb(ImVec4(0.220f, 0.530f, 0.860f, 0.30f));
+        c[ImGuiCol_DragDropTarget] = accent;
+        c[ImGuiCol_NavHighlight] = accent;
+        c[ImGuiCol_ModalWindowDimBg] = srgb(ImVec4(0.100f, 0.100f, 0.100f, 0.40f));
+    }
+
+    void ImGuiLayer::setStyleDark() {
+        ImGuiStyle &style = ImGui::GetStyle();
+
+        // -- Shape --
+        style.WindowRounding = 6.0f;
+        style.ChildRounding = 4.0f;
+        style.PopupRounding = 6.0f;
+        style.FrameRounding = 4.0f;
+        style.GrabRounding = 4.0f;
+        style.TabRounding = 4.0f;
+        style.ScrollbarRounding = 4.0f;
+
+        // -- Borders --
+        style.WindowBorderSize = 0.5f;
+        style.FrameBorderSize = 0.5f;
+        style.TabBorderSize = 0.0f;
+        style.PopupBorderSize = 0.5f;
+
+        // -- Spacing --
+        style.WindowPadding = ImVec2(12.0f, 10.0f);
+        style.FramePadding = ImVec2(8.0f, 4.0f);
+        style.ItemSpacing = ImVec2(8.0f, 5.0f);
+        style.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
+        style.IndentSpacing = 18.0f;
+        style.ScrollbarSize = 8.0f;
+        style.GrabMinSize = 8.0f;
+
+        // -- Colors --
+        // Dark neutral surface palette.
+        // Three-level depth: 0.08 (deep bg) → 0.11 (panel) → 0.14 (raised frame)
+        // Single blue accent throughout.
+        ImVec4 *c = style.Colors;
+
+        // Text
+        c[ImGuiCol_Text] = srgb(ImVec4(0.880f, 0.880f, 0.880f, 1.00f));
+        c[ImGuiCol_TextDisabled] = srgb(ImVec4(0.400f, 0.400f, 0.400f, 1.00f));
+
+        // Backgrounds — three distinct levels
+        c[ImGuiCol_WindowBg] = srgb(ImVec4(0.110f, 0.110f, 0.115f, 1.00f)); // panels
+        c[ImGuiCol_ChildBg] = srgb(ImVec4(0.110f, 0.110f, 0.115f, 1.00f));
+        c[ImGuiCol_PopupBg] = srgb(ImVec4(0.080f, 0.080f, 0.085f, 1.00f)); // deepest
+
+        // Borders — barely visible hairlines
+        c[ImGuiCol_Border] = srgb(ImVec4(1.000f, 1.000f, 1.000f, 0.07f));
+        c[ImGuiCol_BorderShadow] = srgb(ImVec4(0.000f, 0.000f, 0.000f, 0.00f));
+
+        // Frames (inputs, combos, sliders)
+        c[ImGuiCol_FrameBg] = srgb(ImVec4(0.080f, 0.080f, 0.085f, 1.00f));
+        c[ImGuiCol_FrameBgHovered] = srgb(ImVec4(0.140f, 0.140f, 0.148f, 1.00f));
+        c[ImGuiCol_FrameBgActive] = srgb(ImVec4(0.160f, 0.200f, 0.260f, 1.00f));
+
+        // Title bar — flush with window, no stripe
+        c[ImGuiCol_TitleBg] = srgb(ImVec4(0.080f, 0.080f, 0.085f, 1.00f));
+        c[ImGuiCol_TitleBgActive] = srgb(ImVec4(0.080f, 0.080f, 0.085f, 1.00f));
+        c[ImGuiCol_TitleBgCollapsed] = srgb(ImVec4(0.080f, 0.080f, 0.085f, 1.00f));
+        c[ImGuiCol_MenuBarBg] = srgb(ImVec4(0.090f, 0.090f, 0.095f, 1.00f));
+
+        // Scrollbar
+        c[ImGuiCol_ScrollbarBg] = srgb(ImVec4(0.090f, 0.090f, 0.095f, 1.00f));
+        c[ImGuiCol_ScrollbarGrab] = srgb(ImVec4(0.280f, 0.280f, 0.290f, 1.00f));
+        c[ImGuiCol_ScrollbarGrabHovered] = srgb(ImVec4(0.360f, 0.360f, 0.370f, 1.00f));
+        c[ImGuiCol_ScrollbarGrabActive] = srgb(ImVec4(0.440f, 0.444f, 0.460f, 1.00f));
+
+        // Accent — same blue family as light theme, slightly brighter for dark bg
+        const ImVec4 accent = srgb(ImVec4(0.260f, 0.580f, 0.920f, 1.00f));
+        const ImVec4 accentHover = srgb(ImVec4(0.360f, 0.660f, 1.000f, 1.00f));
+        const ImVec4 accentDim = srgb(ImVec4(0.260f, 0.580f, 0.920f, 0.30f));
+
+        c[ImGuiCol_CheckMark] = accent;
+        c[ImGuiCol_SliderGrab] = accent;
+        c[ImGuiCol_SliderGrabActive] = accentHover;
+
+        // Buttons
+        c[ImGuiCol_Button] = srgb(ImVec4(0.180f, 0.180f, 0.190f, 1.00f));
+        c[ImGuiCol_ButtonHovered] = srgb(ImVec4(0.220f, 0.225f, 0.235f, 1.00f));
+        c[ImGuiCol_ButtonActive] = srgb(ImVec4(0.160f, 0.220f, 0.310f, 1.00f));
+
+        // Headers (tree nodes, selectables, collapsing headers)
+        c[ImGuiCol_Header] = srgb(ImVec4(0.180f, 0.180f, 0.190f, 1.00f));
+        c[ImGuiCol_HeaderHovered] = srgb(ImVec4(0.220f, 0.225f, 0.235f, 1.00f));
+        c[ImGuiCol_HeaderActive] = srgb(ImVec4(0.160f, 0.220f, 0.310f, 1.00f));
+
+        // Separator
+        c[ImGuiCol_Separator] = srgb(ImVec4(1.000f, 1.000f, 1.000f, 0.07f));
+        c[ImGuiCol_SeparatorHovered] = accent;
+        c[ImGuiCol_SeparatorActive] = accent;
+
+        // Resize grip
+        c[ImGuiCol_ResizeGrip] = accentDim;
+        c[ImGuiCol_ResizeGripHovered] = accent;
+        c[ImGuiCol_ResizeGripActive] = accentHover;
+
+        // Tabs
+        c[ImGuiCol_Tab] = srgb(ImVec4(0.090f, 0.090f, 0.095f, 1.00f));
+        c[ImGuiCol_TabHovered] = srgb(ImVec4(0.160f, 0.162f, 0.170f, 1.00f));
+        c[ImGuiCol_TabActive] = srgb(ImVec4(0.110f, 0.110f, 0.115f, 1.00f)); // lifted = matches WindowBg
+        c[ImGuiCol_TabUnfocused] = srgb(ImVec4(0.090f, 0.090f, 0.095f, 1.00f));
+        c[ImGuiCol_TabUnfocusedActive] = srgb(ImVec4(0.100f, 0.100f, 0.105f, 1.00f));
+
+        // Docking
+        c[ImGuiCol_DockingPreview] = srgb(ImVec4(0.260f, 0.580f, 0.920f, 0.25f));
+        c[ImGuiCol_DockingEmptyBg] = srgb(ImVec4(0.080f, 0.080f, 0.085f, 1.00f));
+
+        // Plots
+        c[ImGuiCol_PlotLines] = accent;
+        c[ImGuiCol_PlotLinesHovered] = accentHover;
+        c[ImGuiCol_PlotHistogram] = accent;
+        c[ImGuiCol_PlotHistogramHovered] = accentHover;
+
+        // Tables
+        c[ImGuiCol_TableHeaderBg] = srgb(ImVec4(0.130f, 0.130f, 0.138f, 1.00f));
+        c[ImGuiCol_TableBorderStrong] = srgb(ImVec4(1.000f, 1.000f, 1.000f, 0.10f));
+        c[ImGuiCol_TableBorderLight] = srgb(ImVec4(1.000f, 1.000f, 1.000f, 0.05f));
+        c[ImGuiCol_TableRowBg] = srgb(ImVec4(0.000f, 0.000f, 0.000f, 0.00f));
+        c[ImGuiCol_TableRowBgAlt] = srgb(ImVec4(1.000f, 1.000f, 1.000f, 0.02f));
+
+        // Misc
+        c[ImGuiCol_TextSelectedBg] = srgb(ImVec4(0.260f, 0.580f, 0.920f, 0.30f));
+        c[ImGuiCol_DragDropTarget] = accent;
+        c[ImGuiCol_NavHighlight] = accent;
+        c[ImGuiCol_ModalWindowDimBg] = srgb(ImVec4(0.000f, 0.000f, 0.000f, 0.50f));
     }
 
 #else

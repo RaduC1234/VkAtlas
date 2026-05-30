@@ -6,7 +6,7 @@
 #include <nlohmann/json.hpp>
 
 namespace Atlas {
-    namespace {
+    namespace ProjectManifestDetail {
         using Json = nlohmann::json;
 
         std::string readString(const Json &data, const char *key, std::string fallback = {}) {
@@ -21,7 +21,31 @@ namespace Atlas {
 
             return it->get<std::string>();
         }
+
+        std::vector<std::string> readStringArray(const Json &data, const char *key, const std::filesystem::path &manifestPath) {
+            std::vector<std::string> values;
+            const auto entries = data.find(key);
+            if (entries == data.end()) {
+                return values;
+            }
+
+            if (!entries->is_array()) {
+                throw std::runtime_error(std::string("Project manifest field must be an array: ") + key);
+            }
+
+            for (const auto &entry: *entries) {
+                if (!entry.is_string()) {
+                    throw std::runtime_error("Project manifest " + std::string(key) + " entries must be strings: " + manifestPath.string());
+                }
+
+                values.push_back(entry.get<std::string>());
+            }
+
+            return values;
+        }
     }
+
+    using ProjectManifestDetail::Json;
 
     ProjectManifest loadProjectManifest(const std::filesystem::path &manifestPath) {
         std::ifstream file(manifestPath);
@@ -42,32 +66,19 @@ namespace Atlas {
             throw std::runtime_error("Project manifest root must be a JSON object: " + manifestPath.string());
         }
 
-        manifest.name = readString(data, "name", manifest.name);
-        manifest.engineVersion = readString(data, "engineVersion", manifest.engineVersion);
-        manifest.startupScene = readString(data, "startupScene", manifest.startupScene);
-        manifest.assetRoot = readString(data, "assetRoot", manifest.assetRoot);
-        manifest.codeModule = readString(data, "codeModule", manifest.codeModule);
+        manifest.name = ProjectManifestDetail::readString(data, "name", manifest.name);
+        manifest.engineVersion = ProjectManifestDetail::readString(data, "engineVersion", manifest.engineVersion);
+        manifest.startupLevel = ProjectManifestDetail::readString(data, "startupLevel", manifest.startupLevel);
+        manifest.assetRoot = ProjectManifestDetail::readString(data, "assetRoot", manifest.assetRoot);
+        manifest.codeModule = ProjectManifestDetail::readString(data, "codeModule", manifest.codeModule);
+        manifest.levels = ProjectManifestDetail::readStringArray(data, "levels", manifestPath);
 
-        if (const auto scenes = data.find("scenes"); scenes != data.end()) {
-            if (!scenes->is_array()) {
-                throw std::runtime_error("Project manifest field must be an array: scenes");
-            }
-
-            for (const auto &scene: *scenes) {
-                if (!scene.is_string()) {
-                    throw std::runtime_error("Project manifest scenes entries must be strings: " + manifestPath.string());
-                }
-
-                manifest.scenes.push_back(scene.get<std::string>());
-            }
+        if (manifest.startupLevel.empty()) {
+            throw std::runtime_error("Project manifest is missing startupLevel: " + manifestPath.string());
         }
 
-        if (manifest.startupScene.empty()) {
-            throw std::runtime_error("Project manifest is missing startupScene: " + manifestPath.string());
-        }
-
-        if (manifest.scenes.empty()) {
-            manifest.scenes.push_back(manifest.startupScene);
+        if (manifest.levels.empty()) {
+            manifest.levels.push_back(manifest.startupLevel);
         }
 
         return manifest;

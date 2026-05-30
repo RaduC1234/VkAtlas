@@ -17,20 +17,30 @@ struct CameraData {
     float farPlane;
 };
 
-layout(location = 0) in vec2 inUV;
+layout(location = 0) in  vec2 inUV;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 0, binding = 0) uniform GlobalUbo {
     CameraData cameraData;
-    DebugData debugData;
+    DebugData  debugData;
 } ubo;
 
 layout(set = 1, binding = 0) uniform sampler2D hdrInput;
 layout(set = 1, binding = 1) uniform usampler2D layers;
+layout(set = 1, binding = 2) uniform sampler2D bloomInput;  // bloom_blurred, half res — GPU bilinear upscales
+
+layout(push_constant) uniform PC {
+    float bloomStrength;
+    float vignetteStrength;
+    uint  flags;            // bit 0 = vignette enabled, bit 1 = bloom enabled
+} pc;
 
 const uint VIEWMODE_CLAY         = 2u;
 const uint VIEWMODE_UNLIT        = 1u;
 const uint VIEWMODE_PATH_TRACING = 3u;
+
+const uint FLAG_VIGNETTE = 1u << 0u;
+const uint FLAG_BLOOM    = 1u << 1u;
 
 // ---- Tone mapping ----
 
@@ -51,28 +61,33 @@ vec3 ACESFitted(vec3 color) {
     return clamp(output_mat * (a / b), 0.0, 1.0);
 }
 
-float luminance(vec3 color) {
-    return dot(color, vec3(0.2126, 0.7152, 0.0722));
-}
-
 void main() {
     vec3 hdr = texture(hdrInput, inUV).rgb;
-    uint layer = texture(layers, inUV).r;
 
-    if (ubo.debugData.viewMode == VIEWMODE_CLAY) {
+    if (ubo.debugData.viewMode == VIEWMODE_CLAY ||
+    ubo.debugData.viewMode == VIEWMODE_UNLIT) {
         outColor = vec4(hdr, 1.0);
         return;
     }
 
-    if (ubo.debugData.viewMode == VIEWMODE_UNLIT) {
-        outColor = vec4(hdr, 1.0);
-        return;
+    // Bloom composite — add before tonemapping so it affects the curve correctly
+    if ((pc.flags & FLAG_BLOOM) != 0u) {
+        vec3 bloom = texture(bloomInput, inUV).rgb;
+        hdr += bloom * pc.bloomStrength;
     }
 
-    if (layer == 0u) {
-        outColor = vec4(ACESFitted(max(hdr, vec3(0.0)) * ubo.debugData.exposureMultiplier), 1.0);
-        return;
+    // Exposure
+    vec3 color = max(hdr, vec3(0.0)) * ubo.debugData.exposureMultiplier;
+
+    // Tonemap
+    color = ACESFitted(color);
+
+    // Vignette — after tonemap, subtle darkening at edges
+    if ((pc.flags & FLAG_VIGNETTE) != 0u) {
+        vec2  uv       = inUV - 0.5;
+        float vignette = 1.0 - dot(uv, uv) * pc.vignetteStrength;
+        color *= clamp(vignette, 0.0, 1.0);
     }
 
-    outColor = vec4(ACESFitted(max(hdr, vec3(0.0)) * ubo.debugData.exposureMultiplier), 1.0);
+    outColor = vec4(color, 1.0);
 }

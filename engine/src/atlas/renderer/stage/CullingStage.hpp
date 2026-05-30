@@ -8,13 +8,13 @@
 #include <utility>
 #include <vector>
 
-#include "IRenderStage.hpp"
+#include "RenderStage.hpp"
 #include "asset/AssetManager.hpp"
 #include "entity/Object.hpp"
 #include "renderer/Device.hpp"
 
 namespace Atlas {
-    class CullingStage : public IRenderStage {
+    class CullingStage : public RenderStage {
     public:
         static constexpr uint32_t MAX_OBJECTS = 10000;
         static constexpr uint32_t MAX_LIGHTS = 32;

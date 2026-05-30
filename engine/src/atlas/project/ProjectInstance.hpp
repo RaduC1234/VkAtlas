@@ -8,6 +8,7 @@
 
 namespace Atlas {
     class AssetManager;
+    class Renderer;
 
     class ProjectInstance {
     public:
@@ -17,7 +18,12 @@ namespace Atlas {
         ProjectInstance(const ProjectInstance &) = delete;
         ProjectInstance &operator=(const ProjectInstance &) = delete;
 
-        void load(Renderer &renderer, AssetManager &assets, const std::filesystem::path &manifestPath, const std::filesystem::path &moduleOverride = {});
+        void load(
+            Renderer &renderer,
+            AssetManager &assets,
+            const std::filesystem::path &manifestPath,
+            const std::filesystem::path &moduleOverride = {},
+            const std::filesystem::path &startupLevelOverride = {});
         void unload();
 
         IScene *scene() const { return currentScene; }
@@ -26,6 +32,12 @@ namespace Atlas {
         const std::filesystem::path &assetsPath() const { return assetRoot; }
 
     private:
+        static std::filesystem::path absolutePath(const std::filesystem::path &path);
+        static std::filesystem::path projectRelativePath(const std::filesystem::path &projectRoot, const std::filesystem::path &path);
+        static void *openLibrary(const std::filesystem::path &path);
+        static void closeLibrary(void *library);
+        static void *loadSymbol(void *library, const char *symbolName, const std::filesystem::path &libraryPath);
+
         ProjectManifest projectManifest;
         std::filesystem::path projectRoot;
         std::filesystem::path assetRoot;

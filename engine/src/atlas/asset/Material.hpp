@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 
 #include <glm/vec3.hpp>
@@ -10,6 +11,8 @@
 #include "AssetHandle.hpp"
 
 namespace Atlas {
+    class AssetManager;
+
     enum class AlphaMode : uint32_t {
         OPAQUE = 0,
         MASK = 1,
@@ -46,6 +49,9 @@ namespace Atlas {
 
         float emissiveStrength{1.0f};
 
+        static std::shared_ptr<Material> fromFile(const std::string &path, AssetManager &assets);
+        static void saveFile(const Material &material, const std::string &path);
+
         size_t getHash() const {
             size_t seed = 0;
             hashCombine(seed, name);
@@ -62,6 +68,11 @@ namespace Atlas {
             hashCombine(seed, sheenColor.x);
             hashCombine(seed, sheenColor.y);
             hashCombine(seed, sheenColor.z);
+            hashCombine(seed, baseColorTexture.path());
+            hashCombine(seed, normalTexture.path());
+            hashCombine(seed, metallicRoughnessTexture.path());
+            hashCombine(seed, occlusionTexture.path());
+            hashCombine(seed, emissiveTexture.path());
             hashCombine(seed, baseColorTexture.identity());
             hashCombine(seed, normalTexture.identity());
             hashCombine(seed, metallicRoughnessTexture.identity());

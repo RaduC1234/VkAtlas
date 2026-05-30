@@ -10,12 +10,21 @@ namespace Atlas {
 
     class ProjectLayer final : public Layer {
     public:
-        ProjectLayer(Renderer &renderer, AssetManager &assets, std::filesystem::path manifestPath, std::filesystem::path moduleOverride = {});
+        ProjectLayer(
+            Renderer &renderer,
+            AssetManager &assets,
+            std::filesystem::path manifestPath,
+            std::filesystem::path moduleOverride = {},
+            std::filesystem::path startupLevelOverride = {});
 
         void onAttach() override;
         void onDetach() override;
         void onUpdate(float deltaTime) override;
         void onRender(FrameContext frameContext) override;
+        void loadProject(
+            std::filesystem::path newManifestPath,
+            std::filesystem::path newModuleOverride = {},
+            std::filesystem::path newStartupLevelOverride = {});
 
         Renderer &getRenderer() { return renderer; }
         const Renderer &getRenderer() const { return renderer; }
@@ -29,6 +38,7 @@ namespace Atlas {
         AssetManager &assets;
         std::filesystem::path manifestPath;
         std::filesystem::path moduleOverride;
+        std::filesystem::path startupLevelOverride;
         ProjectInstance projectInstance;
     };
 }

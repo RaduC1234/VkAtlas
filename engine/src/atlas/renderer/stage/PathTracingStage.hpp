@@ -3,14 +3,14 @@
 
 #include <entt/signal/sigh.hpp>
 
-#include "IRenderStage.hpp"
+#include "RenderStage.hpp"
 #include "asset/AssetManager.hpp"
 #include "renderer/Camera.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
 #include "renderer/abstraction/Pipeline.hpp"
 
 namespace Atlas {
-    class PathTracingStage : public IRenderStage {
+    class PathTracingStage : public RenderStage {
     public:
         PathTracingStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout);
         ~PathTracingStage();
@@ -31,6 +31,7 @@ namespace Atlas {
         void updateDescriptorSet();
         void onCameraUpdated(entt::registry &registry, entt::entity entity);
         void onCameraDestroyed(entt::registry &registry, entt::entity entity);
+        entt::entity activeCamera(entt::registry &registry) const;
 
         uint64_t sceneBuildSignature(entt::registry &registry, bool &waitingForMeshes) const;
         uint64_t textureReadinessSignature() const;
