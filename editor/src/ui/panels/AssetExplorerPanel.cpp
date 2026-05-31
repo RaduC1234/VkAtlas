@@ -8,8 +8,9 @@
 
 #include <imgui.h>
 
+#include "core/ImGuiLayer.hpp"
 #include "core/Log.hpp"
-#include "renderer/ImGuiLayer.hpp"
+#include "ui/theme/EditorTheme.hpp"
 
 namespace Atlas::Editor {
     AssetExplorerPanel::AssetExplorerPanel(ProjectLayer &projectLayer) : projectLayer(projectLayer) {
@@ -496,16 +497,16 @@ namespace Atlas::Editor {
 
     ImU32 AssetExplorerPanel::kindColor(AssetKind kind) {
         switch (kind) {
-            case AssetKind::Folder: return IM_COL32(217, 166, 67, 255);
-            case AssetKind::Level: return IM_COL32(88, 154, 217, 255);
-            case AssetKind::Material: return IM_COL32(178, 111, 202, 255);
-            case AssetKind::Model: return IM_COL32(93, 181, 138, 255);
-            case AssetKind::Texture: return IM_COL32(205, 116, 98, 255);
-            case AssetKind::Script: return IM_COL32(105, 128, 196, 255);
-            case AssetKind::Other: return IM_COL32(130, 136, 145, 255);
+            case AssetKind::Folder: return EditorTheme::colorU32(EditorTheme::Color::AssetFolder);
+            case AssetKind::Level: return EditorTheme::colorU32(EditorTheme::Color::AssetLevel);
+            case AssetKind::Material: return EditorTheme::colorU32(EditorTheme::Color::AssetMaterial);
+            case AssetKind::Model: return EditorTheme::colorU32(EditorTheme::Color::AssetModel);
+            case AssetKind::Texture: return EditorTheme::colorU32(EditorTheme::Color::AssetTexture);
+            case AssetKind::Script: return EditorTheme::colorU32(EditorTheme::Color::AssetScript);
+            case AssetKind::Other: return EditorTheme::colorU32(EditorTheme::Color::AssetOther);
         }
 
-        return IM_COL32(130, 136, 145, 255);
+        return EditorTheme::colorU32(EditorTheme::Color::AssetOther);
     }
 
     std::string AssetExplorerPanel::lower(std::string value) {

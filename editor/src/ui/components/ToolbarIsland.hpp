@@ -7,28 +7,25 @@ namespace Atlas::Editor {
     class IconRegistry;
 
     struct ToolbarStyle {
-        float iconSize = 32.0f;
-        float btnW = 36.0f;
-        float btnH = 36.0f;
-        float islandPad = 4.0f;
-        float islandRounding = 9.0f;
-        float islandMargin = 12.0f;
-        ImU32 colFill = IM_COL32(24, 24, 27, 218);
-        ImU32 colBorder = IM_COL32(255, 255, 255, 34);
-        ImU32 colShadow = IM_COL32(0, 0, 0, 72);
-        ImU32 colHover = IM_COL32(255, 255, 255, 18);
-        ImU32 colAccent = IM_COL32(88, 140, 230, 255);
+        float iconSize = 0.0f;
+        float btnW = 0.0f;
+        float btnH = 0.0f;
+        float islandPad = 0.0f;
+        float islandRounding = 0.0f;
+        float islandMargin = 0.0f;
+        ImU32 colFill = 0;
+        ImU32 colBorder = 0;
+        ImU32 colShadow = 0;
+        ImU32 colHover = 0;
+        ImU32 colAccent = 0;
 
-        static const ToolbarStyle &defaults() {
-            static ToolbarStyle s;
-            return s;
-        }
+        static ToolbarStyle defaults();
     };
 
     class IconButton {
     public:
         IconButton(const char *id, const char *iconName, IconRegistry &icons,
-                   const ToolbarStyle &style = ToolbarStyle::defaults())
+                   ToolbarStyle style = ToolbarStyle::defaults())
             : m_id(id), m_iconName(iconName), m_icons(icons), m_style(style) {
         }
 
@@ -49,7 +46,7 @@ namespace Atlas::Editor {
         const char *m_id;
         const char *m_iconName;
         IconRegistry &m_icons;
-        const ToolbarStyle &m_style;
+        ToolbarStyle m_style;
         const char *m_tooltip = nullptr;
         bool m_active = false;
 
@@ -61,7 +58,7 @@ namespace Atlas::Editor {
     public:
         enum class Anchor { TopLeft, TopRight, BottomLeft, BottomRight };
 
-        ToolbarIsland(ImVec2 viewportMin, ImVec2 viewportSize, const ToolbarStyle &style = ToolbarStyle::defaults())
+        ToolbarIsland(ImVec2 viewportMin, ImVec2 viewportSize, ToolbarStyle style = ToolbarStyle::defaults())
             : m_vpMin(viewportMin), m_vpSize(viewportSize), m_style(style) {
         }
 
@@ -85,7 +82,7 @@ namespace Atlas::Editor {
     private:
         ImVec2 m_vpMin;
         ImVec2 m_vpSize;
-        const ToolbarStyle &m_style;
+        ToolbarStyle m_style;
         Anchor m_anchor = Anchor::TopLeft;
         ImVec2 m_margin = {-1, -1}; // -1 means use style.islandMargin
         int m_buttonCount = 1;
@@ -93,4 +90,4 @@ namespace Atlas::Editor {
         ImVec2 resolvedMargin() const;
         ImVec2 computeMin() const;
     };
-} // namespace Atlas::Editor::UI
+} // namespace Atlas::Editor

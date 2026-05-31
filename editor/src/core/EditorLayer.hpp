@@ -9,6 +9,7 @@
 
 #include "EditorHistory.hpp"
 #include "IconRegistry.hpp"
+#include "ImGuiLayer.hpp"
 #include "ui/panels/AssetExplorerPanel.hpp"
 #include "ui/panels/HierarchyPanel.hpp"
 #include "ui/panels/InspectorPanel.hpp"
@@ -23,6 +24,7 @@ namespace Atlas::Editor {
         void onAttach() override;
         void onDetach() override;
         void onUpdate(float deltaTime) override;
+        void onRender(FrameContext frameContext) override;
         void onImGuiRender() override;
 
     private:
@@ -56,6 +58,7 @@ namespace Atlas::Editor {
         bool pendingProjectLoad = false;
         std::filesystem::path pendingProjectManifestPath;
 
+        std::unique_ptr<ImGuiLayer> imguiLayer;
         std::unique_ptr<IconRegistry> iconRegistry;
         std::shared_ptr<HierarchyPanel> hierarchyPanel;
         std::shared_ptr<InspectorPanel> inspectorPanel;

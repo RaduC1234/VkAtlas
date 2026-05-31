@@ -1,14 +1,10 @@
 #pragma once
 
-#include "Device.hpp"
-#include "core/Window.hpp"
+#include <Atlas.hpp>
 
-#include <vulkan/vulkan.h>
-
-#include <imgui.h>
 
 namespace Atlas {
-    class ImGuiLayer {
+    class ImGuiLayer : public Layer {
     public:
         ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount);
         ~ImGuiLayer();
@@ -26,8 +22,6 @@ namespace Atlas {
 
     private:
         void createDescriptorPool(Device &device);
-        void setStyleWhite();
-        void setStyleDark();
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkDevice device = VK_NULL_HANDLE;

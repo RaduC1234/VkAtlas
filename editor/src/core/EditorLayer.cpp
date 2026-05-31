@@ -19,7 +19,13 @@ namespace Atlas::Editor {
     }
 
     void EditorLayer::onAttach() {
-        iconRegistry = std::make_unique<IconRegistry>(projectLayer.getRenderer().device());
+        auto &renderer = projectLayer.getRenderer();
+        imguiLayer = std::make_unique<ImGuiLayer>(
+            renderer.device(),
+            renderer.window(),
+            renderer.getOverlayRenderPass(Renderer::OverlayLoadOp::Clear),
+            static_cast<uint32_t>(renderer.getImageCount()));
+        iconRegistry = std::make_unique<IconRegistry>(renderer.device());
         hierarchyPanel = std::make_shared<HierarchyPanel>(projectLayer, selectedEntity, history);
         inspectorPanel = std::make_shared<InspectorPanel>(
             projectLayer,
@@ -41,11 +47,27 @@ namespace Atlas::Editor {
         if (renderSettingsPanel) renderSettingsPanel->onDetach();
         if (assetExplorerPanel) assetExplorerPanel->onDetach();
         iconRegistry.reset();
+        imguiLayer.reset();
     }
 
     void EditorLayer::onUpdate(float) {
         processPendingProjectLoad();
         ensureEditorCamera();
+    }
+
+    void EditorLayer::onRender(FrameContext frameContext) {
+        if (!imguiLayer) {
+            return;
+        }
+
+        auto &renderer = projectLayer.getRenderer();
+        imguiLayer->beginFrame(true);
+        onImGuiRender();
+        imguiLayer->endFrame();
+
+        renderer.beginOverlayRenderPass(frameContext.graphicsCommandBuffer, Renderer::OverlayLoadOp::Clear);
+        imguiLayer->render(frameContext.graphicsCommandBuffer);
+        renderer.endOverlayRenderPass(frameContext.graphicsCommandBuffer);
     }
 
     void EditorLayer::onImGuiRender() {

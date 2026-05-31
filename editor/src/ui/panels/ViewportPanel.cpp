@@ -5,6 +5,7 @@
 #include "ViewportPanel.hpp"
 
 #include "core/IconRegistry.hpp"
+#include "core/ImGuiLayer.hpp"
 #include "ui/components/ToolbarIsland.hpp"
 #include "ui/components/ViewportGizmo.hpp"
 

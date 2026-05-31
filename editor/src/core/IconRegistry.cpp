@@ -12,7 +12,7 @@
 #include "asset/Texture.hpp"
 #include "core/Log.hpp"
 #include "renderer/Device.hpp"
-#include "renderer/ImGuiLayer.hpp"
+#include "ImGuiLayer.hpp"
 #include "renderer/resources/GPUTexture.hpp"
 
 namespace Atlas::Editor {

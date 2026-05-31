@@ -2,7 +2,6 @@
 
 #include "core/LayerStack.hpp"
 #include "asset/AssetManager.hpp"
-#include "renderer/ImGuiLayer.hpp"
 #include "renderer/Renderer.hpp"
 
 #include <filesystem>
@@ -21,8 +20,6 @@ namespace Atlas {
         std::filesystem::path projectManifest;
         std::filesystem::path projectModule;
         Renderer::CreateInfo rendererCreateInfo;
-        bool enableImGui = false;
-        bool enableDockspace = false;
     };
 
     class Application {
@@ -43,20 +40,19 @@ namespace Atlas {
 
         template<class T, class... Args>
         T &pushLayer(Args &&... args) {
-            return static_cast<T &>(layers.pushLayer(std::make_unique<T>(std::forward<Args>(args)...)));
+            return static_cast<T &>(layers_.pushLayer(std::make_unique<T>(std::forward<Args>(args)...)));
         }
 
         template<class T, class... Args>
         T &pushOverlay(Args &&... args) {
-            return static_cast<T &>(layers.pushOverlay(std::make_unique<T>(std::forward<Args>(args)...)));
+            return static_cast<T &>(layers_.pushOverlay(std::make_unique<T>(std::forward<Args>(args)...)));
         }
 
     private:
         ApplicationCreateInfo specification_;
         Renderer renderer_;
         AssetManager assetManager_;
-        LayerStack layers;
-        std::unique_ptr<ImGuiLayer> imguiLayer;
+        LayerStack layers_;
     };
 
     extern Application *CreateApplication(ApplicationCommandLineArgs args);

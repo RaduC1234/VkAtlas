@@ -1,10 +1,27 @@
 #include "ToolbarIsland.hpp"
 
 #include "core/IconRegistry.hpp"
+#include "ui/theme/EditorTheme.hpp"
 
 #include <imgui.h>
 
 namespace Atlas::Editor {
+    ToolbarStyle ToolbarStyle::defaults() {
+        ToolbarStyle style;
+        style.iconSize = EditorTheme::metric(EditorTheme::Metric::ToolbarIconSize);
+        style.btnW = EditorTheme::metric(EditorTheme::Metric::ToolbarButtonWidth);
+        style.btnH = EditorTheme::metric(EditorTheme::Metric::ToolbarButtonHeight);
+        style.islandPad = EditorTheme::metric(EditorTheme::Metric::ToolbarIslandPadding);
+        style.islandRounding = EditorTheme::metric(EditorTheme::Metric::ToolbarIslandRounding);
+        style.islandMargin = EditorTheme::metric(EditorTheme::Metric::ToolbarIslandMargin);
+        style.colFill = EditorTheme::colorU32(EditorTheme::Color::OverlayBg);
+        style.colBorder = EditorTheme::colorU32(EditorTheme::Color::OverlayBorder);
+        style.colShadow = EditorTheme::colorU32(EditorTheme::Color::OverlayShadow);
+        style.colHover = EditorTheme::colorU32(EditorTheme::Color::OverlayHover);
+        style.colAccent = EditorTheme::colorU32(EditorTheme::Color::Accent);
+        return style;
+    }
+
     void IconButton::draw(ImDrawList &dl, const ImVec2 bMin, const ImVec2 bMax, const bool hovered) const {
         // Hover highlight
         if (hovered && !m_active)
@@ -132,4 +149,4 @@ namespace Atlas::Editor {
         ImGui::PopStyleColor(3);
         ImGui::PopStyleVar(2);
     }
-} // namespace Atlas::Editor::UI
+} // namespace Atlas::Editor
