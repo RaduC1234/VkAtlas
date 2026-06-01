@@ -1,9 +1,12 @@
 #include "RenderGraph.hpp"
 
+#include "core/Profiler.hpp"
 #include "Renderer.hpp"
 
 namespace Atlas {
     RenderGraph RenderGraph::Builder::build(Mode mode) {
+        ATLAS_PROFILE_FUNCTION();
+
         assert(width_ > 0 && height_ > 0);
         assert(!stages_.empty());
 
@@ -17,6 +20,8 @@ namespace Atlas {
     }
 
     void RenderGraph::bake() {
+        ATLAS_PROFILE_FUNCTION();
+
         nodes_.clear();
         nodes_.reserve(stages_.size());
 
@@ -55,6 +60,8 @@ namespace Atlas {
     }
 
     void RenderGraph::bakeResources() {
+        ATLAS_PROFILE_FUNCTION();
+
         for (auto &stage: stages_) {
             std::vector<RenderStage::Resource::Description> outputs;
             stage->getDeclaredOutputs(outputs);
@@ -137,12 +144,17 @@ namespace Atlas {
     }
 
     void RenderGraph::build(entt::registry &registry) {
+        ATLAS_PROFILE_FUNCTION();
+
         for (auto &stage: stages_) {
+            ATLAS_PROFILE_SCOPE("RenderStage::onUpdate");
             stage->onUpdate(registry);
         }
     }
 
     void RenderGraph::bakeBarriers() {
+        ATLAS_PROFILE_FUNCTION();
+
         std::unordered_map<std::string, VkImageLayout> currentLayouts;
         std::unordered_map<std::string, RenderStage::Queue> lastWrittenBy;
 
@@ -216,7 +228,12 @@ namespace Atlas {
     }
 
     void RenderGraph::render(const FrameContext frameContext, VkDescriptorSet globalSet) {
+        ATLAS_PROFILE_FUNCTION();
+
         for (auto &node: nodes_) {
+            const char *zoneName = node.outputs.empty() ? "RenderStage::record" : node.outputs.front().c_str();
+            ATLAS_PROFILE_SCOPE_DYNAMIC(zoneName);
+
             // Everything runs on the graphics command buffer.
             // The graphics queue family supports compute operations, so compute
             // stages record vkCmdDispatch into the same command buffer without
@@ -229,6 +246,8 @@ namespace Atlas {
     }
 
     void RenderGraph::emitBarriers(VkCommandBuffer cmd, const Node &node) const {
+        ATLAS_PROFILE_FUNCTION();
+
         std::vector<VkImageMemoryBarrier> imageBarriers;
         std::vector<VkBufferMemoryBarrier> bufferBarriers;
         VkPipelineStageFlags srcStages = 0;

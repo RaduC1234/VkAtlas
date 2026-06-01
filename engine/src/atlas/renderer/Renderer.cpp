@@ -5,10 +5,13 @@
 #include <cassert>
 #include <stdexcept>
 
+#include "core/Profiler.hpp"
 #include "entity/Object.hpp"
 
 namespace Atlas {
     Renderer::Renderer(const CreateInfo &createInfo) : createInfo(createInfo) {
+        ATLAS_PROFILE_FUNCTION();
+
         this->window_ = Window::create(createInfo.window);
         this->device_ = std::make_unique<Device>(*window_, createInfo.enableRaytracing);
         this->resourceManager_ = std::make_unique<ResourceManager>(*device_);
@@ -19,6 +22,8 @@ namespace Atlas {
     }
 
     Renderer::~Renderer() {
+        ATLAS_PROFILE_FUNCTION();
+
         vkDeviceWaitIdle(device_->device());
 
         for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
@@ -53,6 +58,8 @@ namespace Atlas {
     }
 
     FrameContext Renderer::beginFrame() {
+        ATLAS_PROFILE_FUNCTION();
+
         assert(!isFrameStarted && "Can't call beginFrame while already in progress");
 
         auto result = swapChain_->acquireNextImage(&currentImageIndex);
@@ -90,6 +97,8 @@ namespace Atlas {
     }
 
     void Renderer::endFrame() {
+        ATLAS_PROFILE_FUNCTION();
+
         assert(isFrameStarted && "Can't call endFrame while not in progress");
 
         auto graphicsCommandBuffer = getCurrentGraphicsCommandBuffer();
@@ -118,6 +127,8 @@ namespace Atlas {
     }
 
     void Renderer::beginSwapChainRenderPass(VkCommandBuffer commandBuffer) {
+        ATLAS_PROFILE_FUNCTION();
+
         assert(isFrameStarted && "Can't call beginSwapChainRenderPass if frame is not in progress");
         assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't begin render pass on command buffer from a different frame");
 
@@ -150,6 +161,8 @@ namespace Atlas {
     }
 
     void Renderer::endSwapChainRenderPass(VkCommandBuffer commandBuffer) const {
+        ATLAS_PROFILE_FUNCTION();
+
         assert(isFrameStarted && "Can't call endSwapChainRenderPass if frame is not in progress");
         assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't end render pass on command buffer from a different frame");
 
@@ -157,6 +170,8 @@ namespace Atlas {
     }
 
     void Renderer::beginOverlayRenderPass(VkCommandBuffer commandBuffer, OverlayLoadOp loadOp) {
+        ATLAS_PROFILE_FUNCTION();
+
         assert(isFrameStarted && "Can't call beginOverlayRenderPass if frame is not in progress");
         assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't begin overlay render pass on command buffer from a different frame");
 
@@ -177,6 +192,8 @@ namespace Atlas {
     }
 
     void Renderer::endOverlayRenderPass(VkCommandBuffer commandBuffer) const {
+        ATLAS_PROFILE_FUNCTION();
+
         assert(isFrameStarted && "Can't call endOverlayRenderPass if frame is not in progress");
         assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't end overlay render pass on command buffer from a different frame");
 
@@ -184,6 +201,8 @@ namespace Atlas {
     }
 
     void Renderer::createCommandBuffers() {
+        ATLAS_PROFILE_FUNCTION();
+
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 
@@ -207,6 +226,8 @@ namespace Atlas {
     }
 
     void Renderer::freeCommandBuffers() {
+        ATLAS_PROFILE_FUNCTION();
+
         vkFreeCommandBuffers(
             device_->device(),
             device_->getGraphicsCommandPool(),
@@ -225,6 +246,8 @@ namespace Atlas {
     }
 
     void Renderer::recreateSwapChain() {
+        ATLAS_PROFILE_FUNCTION();
+
         auto extent = window_->getExtent();
         while (extent.width == 0 || extent.height == 0) {
             extent = window_->getExtent();
@@ -245,6 +268,8 @@ namespace Atlas {
     }
 
     void Renderer::createComputeSyncObjects() {
+        ATLAS_PROFILE_FUNCTION();
+
         computeInFlightFences.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
         computeFinishedSemaphores.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
 

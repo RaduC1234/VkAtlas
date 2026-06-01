@@ -64,6 +64,6 @@ namespace Atlas::Editor {
         std::shared_ptr<InspectorPanel> inspectorPanel;
         std::shared_ptr<ViewportPanel> viewportPanel;
         std::shared_ptr<RenderSettingsPanel> renderSettingsPanel;
-        std::shared_ptr<AssetExplorerPanel> assetExplorerPanel;
+        //std::shared_ptr<AssetExplorerPanel> assetExplorerPanel;
     };
 }

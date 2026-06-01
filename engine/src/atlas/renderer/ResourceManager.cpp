@@ -5,6 +5,7 @@
 #include <stdexcept>
 
 #include "asset/Texture.hpp"
+#include "core/Profiler.hpp"
 #include "resources/GPUTexture.hpp"
 #include "renderer/abstraction/GPUBuffer.hpp"
 
@@ -31,6 +32,8 @@ namespace Atlas {
     // -------------------------------------------------------------------------
 
     void ResourceManager::createDefaults() {
+        ATLAS_PROFILE_FUNCTION();
+
         // Defaults are blocking startup uploads.
         GPUResource::createDefault<GPUTexture>(device_);
         GPUResource::createDefault<GPUCubemap>(device_);
@@ -42,6 +45,8 @@ namespace Atlas {
     // -------------------------------------------------------------------------
 
     void ResourceManager::remove(std::shared_ptr<IGPUResource> resource) {
+        ATLAS_PROFILE_FUNCTION();
+
         if (!resource) return;
 
         resource->setStatus(IGPUResource::Status::PENDING_DESTROY);
@@ -70,9 +75,12 @@ namespace Atlas {
     // -------------------------------------------------------------------------
 
     void ResourceManager::update() {
+        ATLAS_PROFILE_FUNCTION();
+
         pollUpload();
 
         if (!inFlightUpload_ && !uploadQueue_.empty()) {
+            ATLAS_PROFILE_SCOPE("ResourceManager::submitUploadBatch");
             constexpr size_t maxUploadsPerBatch = 1;
 
             std::vector<UploadEntry> batch;
@@ -106,6 +114,8 @@ namespace Atlas {
     }
 
     void ResourceManager::pollUpload() {
+        ATLAS_PROFILE_FUNCTION();
+
         if (!inFlightUpload_) {
             return;
         }
@@ -132,6 +142,8 @@ namespace Atlas {
     }
 
     void ResourceManager::retirePendingDestroys() {
+        ATLAS_PROFILE_FUNCTION();
+
         std::erase_if(destroyQueue_, [this](const PendingDestroy &pd) {
             return device_.isTransferComplete(pd.timelineValue);
         });

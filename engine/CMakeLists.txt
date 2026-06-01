@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.22)
 
 project("atlas_engine")
 
+option(ATLAS_ENABLE_TRACY_DEBUG "Enable Tracy profiling for Debug builds" ON)
+
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "src/*.cpp" "src/*.hpp")
 
 if (ATLAS_PLATFORM_DESKTOP_BUILD)
@@ -80,6 +82,24 @@ if (ANDROID)
 elseif (WIN32)
     find_package(Vulkan REQUIRED)
     add_subdirectory(dependencies/glfw)
+
+    if (ATLAS_ENABLE_TRACY_DEBUG)
+        set(TRACY_ENABLE OFF CACHE BOOL "" FORCE)
+        set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+
+        add_subdirectory(dependencies/tracy)
+
+        target_link_libraries(atlas_engine PUBLIC Tracy::TracyClient)
+
+        target_compile_definitions(TracyClient PUBLIC
+                "$<$<CONFIG:Debug>:TRACY_ENABLE>"
+                "$<$<CONFIG:Debug>:TRACY_ON_DEMAND>"
+        )
+
+        target_compile_definitions(atlas_engine PUBLIC
+                "$<$<CONFIG:Debug>:ATLAS_PROFILE_CPU>"
+        )
+    endif ()
 
     add_library(imgui OBJECT
             ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui.cpp

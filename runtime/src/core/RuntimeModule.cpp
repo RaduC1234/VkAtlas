@@ -4,10 +4,6 @@
 #include <string>
 #include <utility>
 
-#ifdef ATLAS_RUNTIME_ENABLE_IMGUI
-#include "RuntimeDebugLayer.hpp"
-#endif
-
 #ifndef ATLAS_DEFAULT_PROJECT_MANIFEST
 #define ATLAS_DEFAULT_PROJECT_MANIFEST "samples/office/project.atlas.json"
 #endif
@@ -43,15 +39,9 @@ namespace Atlas {
         specification.projectManifest = manifestPath;
         specification.projectModule = modulePath;
         specification.rendererCreateInfo.window.title = specification.name;
-#ifdef ATLAS_RUNTIME_ENABLE_IMGUI
-        specification.enableImGui = true;
-#endif
 
         auto *application = new Application(specification);
         application->pushLayer<ProjectLayer>(application->renderer(), application->assets(), manifestPath, modulePath, startupLevelOverride);
-#ifdef ATLAS_RUNTIME_ENABLE_IMGUI
-        application->pushOverlay<Runtime::RuntimeDebugLayer>();
-#endif
 
         return application;
     }
