@@ -2,6 +2,7 @@
 
 #include "Panel.hpp"
 #include "core/EditorHistory.hpp"
+#include "ui/widgets/MaterialEditor.hpp"
 
 #include <Atlas.hpp>
 
@@ -47,5 +48,6 @@ namespace Atlas::Editor {
         TransformComponent transformEditBefore;
         bool lightEditActive = false;
         LightComponent lightEditBefore;
+        MaterialEditState inlineMaterialEditState;
     };
 }

@@ -16,6 +16,7 @@ struct GPUObjectData {
     mat4 normalMatrix;
     uvec4 textureIndices;
     vec4 baseColor;
+    vec4 materialFactors;
 };
 
 layout(location = 0) in vec3 inPosition;

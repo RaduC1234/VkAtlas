@@ -1,5 +1,7 @@
 #include "InspectorPanel.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <string>
 #include <utility>
@@ -7,9 +9,126 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 
+#include "ui/components/ViewportGizmo.hpp"
 #include "ui/widgets/MaterialEditor.hpp"
 
 namespace Atlas::Editor {
+    float matchedInspectorOrthographicHalfHeight(
+        entt::registry &registry,
+        const entt::entity cameraEntity,
+        const CameraComponent &cameraComponent) {
+        const auto *cameraTransform = registry.try_get<TransformComponent>(cameraEntity);
+        if (!cameraTransform) {
+            return cameraComponent.orthographicHalfHeight;
+        }
+
+        const Camera::Data cameraData = cameraComponent.camera.getData();
+        float focusDistance = glm::dot(-cameraTransform->translation, cameraData.direction);
+        if (focusDistance <= 0.001f) {
+            focusDistance = 3.0f;
+        }
+
+        return std::max(0.001f, focusDistance * std::tan(cameraComponent.perspectiveFovY * 0.5f));
+    }
+
+    bool inspectorLightUsesDirection(const LightType type) {
+        return type == LightType::SPOT || type == LightType::DIRECTIONAL || type == LightType::RECT;
+    }
+
+    void inspectorConfigureLightDefaults(LightComponent &light, const TransformComponent *transform) {
+        if (light.type == LightType::RECT) {
+            if (light.width <= 0.0f) {
+                light.width = 2.0f;
+            }
+            if (light.height <= 0.0f) {
+                light.height = 1.0f;
+            }
+        }
+
+        if (!transform) {
+            return;
+        }
+
+        if (inspectorLightUsesDirection(light.type)) {
+            light.direction = ViewportGizmo::lightDirectionFromTransform(*transform);
+        }
+
+        if (light.type == LightType::RECT) {
+            light.rectRight = ViewportGizmo::lightRightFromTransform(*transform);
+            light.rectUp = ViewportGizmo::lightUpFromTransform(*transform);
+        }
+    }
+
+    void inspectorAddLightComponent(entt::registry &registry, const entt::entity entity, const LightType type) {
+        const bool hadTransform = registry.all_of<TransformComponent>(entity);
+        if (!hadTransform) {
+            registry.emplace<TransformComponent>(entity);
+            registry.patch<TransformComponent>(entity);
+        }
+
+        LightComponent light{};
+        light.type = type;
+        inspectorConfigureLightDefaults(light, hadTransform ? registry.try_get<TransformComponent>(entity) : nullptr);
+
+        registry.emplace<LightComponent>(entity, light);
+        registry.patch<LightComponent>(entity);
+
+        if (!hadTransform && inspectorLightUsesDirection(type)) {
+            registry.patch<TransformComponent>(entity, [&](auto &transform) {
+                transform.rotation = ViewportGizmo::transformRotationFromLightDirection(light.direction);
+            });
+        }
+    }
+
+    void inspectorSyncLightFromTransform(entt::registry &registry, const entt::entity entity, const TransformComponent &transform) {
+        auto *light = registry.try_get<LightComponent>(entity);
+        if (!light || !inspectorLightUsesDirection(light->type)) {
+            return;
+        }
+
+        registry.patch<LightComponent>(entity, [&](auto &component) {
+            component.direction = ViewportGizmo::lightDirectionFromTransform(transform);
+            if (component.type == LightType::RECT) {
+                component.rectRight = ViewportGizmo::lightRightFromTransform(transform);
+                component.rectUp = ViewportGizmo::lightUpFromTransform(transform);
+            }
+        });
+    }
+
+    void inspectorSyncTransformFromLight(entt::registry &registry, const entt::entity entity, const LightComponent &light) {
+        if (!inspectorLightUsesDirection(light.type) || !registry.all_of<TransformComponent>(entity)) {
+            return;
+        }
+
+        registry.patch<TransformComponent>(entity, [&](auto &transform) {
+            transform.rotation = ViewportGizmo::transformRotationFromLightDirection(light.direction);
+        });
+    }
+
+    std::string inspectorEntityMaterialName(entt::registry &registry, const entt::entity entity) {
+        if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && !node->name.empty()) {
+            return node->name + " Material";
+        }
+
+        return "Material";
+    }
+
+    std::string inspectorUniqueInternalMaterialPath(AssetManager &assets, const std::string &name) {
+        const std::string basePath = "##editor/materials/" + name;
+        if (!assets.find<Material>(basePath).valid()) {
+            return basePath;
+        }
+
+        for (uint32_t index = 1; index < 100000; ++index) {
+            const std::string path = basePath + "." + std::to_string(index);
+            if (!assets.find<Material>(path).valid()) {
+                return path;
+            }
+        }
+
+        return basePath + ".99999";
+    }
+
     InspectorPanel::InspectorPanel(
         ProjectLayer &projectLayer,
         entt::entity &selectedEntity,
@@ -131,8 +250,20 @@ namespace Atlas::Editor {
             registry.emplace<MaterialComponent>(selectedEntity);
         }
 
-        if (!registry.all_of<LightComponent>(selectedEntity) && ImGui::MenuItem("Light")) {
-            registry.emplace<LightComponent>(selectedEntity);
+        if (!registry.all_of<LightComponent>(selectedEntity) && ImGui::BeginMenu("Light")) {
+            if (ImGui::MenuItem("Point")) {
+                inspectorAddLightComponent(registry, selectedEntity, LightType::POINT);
+            }
+            if (ImGui::MenuItem("Spot")) {
+                inspectorAddLightComponent(registry, selectedEntity, LightType::SPOT);
+            }
+            if (ImGui::MenuItem("Directional")) {
+                inspectorAddLightComponent(registry, selectedEntity, LightType::DIRECTIONAL);
+            }
+            if (ImGui::MenuItem("Rectangle")) {
+                inspectorAddLightComponent(registry, selectedEntity, LightType::RECT);
+            }
+            ImGui::EndMenu();
         }
 
         if (!registry.all_of<CameraComponent>(selectedEntity) && ImGui::MenuItem("Camera")) {
@@ -213,21 +344,25 @@ namespace Atlas::Editor {
         bool changed = false;
         bool finished = false;
 
-        changed |= ImGui::DragFloat3("Position", glm::value_ptr(t.translation), 0.01f, 0.0f, 0.0f, "%.3f", ImGuiSliderFlags_ColorMarkers);
+        bool itemChanged = ImGui::DragFloat3("Position", glm::value_ptr(t.translation), 0.01f, 0.0f, 0.0f, "%.3f", ImGuiSliderFlags_ColorMarkers);
+        changed |= itemChanged;
         if (ImGui::IsItemActivated() && !transformEditActive) {
             transformEditActive = true;
             transformEditBefore = before;
         }
         finished |= ImGui::IsItemDeactivatedAfterEdit();
 
-        changed |= ImGui::DragFloat3("Rotation", glm::value_ptr(degrees), 0.1f, 0.0f, 0.0f, "%.3f", ImGuiSliderFlags_ColorMarkers);
+        itemChanged = ImGui::DragFloat3("Rotation", glm::value_ptr(degrees), 0.1f, 0.0f, 0.0f, "%.3f", ImGuiSliderFlags_ColorMarkers);
+        changed |= itemChanged;
+        const bool rotationChanged = itemChanged;
         if (ImGui::IsItemActivated() && !transformEditActive) {
             transformEditActive = true;
             transformEditBefore = before;
         }
         finished |= ImGui::IsItemDeactivatedAfterEdit();
 
-        changed |= ImGui::DragFloat3("Scale", glm::value_ptr(t.scale), 0.01f, 0.0f, 0.0f, "%.3f", ImGuiSliderFlags_ColorMarkers);
+        itemChanged = ImGui::DragFloat3("Scale", glm::value_ptr(t.scale), 0.01f, 0.0f, 0.0f, "%.3f", ImGuiSliderFlags_ColorMarkers);
+        changed |= itemChanged;
         if (ImGui::IsItemActivated() && !transformEditActive) {
             transformEditActive = true;
             transformEditBefore = before;
@@ -242,6 +377,9 @@ namespace Atlas::Editor {
 
             t.rotation = glm::radians(degrees);
             registry.patch<TransformComponent>(selectedEntity);
+            if (rotationChanged) {
+                inspectorSyncLightFromTransform(registry, selectedEntity, t);
+            }
         }
 
         if (transformEditActive && finished) {
@@ -334,6 +472,32 @@ namespace Atlas::Editor {
             ImGui::EndDisabled();
         }
 
+        ImGui::SameLine();
+        if (ImGui::Button("New")) {
+            const MaterialComponent before = component;
+            auto material = std::make_shared<Material>();
+            material->name = inspectorEntityMaterialName(registry, selectedEntity);
+            material->baseColor = glm::vec4{0.82f, 0.82f, 0.78f, 1.0f};
+            const std::string materialPath = inspectorUniqueInternalMaterialPath(projectLayer.assetManager(), material->name);
+            component.materialHandle = projectLayer.assetManager().store<Material>(std::move(material), materialPath);
+            inlineMaterialEditState = {};
+            registry.patch<MaterialComponent>(selectedEntity);
+            history.recordMaterial(selectedEntity, before, component);
+        }
+
+        if (component.materialHandle.valid()) {
+            ImGui::Separator();
+            ImGui::PushID("inline_material_editor");
+            MaterialEditor::drawProperties(
+                projectLayer,
+                history,
+                &registry,
+                selectedEntity,
+                component.materialHandle,
+                inlineMaterialEditState);
+            ImGui::PopID();
+        }
+
         endComponent();
     }
 
@@ -362,6 +526,15 @@ namespace Atlas::Editor {
                 lightEditBefore = before;
             }
             light.type = static_cast<LightType>(type);
+            if (light.type == LightType::RECT) {
+                if (light.width <= 0.0f) {
+                    light.width = 2.0f;
+                }
+                if (light.height <= 0.0f) {
+                    light.height = 1.0f;
+                }
+            }
+            inspectorConfigureLightDefaults(light, registry.try_get<TransformComponent>(selectedEntity));
             changed = true;
             finished = true;
         }
@@ -390,6 +563,29 @@ namespace Atlas::Editor {
         }
         finished |= ImGui::IsItemDeactivatedAfterEdit();
 
+        if (inspectorLightUsesDirection(light.type)) {
+            glm::vec3 direction = ViewportGizmo::safeDirection(light.direction);
+            itemChanged = ImGui::DragFloat3("Direction", glm::value_ptr(direction), 0.01f, -1.0f, 1.0f, "%.3f", ImGuiSliderFlags_ColorMarkers);
+            if (itemChanged) {
+                if (!lightEditActive) {
+                    lightEditActive = true;
+                    lightEditBefore = before;
+                }
+                light.direction = ViewportGizmo::safeDirection(direction);
+                inspectorSyncTransformFromLight(registry, selectedEntity, light);
+                if (light.type == LightType::RECT) {
+                    if (const auto *transform = registry.try_get<TransformComponent>(selectedEntity)) {
+                        light.rectRight = ViewportGizmo::lightRightFromTransform(*transform);
+                        light.rectUp = ViewportGizmo::lightUpFromTransform(*transform);
+                    }
+                }
+                changed = true;
+            }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+
+            ImGui::TextDisabled("Transform rotation drives the light direction.");
+        }
+
         if (light.type == LightType::SPOT) {
             float inner = glm::degrees(light.innerConeAngle);
             float outer = glm::degrees(light.outerConeAngle);
@@ -410,6 +606,24 @@ namespace Atlas::Editor {
                 }
                 light.outerConeAngle = glm::radians(outer);
                 changed = true;
+            }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+        }
+
+        if (light.type == LightType::RECT) {
+            itemChanged = ImGui::DragFloat("Width", &light.width, 0.01f, 0.01f, 100.0f);
+            changed |= itemChanged;
+            if (ImGui::IsItemActivated() && !lightEditActive) {
+                lightEditActive = true;
+                lightEditBefore = before;
+            }
+            finished |= ImGui::IsItemDeactivatedAfterEdit();
+
+            itemChanged = ImGui::DragFloat("Height", &light.height, 0.01f, 0.01f, 100.0f);
+            changed |= itemChanged;
+            if (ImGui::IsItemActivated() && !lightEditActive) {
+                lightEditActive = true;
+                lightEditBefore = before;
             }
             finished |= ImGui::IsItemDeactivatedAfterEdit();
         }
@@ -443,6 +657,21 @@ namespace Atlas::Editor {
         if (!open) return;
 
         auto &cam = registry.get<CameraComponent>(selectedEntity);
+        int projection = static_cast<int>(cam.projection);
+        constexpr const char *projectionModes[] = {
+            "Perspective",
+            "Orthographic"
+        };
+
+        if (ImGui::Combo("Projection", &projection, projectionModes, IM_ARRAYSIZE(projectionModes))) {
+            const CameraProjection nextProjection = static_cast<CameraProjection>(projection);
+            if (cam.projection != nextProjection && nextProjection == CameraProjection::ORTHOGRAPHIC) {
+                cam.orthographicHalfHeight = matchedInspectorOrthographicHalfHeight(registry, selectedEntity, cam);
+            }
+            cam.projection = nextProjection;
+            registry.patch<CameraComponent>(selectedEntity);
+        }
+
         int renderMode = static_cast<int>(cam.renderMode);
         constexpr const char *renderModes[] = {
             "Lit",
@@ -456,10 +685,34 @@ namespace Atlas::Editor {
             registry.patch<CameraComponent>(selectedEntity);
         }
 
-        const auto data = cam.camera.getData();
+        bool camDirty = false;
 
-        ImGui::LabelText("Near", "%.3f", data.nearPlane);
-        ImGui::LabelText("Far", "%.3f", data.farPlane);
+        if (cam.projection == CameraProjection::PERSPECTIVE) {
+            float fovDeg = glm::degrees(cam.perspectiveFovY);
+            if (ImGui::DragFloat("FOV", &fovDeg, 0.5f, 1.0f, 170.0f, "%.1f°")) {
+                cam.perspectiveFovY = glm::radians(glm::clamp(fovDeg, 1.0f, 170.0f));
+                camDirty = true;
+            }
+        } else {
+            if (ImGui::DragFloat("Half Height", &cam.orthographicHalfHeight, 0.01f, 0.001f, 10000.0f, "%.3f")) {
+                cam.orthographicHalfHeight = std::max(cam.orthographicHalfHeight, 0.001f);
+                camDirty = true;
+            }
+        }
+
+        if (ImGui::DragFloat("Near", &cam.nearPlane, 0.001f, 0.001f, cam.farPlane - 0.001f, "%.4f")) {
+            cam.nearPlane = std::clamp(cam.nearPlane, 0.001f, cam.farPlane - 0.001f);
+            camDirty = true;
+        }
+        if (ImGui::DragFloat("Far", &cam.farPlane, 1.0f, cam.nearPlane + 0.001f, 1000000.0f, "%.1f")) {
+            cam.farPlane = std::max(cam.farPlane, cam.nearPlane + 0.001f);
+            camDirty = true;
+        }
+
+        if (camDirty) {
+            registry.patch<CameraComponent>(selectedEntity);
+        }
+
         endComponent();
     }
 

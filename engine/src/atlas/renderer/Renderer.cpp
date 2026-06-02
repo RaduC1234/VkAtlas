@@ -53,6 +53,10 @@ namespace Atlas {
         };
     }
 
+    void Renderer::clearSceneOutputImage() {
+        sceneOutputImage = {};
+    }
+
     FrameContext Renderer::beginFrame() {
         ATLAS_PROFILE_SCOPE("Renderer::beginFrame");
         assert(!isFrameStarted && "Can't call beginFrame while already in progress");

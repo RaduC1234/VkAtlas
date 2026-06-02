@@ -23,6 +23,7 @@ struct GPUObjectData {
     mat4 normalMatrix;
     uvec4 textureIndices;
     vec4 baseColor;
+    vec4 materialFactors;
 };
 
 struct Light {
@@ -253,12 +254,12 @@ void main() {
     N = faceforward(N, -V, N);
 
     // metallic-roughness
-    float metallic  = 0.0;
-    float roughness = 0.5;
+    float metallic  = obj.materialFactors.x;
+    float roughness = obj.materialFactors.y;
     if (obj.textureIndices.z != 0u) {
         vec4 mr   = texture(textures[nonuniformEXT(obj.textureIndices.z)], fragTexCoord);
-        roughness = mr.g;
-        metallic  = mr.b;
+        roughness *= mr.g;
+        metallic  *= mr.b;
     }
     roughness = clamp(roughness, 0.04, 1.0);
 

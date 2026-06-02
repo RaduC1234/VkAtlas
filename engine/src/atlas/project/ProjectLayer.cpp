@@ -16,7 +16,9 @@ namespace Atlas {
     }
 
     void ProjectLayer::onAttach() {
-        projectInstance.load(renderer, assets, manifestPath, moduleOverride, startupLevelOverride);
+        if (!manifestPath.empty()) {
+            projectInstance.load(renderer, assets, manifestPath, moduleOverride, startupLevelOverride);
+        }
     }
 
     void ProjectLayer::onDetach() {

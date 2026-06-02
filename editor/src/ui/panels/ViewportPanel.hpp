@@ -7,6 +7,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <string>
+#include <vector>
 
 struct ImVec2;
 
@@ -30,9 +31,14 @@ namespace Atlas::Editor {
         Sphere
     };
 
+    struct ViewportTransformEditSnapshot {
+        entt::entity entity = entt::null;
+        TransformComponent before;
+    };
+
     class ViewportPanel final : public Panel {
     public:
-        ViewportPanel(ProjectLayer &projectLayer, entt::entity &selectedEntity, EditorHistory &history, IconRegistry &iconRegistry);
+        ViewportPanel(ProjectLayer &projectLayer, entt::entity &selectedEntity, std::vector<entt::entity> &selectedEntities, EditorHistory &history, IconRegistry &iconRegistry);
         ~ViewportPanel() override;
 
         void onDetach() override;
@@ -42,6 +48,8 @@ namespace Atlas::Editor {
         void renderToolbar(ImVec2 imageMin, ImVec2 imageSize);
         void renderContextMenu(bool viewportHovered);
         void renderLightBillboards(ImVec2 imageMin, ImVec2 imageSize);
+        void renderRectLightControls(ImVec2 imageMin, ImVec2 imageSize);
+        void renderLightDirectionControls(ImVec2 imageMin, ImVec2 imageSize);
         void renderObjectGizmo(ImVec2 imageMin, ImVec2 imageSize, bool viewportHovered);
         void renderViewGizmo(ImVec2 imageMin, ImVec2 imageSize);
         void renderFpsCounter(ImVec2 imageMin, ImVec2 imageSize);
@@ -58,6 +66,7 @@ namespace Atlas::Editor {
 
         ProjectLayer &projectLayer;
         entt::entity &selectedEntity;
+        std::vector<entt::entity> &selectedEntities;
         EditorHistory &history;
         IconRegistry &iconRegistry;
         VkImageView viewportImageView = VK_NULL_HANDLE;
@@ -67,7 +76,13 @@ namespace Atlas::Editor {
         ObjectGizmoSpace objectGizmoSpace = ObjectGizmoSpace::Local;
         bool objectTransformEditActive = false;
         entt::entity objectTransformEditEntity = entt::null;
-        TransformComponent objectTransformEditBefore;
+        std::vector<ViewportTransformEditSnapshot> objectTransformEditBefore;
+        bool rectLightEditActive = false;
+        entt::entity rectLightEditEntity = entt::null;
+        LightComponent rectLightEditBefore;
+        bool lightDirectionEditActive = false;
+        entt::entity lightDirectionEditEntity = entt::null;
+        LightComponent lightDirectionEditBefore;
         glm::quat cameraRotation{1.0f, 0.0f, 0.0f, 0.0f};
     };
 }

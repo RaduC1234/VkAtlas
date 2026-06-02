@@ -5,6 +5,7 @@
 
 #include "core/Profiler.hpp"
 #include "core/Window.hpp"
+#include "renderer/resources/GPUTexture.hpp"
 #include "ui/theme/EditorTheme.hpp"
 
 #include <imgui.h>
@@ -21,7 +22,7 @@ namespace Atlas {
 
         ImGuiIO &io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-        io.Fonts->AddFontFromFileTTF("assets/engine/Roboto-Medium.ttf", 15.0f);
+        //io.Fonts->AddFontFromFileTTF("assets/engine/Roboto-Medium.ttf", 15.0f);
 
         Editor::EditorTheme::apply(
             window.getTheme() == Window::Theme::Light
@@ -108,14 +109,22 @@ namespace Atlas {
     }
 
     VkDescriptorSet ImGuiLayer::addTexture(VkImageView imageView, VkImageLayout imageLayout) {
-        return addTexture(VK_NULL_HANDLE, imageView, imageLayout);
+        return addTexture(IGPUResource::default_<GPUTexture>().descriptor().sampler, imageView, imageLayout);
     }
 
     VkDescriptorSet ImGuiLayer::addTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout) {
+        if (imageView == VK_NULL_HANDLE || imageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+            return VK_NULL_HANDLE;
+        }
+
         return ImGui_ImplVulkan_AddTexture(sampler, imageView, imageLayout);
     }
 
     void ImGuiLayer::removeTexture(VkDescriptorSet texture) {
+        if (texture == VK_NULL_HANDLE) {
+            return;
+        }
+
         ImGui_ImplVulkan_RemoveTexture(texture);
     }
 

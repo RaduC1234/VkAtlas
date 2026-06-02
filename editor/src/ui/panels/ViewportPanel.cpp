@@ -20,20 +20,190 @@
 #include <vector>
 
 #include <glm/gtc/constants.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include <ImViewGuizmo.h>
 
 namespace Atlas::Editor {
+    float matchedOrthographicHalfHeight(
+        entt::registry &registry,
+        const entt::entity cameraEntity,
+        const entt::entity focusEntity,
+        const CameraComponent &cameraComponent) {
+        const auto *cameraTransform = registry.try_get<TransformComponent>(cameraEntity);
+        if (!cameraTransform) {
+            return cameraComponent.orthographicHalfHeight;
+        }
+
+        const Camera::Data cameraData = cameraComponent.camera.getData();
+        float focusDistance = 0.0f;
+        if (focusEntity != entt::null && registry.valid(focusEntity)) {
+            if (const auto *focusTransform = registry.try_get<TransformComponent>(focusEntity)) {
+                focusDistance = glm::dot(focusTransform->translation - cameraTransform->translation, cameraData.direction);
+            }
+        }
+
+        if (focusDistance <= 0.001f) {
+            focusDistance = glm::dot(-cameraTransform->translation, cameraData.direction);
+        }
+
+        if (focusDistance <= 0.001f) {
+            focusDistance = 3.0f;
+        }
+
+        return std::max(0.001f, focusDistance * std::tan(cameraComponent.perspectiveFovY * 0.5f));
+    }
+
+    bool selectedViewGizmoPivot(
+        entt::registry &registry,
+        const entt::entity selected,
+        const entt::entity cameraEntity,
+        glm::vec3 &pivot) {
+        if (selected == entt::null || selected == cameraEntity || !registry.valid(selected)) {
+            return false;
+        }
+
+        const auto *transform = registry.try_get<TransformComponent>(selected);
+        if (!transform) {
+            return false;
+        }
+
+        pivot = transform->translation;
+        if (const auto *model = registry.try_get<ModelComponent>(selected)) {
+            if (const Mesh *mesh = model->meshHandle.get()) {
+                pivot = glm::vec3(transform->mat4() * glm::vec4(ViewportGizmo::meshLocalCenter(*mesh), 1.0f));
+            }
+        }
+
+        return true;
+    }
+
+    bool viewportLightUsesDirection(const LightType type) {
+        return type == LightType::SPOT || type == LightType::DIRECTIONAL || type == LightType::RECT;
+    }
+
+    void viewportSyncLightFromTransform(entt::registry &registry, const entt::entity entity, const TransformComponent &transform) {
+        auto *light = registry.try_get<LightComponent>(entity);
+        if (!light || !viewportLightUsesDirection(light->type)) {
+            return;
+        }
+
+        registry.patch<LightComponent>(entity, [&](auto &component) {
+            component.direction = ViewportGizmo::lightDirectionFromTransform(transform);
+            if (component.type == LightType::RECT) {
+                component.rectRight = ViewportGizmo::lightRightFromTransform(transform);
+                component.rectUp = ViewportGizmo::lightUpFromTransform(transform);
+            }
+        });
+    }
+
+    bool viewportScreenRay(
+        const Camera::Data &cameraData,
+        const ImVec2 imageMin,
+        const ImVec2 imageSize,
+        const ImVec2 screenPosition,
+        glm::vec3 &rayOrigin,
+        glm::vec3 &rayDirection) {
+        if (imageSize.x <= 0.0f || imageSize.y <= 0.0f) {
+            return false;
+        }
+
+        const float ndcX = ((screenPosition.x - imageMin.x) / imageSize.x) * 2.0f - 1.0f;
+        const float ndcY = ((screenPosition.y - imageMin.y) / imageSize.y) * 2.0f - 1.0f;
+        const glm::mat4 inverseViewProjection = glm::inverse(cameraData.viewProjection);
+
+        glm::vec4 nearWorld = inverseViewProjection * glm::vec4(ndcX, ndcY, 0.0f, 1.0f);
+        glm::vec4 farWorld = inverseViewProjection * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
+        if (std::abs(nearWorld.w) <= 0.0001f || std::abs(farWorld.w) <= 0.0001f) {
+            return false;
+        }
+
+        nearWorld /= nearWorld.w;
+        farWorld /= farWorld.w;
+        rayOrigin = glm::vec3(nearWorld);
+        rayDirection = ViewportGizmo::safeDirection(glm::vec3(farWorld - nearWorld), cameraData.direction);
+        return true;
+    }
+
+    bool viewportScreenPlanePoint(
+        const Camera::Data &cameraData,
+        const ImVec2 imageMin,
+        const ImVec2 imageSize,
+        const ImVec2 screenPosition,
+        const glm::vec3 &planePoint,
+        const glm::vec3 &planeNormal,
+        glm::vec3 &worldPoint) {
+        glm::vec3 rayOrigin{};
+        glm::vec3 rayDirection{};
+        if (!viewportScreenRay(cameraData, imageMin, imageSize, screenPosition, rayOrigin, rayDirection)) {
+            return false;
+        }
+
+        const float denominator = glm::dot(rayDirection, planeNormal);
+        if (std::abs(denominator) <= 0.0001f) {
+            return false;
+        }
+
+        const float distance = glm::dot(planePoint - rayOrigin, planeNormal) / denominator;
+        if (distance < 0.0f) {
+            return false;
+        }
+
+        worldPoint = rayOrigin + rayDirection * distance;
+        return true;
+    }
+
+    std::vector<entt::entity> viewportSelectedTransformTargets(
+        entt::registry &registry,
+        const entt::entity activeEntity,
+        const std::vector<entt::entity> &selectedEntities) {
+        std::vector<entt::entity> targets;
+        targets.reserve(selectedEntities.size() + 1);
+
+        for (const entt::entity entity: selectedEntities) {
+            if (entity != entt::null &&
+                registry.valid(entity) &&
+                registry.all_of<TransformComponent>(entity) &&
+                !registry.all_of<TransientComponent>(entity) &&
+                std::ranges::find(targets, entity) == targets.end()) {
+                targets.push_back(entity);
+            }
+        }
+
+        if (activeEntity != entt::null &&
+            registry.valid(activeEntity) &&
+            registry.all_of<TransformComponent>(activeEntity) &&
+            !registry.all_of<TransientComponent>(activeEntity) &&
+            std::ranges::find(targets, activeEntity) == targets.end()) {
+            targets.push_back(activeEntity);
+        }
+
+        return targets;
+    }
+
+    std::vector<ViewportTransformEditSnapshot> viewportTransformSnapshots(
+        entt::registry &registry,
+        const std::vector<entt::entity> &targets) {
+        std::vector<ViewportTransformEditSnapshot> snapshots;
+        snapshots.reserve(targets.size());
+        for (const entt::entity entity: targets) {
+            snapshots.push_back({entity, registry.get<TransformComponent>(entity)});
+        }
+        return snapshots;
+    }
+
     // ── Construction / destruction ────────────────────────────────────────
 
     ViewportPanel::ViewportPanel(
         ProjectLayer &projectLayer,
         entt::entity &selectedEntity,
+        std::vector<entt::entity> &selectedEntities,
         EditorHistory &history,
         IconRegistry &iconRegistry)
         : projectLayer(projectLayer)
           , selectedEntity(selectedEntity)
+          , selectedEntities(selectedEntities)
           , history(history)
           , iconRegistry(iconRegistry) {
     }
@@ -71,9 +241,40 @@ namespace Atlas::Editor {
             ImGui::Image(viewportTexture, size);
             const bool viewportHovered = ImGui::IsItemHovered();
 
+            if (viewportHovered) {
+                const float scrollY = ImGui::GetIO().MouseWheel;
+                if (scrollY != 0.0f) {
+                    if (auto *scene = projectLayer.project().scene()) {
+                        auto &registry = scene->getRegistry();
+                        const entt::entity camEntity = activeCamera(registry);
+                        if (camEntity != entt::null) {
+                            auto *cam = registry.try_get<CameraComponent>(camEntity);
+                            if (cam) {
+                                if (cam->projection == CameraProjection::ORTHOGRAPHIC) {
+                                    constexpr float zoomSensitivity = 0.1f;
+                                    cam->orthographicHalfHeight *= std::pow(1.0f - zoomSensitivity, scrollY);
+                                    cam->orthographicHalfHeight = std::max(cam->orthographicHalfHeight, 0.001f);
+                                } else {
+                                    auto *tf = registry.try_get<TransformComponent>(camEntity);
+                                    if (tf) {
+                                        const Camera::Data data = cam->camera.getData();
+                                        const float speed = scrollY * 0.5f * std::max(glm::length(tf->translation) * 0.1f, 0.1f);
+                                        tf->translation += data.direction * speed;
+                                        registry.patch<TransformComponent>(camEntity);
+                                    }
+                                }
+                                registry.patch<CameraComponent>(camEntity);
+                            }
+                        }
+                    }
+                }
+            }
+
             ImViewGuizmo::BeginFrame();
             renderLightBillboards(imageMin, size);
+            renderRectLightControls(imageMin, size);
             renderObjectGizmo(imageMin, size, viewportHovered);
+            renderLightDirectionControls(imageMin, size);
             renderViewGizmo(imageMin, size);
             renderContextMenu(viewportHovered && !ImViewGuizmo::IsOver() && !ImViewGuizmo::IsUsing());
             renderToolbar(imageMin, size);
@@ -83,10 +284,213 @@ namespace Atlas::Editor {
         ImGui::End();
     }
 
+    void ViewportPanel::renderRectLightControls(const ImVec2 imageMin, const ImVec2 imageSize) {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) return;
+
+        auto &registry = scene->getRegistry();
+        if (selectedEntity == entt::null
+            || !registry.valid(selectedEntity)
+            || !registry.all_of<TransformComponent, LightComponent>(selectedEntity)) {
+            return;
+        }
+
+        auto &light = registry.get<LightComponent>(selectedEntity);
+        if (light.type != LightType::RECT) {
+            return;
+        }
+
+        const entt::entity cameraEntity = activeCamera(registry);
+        if (cameraEntity == entt::null) return;
+
+        const auto cameraData = registry.get<CameraComponent>(cameraEntity).camera.getData();
+        const auto &transform = registry.get<TransformComponent>(selectedEntity);
+
+        std::array<ImVec2, 4> corners{};
+        ImVec2 center{};
+        ImVec2 widthHandle{};
+        ImVec2 heightHandle{};
+        if (!ViewportGizmo::projectRectLight(cameraData, transform.translation, light, imageMin, imageSize, corners, center, widthHandle, heightHandle)) {
+            return;
+        }
+
+        const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
+        auto drawHandle = [&](const char *id, const ImVec2 handle, float &value) {
+            constexpr float radius = 9.0f;
+            ImGui::SetCursorScreenPos({handle.x - radius, handle.y - radius});
+            ImGui::PushID(id);
+            ImGui::InvisibleButton("##rect_light_handle", {radius * 2.0f, radius * 2.0f});
+            const bool hovered = ImGui::IsItemHovered();
+            if (ImGui::IsItemActivated() && (!rectLightEditActive || rectLightEditEntity != selectedEntity)) {
+                rectLightEditActive = true;
+                rectLightEditEntity = selectedEntity;
+                rectLightEditBefore = light;
+            }
+            if (ImGui::IsItemActive()) {
+                const ImGuiIO &io = ImGui::GetIO();
+                const ImVec2 axis{handle.x - center.x, handle.y - center.y};
+                const float axisLength = std::sqrt(axis.x * axis.x + axis.y * axis.y);
+                if (axisLength > 0.001f) {
+                    const ImVec2 direction{axis.x / axisLength, axis.y / axisLength};
+                    const float projectedDelta = io.MouseDelta.x * direction.x + io.MouseDelta.y * direction.y;
+                    value = std::max(0.01f, value + projectedDelta * 0.02f);
+                }
+                registry.patch<LightComponent>(selectedEntity);
+            }
+            ImGui::PopID();
+            return hovered || ImGui::IsItemActive();
+        };
+
+        const bool widthHovered = drawHandle("width", widthHandle, light.width);
+        const bool heightHovered = drawHandle("height", heightHandle, light.height);
+        ViewportGizmo::drawRectLight(*ImGui::GetWindowDrawList(), corners, center, widthHandle, heightHandle, light, widthHovered, heightHovered);
+
+        if (rectLightEditActive && rectLightEditEntity == selectedEntity && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            history.recordLight(selectedEntity, rectLightEditBefore, light);
+            rectLightEditActive = false;
+            rectLightEditEntity = entt::null;
+        }
+
+        ImGui::SetCursorScreenPos(restoreCursor);
+        ImGui::Dummy({0, 0});
+    }
+
+    void ViewportPanel::renderLightDirectionControls(const ImVec2 imageMin, const ImVec2 imageSize) {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) return;
+
+        auto &registry = scene->getRegistry();
+        if (selectedEntity == entt::null
+            || !registry.valid(selectedEntity)
+            || !registry.all_of<TransformComponent, LightComponent>(selectedEntity)) {
+            if (lightDirectionEditActive && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                lightDirectionEditActive = false;
+                lightDirectionEditEntity = entt::null;
+            }
+            return;
+        }
+
+        auto &light = registry.get<LightComponent>(selectedEntity);
+        if (light.type != LightType::DIRECTIONAL && light.type != LightType::SPOT) {
+            if (lightDirectionEditActive && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                lightDirectionEditActive = false;
+                lightDirectionEditEntity = entt::null;
+            }
+            return;
+        }
+
+        const entt::entity cameraEntity = activeCamera(registry);
+        if (cameraEntity == entt::null) return;
+
+        const Camera::Data cameraData = registry.get<CameraComponent>(cameraEntity).camera.getData();
+        const auto &transform = registry.get<TransformComponent>(selectedEntity);
+        const glm::vec3 origin = transform.translation;
+        const glm::vec3 direction = ViewportGizmo::safeDirection(light.direction);
+        const float cameraDistance = glm::length(origin - cameraData.position);
+        const float handleDistance = std::clamp(cameraDistance * 0.25f, 1.0f, 4.0f);
+        const glm::vec3 target = origin + direction * handleDistance;
+
+        ImVec2 originScreen{};
+        ImVec2 targetScreen{};
+        if (!ViewportGizmo::projectPoint(cameraData, origin, imageMin, imageSize, originScreen)
+            || !ViewportGizmo::projectPoint(cameraData, target, imageMin, imageSize, targetScreen)) {
+            return;
+        }
+
+        const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
+        constexpr float hitRadius = 12.0f;
+        ImGui::SetCursorScreenPos({targetScreen.x - hitRadius, targetScreen.y - hitRadius});
+        ImGui::PushID(static_cast<int>(entt::to_integral(selectedEntity)));
+        ImGui::InvisibleButton("##light_direction_target", {hitRadius * 2.0f, hitRadius * 2.0f});
+        const bool hovered = ImGui::IsItemHovered();
+        const bool active = ImGui::IsItemActive();
+
+        if (hovered) {
+            ImGui::SetTooltip("Drag to aim the light");
+        }
+
+        if (ImGui::IsItemActivated() && (!lightDirectionEditActive || lightDirectionEditEntity != selectedEntity)) {
+            lightDirectionEditActive = true;
+            lightDirectionEditEntity = selectedEntity;
+            lightDirectionEditBefore = light;
+        }
+
+        if (active) {
+            glm::vec3 targetWorld{};
+            const ImGuiIO &io = ImGui::GetIO();
+            if (viewportScreenPlanePoint(cameraData, imageMin, imageSize, io.MousePos, target, cameraData.direction, targetWorld)) {
+                const glm::vec3 nextDirection = targetWorld - origin;
+                if (glm::dot(nextDirection, nextDirection) > 0.0001f) {
+                    const glm::vec3 normalizedDirection = ViewportGizmo::safeDirection(nextDirection);
+                    registry.patch<LightComponent>(selectedEntity, [&](auto &component) {
+                        component.direction = normalizedDirection;
+                    });
+                    registry.patch<TransformComponent>(selectedEntity, [&](auto &component) {
+                        component.rotation = ViewportGizmo::transformRotationFromLightDirection(normalizedDirection);
+                    });
+                }
+            }
+        }
+
+        ImGui::PopID();
+
+        ImDrawList *drawList = ImGui::GetWindowDrawList();
+        const ImU32 lineColor = IM_COL32(255, 218, 120, active ? 255 : 220);
+        const ImU32 glowColor = IM_COL32(255, 218, 120, active ? 80 : 45);
+        const ImU32 originColor = IM_COL32(255, 255, 255, 220);
+        const ImU32 targetColor = hovered || active ? IM_COL32(90, 180, 255, 255) : IM_COL32(255, 218, 120, 255);
+
+        drawList->AddLine(originScreen, targetScreen, glowColor, 7.0f);
+        drawList->AddLine(originScreen, targetScreen, lineColor, 2.2f);
+        drawList->AddCircleFilled(originScreen, 5.0f, originColor);
+        drawList->AddCircle(originScreen, 7.0f, IM_COL32(0, 0, 0, 130), 24, 1.5f);
+
+        const ImVec2 screenAxis{targetScreen.x - originScreen.x, targetScreen.y - originScreen.y};
+        const float screenAxisLength = std::sqrt(screenAxis.x * screenAxis.x + screenAxis.y * screenAxis.y);
+        if (screenAxisLength > 0.001f) {
+            const ImVec2 axis{screenAxis.x / screenAxisLength, screenAxis.y / screenAxisLength};
+            const ImVec2 normal{-axis.y, axis.x};
+            const ImVec2 arrowBase{targetScreen.x - axis.x * 13.0f, targetScreen.y - axis.y * 13.0f};
+            drawList->AddTriangleFilled(
+                targetScreen,
+                {arrowBase.x + normal.x * 6.0f, arrowBase.y + normal.y * 6.0f},
+                {arrowBase.x - normal.x * 6.0f, arrowBase.y - normal.y * 6.0f},
+                targetColor);
+        }
+
+        drawList->AddCircleFilled(targetScreen, active ? 8.0f : hovered ? 7.0f : 6.0f, targetColor);
+        drawList->AddCircle(targetScreen, active ? 11.0f : 9.0f, IM_COL32(0, 0, 0, 150), 24, 1.5f);
+
+        if (lightDirectionEditActive && lightDirectionEditEntity == selectedEntity && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            const auto &after = registry.get<LightComponent>(selectedEntity);
+            history.recordLight(selectedEntity, lightDirectionEditBefore, after);
+            lightDirectionEditActive = false;
+            lightDirectionEditEntity = entt::null;
+        }
+
+        if (hovered || active) {
+            ImGui::SetNextFrameWantCaptureMouse(true);
+        }
+
+        ImGui::SetCursorScreenPos(restoreCursor);
+        ImGui::Dummy({0, 0});
+    }
+
     // ── Toolbar ───────────────────────────────────────────────────────────
 
     void ViewportPanel::renderToolbar(const ImVec2 imageMin, const ImVec2 imageSize) {
         const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
+
+        entt::registry *registry = nullptr;
+        entt::entity cameraEntity = entt::null;
+        CameraComponent *cameraComponent = nullptr;
+        if (auto *scene = projectLayer.project().scene()) {
+            registry = &scene->getRegistry();
+            cameraEntity = activeCamera(*registry);
+            if (cameraEntity != entt::null) {
+                cameraComponent = registry->try_get<CameraComponent>(cameraEntity);
+            }
+        }
 
         // ── Islands ───────────────────────────────────────────────────────
         // Each island is a self-contained component: declare, chain props, render.
@@ -117,18 +521,61 @@ namespace Atlas::Editor {
                         objectGizmoSpace = ObjectGizmoSpace::World;
                 });
 
-        // View mode island — anchored to the top-right of the viewport
-        entt::registry *registry = nullptr;
-        entt::entity cameraEntity = entt::null;
-        CameraComponent *cameraComponent = nullptr;
-        if (auto *scene = projectLayer.project().scene()) {
-            registry = &scene->getRegistry();
-            cameraEntity = activeCamera(*registry);
-            if (cameraEntity != entt::null) {
-                cameraComponent = registry->try_get<CameraComponent>(cameraEntity);
-            }
-        }
+        const ImVec2 projectionAnchor(spaceIsland.max().x + ToolbarStyle::defaults().islandMargin, imageMin.y);
+        ToolbarIsland projectionIsland(projectionAnchor, imageSize);
+        projectionIsland
+                .anchor(ToolbarIsland::Anchor::TopLeft, {0, ToolbarStyle::defaults().islandMargin})
+                .buttons(1)
+                .render([&](float &x, float y) {
+                    const ToolbarStyle style = ToolbarStyle::defaults();
+                    const ImVec2 buttonMin{x, y};
+                    const ImVec2 buttonMax{x + style.btnW, y + style.btnH};
+                    ImGui::SetCursorScreenPos(buttonMin);
+                    ImGui::InvisibleButton("##camera_projection", {style.btnW, style.btnH});
+                    const bool hovered = ImGui::IsItemHovered();
+                    const bool clicked = ImGui::IsItemClicked();
 
+                    if (hovered) {
+                        ImGui::SetTooltip("%s", cameraComponent && cameraComponent->projection == CameraProjection::ORTHOGRAPHIC
+                                                   ? "Orthographic camera"
+                                                   : "Perspective camera");
+                    }
+
+                    if (clicked && cameraComponent && registry && cameraEntity != entt::null) {
+                        if (cameraComponent->projection == CameraProjection::ORTHOGRAPHIC) {
+                            cameraComponent->projection = CameraProjection::PERSPECTIVE;
+                        } else {
+                            cameraComponent->orthographicHalfHeight = matchedOrthographicHalfHeight(
+                                *registry,
+                                cameraEntity,
+                                selectedEntity,
+                                *cameraComponent);
+                            cameraComponent->projection = CameraProjection::ORTHOGRAPHIC;
+                        }
+                        registry->patch<CameraComponent>(cameraEntity);
+                    }
+
+                    ImDrawList *drawList = ImGui::GetWindowDrawList();
+                    if (hovered) {
+                        drawList->AddRectFilled(buttonMin, buttonMax, style.colHover, 7.0f);
+                    }
+
+                    const char *label = cameraComponent && cameraComponent->projection == CameraProjection::ORTHOGRAPHIC ? "ORT" : "PER";
+                    const ImVec2 textSize = ImGui::CalcTextSize(label);
+                    drawList->AddText(
+                        {buttonMin.x + (style.btnW - textSize.x) * 0.5f, buttonMin.y + (style.btnH - textSize.y) * 0.5f},
+                        IM_COL32(232, 238, 246, 255),
+                        label);
+                    drawList->AddLine(
+                        {buttonMin.x + 8.0f, buttonMax.y - 3.0f},
+                        {buttonMax.x - 8.0f, buttonMax.y - 3.0f},
+                        style.colAccent,
+                        2.0f);
+
+                    x += style.btnW;
+                });
+
+        // View mode island — anchored to the top-right of the viewport
         struct VMEntry {
             const char *icon;
             const char *tip;
@@ -287,7 +734,10 @@ namespace Atlas::Editor {
             const bool hovered = ImGui::IsItemHovered();
             ImGui::PopID();
 
-            if (clicked) selectedEntity = entity;
+            if (clicked) {
+                selectedEntity = entity;
+                selectedEntities = {entity};
+            }
 
             ViewportGizmo::drawLightBillboard(*dl, corners, screenPos, light, selectedEntity == entity, iconRegistry);
 
@@ -320,7 +770,10 @@ namespace Atlas::Editor {
 
         const auto cameraData = registry.get<CameraComponent>(cameraEntity).camera.getData();
         auto &transform = registry.get<TransformComponent>(selectedEntity);
-        const TransformComponent before = transform;
+        const std::vector<entt::entity> transformTargets = viewportSelectedTransformTargets(registry, selectedEntity, selectedEntities);
+        if (transformTargets.empty()) {
+            return;
+        }
 
         glm::vec3 gizmoPos = transform.translation;
         if (const auto *model = registry.try_get<ModelComponent>(selectedEntity)) {
@@ -332,6 +785,8 @@ namespace Atlas::Editor {
         glm::quat editRot = ViewportGizmo::rotationYXZ(transform.rotation);
         glm::vec3 editScale = transform.scale;
         const glm::vec3 prevPos = editPos;
+        const glm::quat prevRot = editRot;
+        const glm::vec3 prevScale = editScale;
 
         const glm::quat gizmoOrientation = (objectGizmoSpace == ObjectGizmoSpace::Local)
                                                ? editRot
@@ -351,26 +806,61 @@ namespace Atlas::Editor {
             if (!objectTransformEditActive || objectTransformEditEntity != selectedEntity) {
                 objectTransformEditActive = true;
                 objectTransformEditEntity = selectedEntity;
-                objectTransformEditBefore = before;
+                objectTransformEditBefore = viewportTransformSnapshots(registry, transformTargets);
             }
 
-            if (objectGizmoMode == ObjectGizmoMode::Translate) transform.translation += editPos - prevPos;
-            else if (objectGizmoMode == ObjectGizmoMode::Rotate) transform.rotation = ViewportGizmo::eulerFromRotationYXZ(editRot);
-            else if (objectGizmoMode == ObjectGizmoMode::Scale) transform.scale = editScale;
+            const glm::vec3 translationDelta = editPos - prevPos;
+            const glm::quat rotationDelta = editRot * glm::inverse(prevRot);
+            const glm::vec3 scaleRatio{
+                std::abs(prevScale.x) > 0.0001f ? editScale.x / prevScale.x : 1.0f,
+                std::abs(prevScale.y) > 0.0001f ? editScale.y / prevScale.y : 1.0f,
+                std::abs(prevScale.z) > 0.0001f ? editScale.z / prevScale.z : 1.0f,
+            };
 
-            registry.patch<TransformComponent>(selectedEntity);
+            for (const entt::entity entity: transformTargets) {
+                auto &targetTransform = registry.get<TransformComponent>(entity);
 
-            if (registry.all_of<CameraComponent>(selectedEntity)) {
-                registry.patch<CameraComponent>(selectedEntity, [&](auto &cc) {
-                    cc.camera.setViewYXZ(transform.translation, transform.rotation);
-                });
+                if (objectGizmoMode == ObjectGizmoMode::Translate) {
+                    targetTransform.translation += translationDelta;
+                } else if (objectGizmoMode == ObjectGizmoMode::Rotate) {
+                    if (entity == selectedEntity) {
+                        targetTransform.rotation = ViewportGizmo::eulerFromRotationYXZ(editRot);
+                    } else {
+                        targetTransform.translation = gizmoPos + rotationDelta * (targetTransform.translation - gizmoPos);
+                        targetTransform.rotation = ViewportGizmo::eulerFromRotationYXZ(rotationDelta * ViewportGizmo::rotationYXZ(targetTransform.rotation));
+                    }
+                } else if (objectGizmoMode == ObjectGizmoMode::Scale) {
+                    if (entity == selectedEntity) {
+                        targetTransform.scale = editScale;
+                    } else {
+                        const glm::vec3 offset = targetTransform.translation - gizmoPos;
+                        targetTransform.translation = gizmoPos + offset * scaleRatio;
+                        targetTransform.scale *= scaleRatio;
+                    }
+                }
+
+                registry.patch<TransformComponent>(entity);
+                if (objectGizmoMode == ObjectGizmoMode::Rotate) {
+                    viewportSyncLightFromTransform(registry, entity, targetTransform);
+                }
+
+                if (registry.all_of<CameraComponent>(entity)) {
+                    registry.patch<CameraComponent>(entity, [&](auto &cc) {
+                        cc.camera.setViewYXZ(targetTransform.translation, targetTransform.rotation);
+                    });
+                }
             }
         }
 
         if (objectTransformEditActive
             && objectTransformEditEntity == selectedEntity
             && !ImViewGuizmo::IsTransformUsing()) {
-            history.recordTransform(selectedEntity, objectTransformEditBefore, transform);
+            for (const auto &snapshot: objectTransformEditBefore) {
+                if (snapshot.entity != entt::null && registry.valid(snapshot.entity) && registry.all_of<TransformComponent>(snapshot.entity)) {
+                    history.recordTransform(snapshot.entity, snapshot.before, registry.get<TransformComponent>(snapshot.entity));
+                }
+            }
+            objectTransformEditBefore.clear();
             objectTransformEditActive = false;
             objectTransformEditEntity = entt::null;
         }
@@ -424,11 +914,21 @@ namespace Atlas::Editor {
             imageMin.y + halfExtent + paddingY
         };
 
+        glm::vec3 pivot = transform.translation;
+        const bool hasSelectionPivot = selectedViewGizmoPivot(registry, selectedEntity, cameraEntity, pivot);
+
         glm::vec3 camPos = transform.translation;
-        if (ImViewGuizmo::Rotate(camPos, cameraRotation, transform.translation, gizmoPos, 0.008f)) {
+        if (hasSelectionPivot) {
+            const glm::vec3 cameraOffset = camPos - pivot;
+            if (glm::dot(cameraOffset, cameraOffset) < 0.0001f) {
+                camPos = pivot - forward * 3.0f;
+            }
+        }
+
+        if (ImViewGuizmo::Rotate(camPos, cameraRotation, pivot, gizmoPos, 0.008f)) {
             const glm::vec3 newForward = glm::normalize(cameraRotation * ImViewGuizmo::worldForward);
             registry.patch<TransformComponent>(cameraEntity, [&](auto &tc) {
-                tc.translation = transform.translation;
+                tc.translation = camPos;
                 tc.rotation.x = std::asin(glm::clamp(-newForward.y, -1.0f, 1.0f));
                 tc.rotation.y = glm::mod(std::atan2(newForward.x, newForward.z), glm::two_pi<float>());
                 tc.rotation.z = 0.0f;
@@ -454,6 +954,7 @@ namespace Atlas::Editor {
 
         SceneNodeComponent node{};
         node.name = primitiveName(primitive);
+        const std::string objectName = node.name;
         registry.emplace<SceneNodeComponent>(entity, std::move(node));
 
         TransformComponent transform{};
@@ -466,7 +967,7 @@ namespace Atlas::Editor {
 
         MaterialComponent material{};
         auto mat = std::make_shared<Material>();
-        mat->name = primitiveName(primitive) + " Material";
+        mat->name = objectName + " Material";
         mat->baseColor = glm::vec4{0.82f, 0.82f, 0.78f, 1.0f};
         mat->baseColorTexture = primitiveWhiteTexture();
         material.materialHandle = projectLayer.assetManager().store<Material>(
@@ -474,6 +975,7 @@ namespace Atlas::Editor {
         registry.emplace<MaterialComponent>(entity, material);
 
         selectedEntity = entity;
+        selectedEntities = {entity};
     }
 
     void ViewportPanel::addLight(const LightType type) {
@@ -487,19 +989,33 @@ namespace Atlas::Editor {
         node.name = lightName(type);
         registry.emplace<SceneNodeComponent>(entity, std::move(node));
 
-        TransformComponent transform{};
-        transform.translation = primitiveSpawnPosition();
-        registry.emplace<TransformComponent>(entity, transform);
-
         LightComponent light{};
         light.type = type;
-        if (type == LightType::RECT) {
-            light.width = 1.0f;
-            light.height = 1.0f;
+
+        TransformComponent transform{};
+        transform.translation = primitiveSpawnPosition();
+
+        if (viewportLightUsesDirection(type)) {
+            const entt::entity cameraEntity = activeCamera(registry);
+            if (cameraEntity != entt::null) {
+                light.direction = ViewportGizmo::safeDirection(
+                    registry.get<CameraComponent>(cameraEntity).camera.getData().direction);
+            }
+            transform.rotation = ViewportGizmo::transformRotationFromLightDirection(light.direction);
         }
+
+        if (type == LightType::RECT) {
+            light.width = 2.0f;
+            light.height = 1.0f;
+            light.rectRight = ViewportGizmo::lightRightFromTransform(transform);
+            light.rectUp = ViewportGizmo::lightUpFromTransform(transform);
+        }
+
+        registry.emplace<TransformComponent>(entity, transform);
         registry.emplace<LightComponent>(entity, light);
 
         selectedEntity = entity;
+        selectedEntities = {entity};
     }
 
     AssetHandle<Mesh> ViewportPanel::primitiveMesh(const ViewportPrimitive primitive) {
@@ -590,15 +1106,15 @@ namespace Atlas::Editor {
     }
 
     entt::entity ViewportPanel::activeCamera(entt::registry &registry) const {
-        // Prefer editor camera
-        for (const entt::entity e: registry.view<TransformComponent, CameraComponent, EditorCameraComponent>()) {
+        // Prefer scene cameras (non-transient)
+        for (const entt::entity e: registry.view<TransformComponent, CameraComponent>()) {
+            if (registry.all_of<TransientComponent>(e)) continue;
             if (const auto *n = registry.try_get<SceneNodeComponent>(e); n && (n->deleted || !n->visible)) continue;
             return e;
         }
-        // Fall back to first scene camera
-        for (const entt::entity e: registry.view<TransformComponent, CameraComponent>()) {
+        // Fall back to editor camera
+        for (const entt::entity e: registry.view<TransformComponent, CameraComponent, EditorCameraComponent>()) {
             if (const auto *n = registry.try_get<SceneNodeComponent>(e); n && (n->deleted || !n->visible)) continue;
-            if (registry.all_of<TransientComponent>(e)) continue;
             return e;
         }
         return entt::null;
@@ -677,6 +1193,10 @@ namespace Atlas::Editor {
         viewportImageView = img.imageView;
         viewportImageLayout = img.imageLayout;
         viewportTexture = ImGuiLayer::addTexture(img.imageView, img.imageLayout);
+        if (viewportTexture == VK_NULL_HANDLE) {
+            viewportImageView = VK_NULL_HANDLE;
+            viewportImageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        }
     }
 
     void ViewportPanel::destroyViewportTexture() {

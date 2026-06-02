@@ -8,6 +8,7 @@
 
 namespace Atlas {
     enum class LightType : uint32_t;
+    class Material;
     class AssetManager;
 
     class LevelSerializer {
@@ -35,6 +36,12 @@ namespace Atlas {
 
         static std::string lightTypeToString(LightType type);
         static LightType lightTypeFromString(const std::string &value);
+        static const char *shadingModelToString(uint32_t value);
+        static uint32_t shadingModelFromString(const std::string &value);
+        static const char *alphaModeToString(uint32_t value);
+        static uint32_t alphaModeFromString(const std::string &value);
+        static Json writeInlineMaterial(const Material &material);
+        static void readInlineMaterial(Material &material, const Json &data, AssetManager &assets, const std::filesystem::path &projectRoot, const std::filesystem::path &assetRoot);
 
         static void loadModelComponent(entt::registry &registry, entt::entity entity, const Json &data, AssetManager &assets, const std::filesystem::path &projectRoot, const std::filesystem::path &assetRoot);
         static void loadMaterialComponent(entt::registry &registry, entt::entity entity, const Json &data, AssetManager &assets, const std::filesystem::path &projectRoot, const std::filesystem::path &assetRoot);

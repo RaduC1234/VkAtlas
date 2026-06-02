@@ -49,6 +49,7 @@ namespace Atlas {
         glm::mat4 normalMatrix;
         glm::uvec4 textureIndices;
         glm::vec4 baseColor;
+        glm::vec4 materialFactors;
         glm::vec4 sheenColorStrength;
         uint32_t firstIndex;
         uint32_t indexCount;
@@ -328,6 +329,7 @@ namespace Atlas {
                     registerTexture(material->occlusionTexture)
                 ),
                 .baseColor = material->baseColor,
+                .materialFactors = glm::vec4(material->metallic, material->roughness, material->alphaCutoff, 0.0f),
                 .sheenColorStrength = glm::vec4(material->sheenColor, material->sheenStrength),
                 .firstIndex = firstIndex,
                 .indexCount = static_cast<uint32_t>(model.meshHandle->indices().size()),
@@ -880,6 +882,9 @@ namespace Atlas {
             hashVec3(seed, transform.scale);
             hashVec3(seed, transform.rotation);
             hashVec4(seed, material->baseColor);
+            hashValue(seed, material->metallic);
+            hashValue(seed, material->roughness);
+            hashValue(seed, material->alphaCutoff);
             hashValue(seed, static_cast<uint32_t>(material->shadingModel));
             hashValue(seed, material->sheenStrength);
             hashVec3(seed, material->sheenColor);

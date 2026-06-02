@@ -29,6 +29,7 @@ namespace Atlas::Editor {
     private:
         void handleShortcuts();
         void drawMenuBar();
+        void drawStartupScreen();
         void createNewProject();
         void openProject();
         void loadProject(const std::filesystem::path &manifestPath);
@@ -37,7 +38,10 @@ namespace Atlas::Editor {
         void saveLevel();
         void importIntoLevel();
         void exportFramebuffer();
+        void copySelection();
+        void pasteClipboard();
         void openMaterialEditor(entt::entity ownerEntity, AssetHandle<Material> materialHandle);
+        AssetHandle<Material> ensureUniqueEditableMaterial(entt::entity ownerEntity, AssetHandle<Material> materialHandle);
         void drawMaterialEditorWindow();
         void flushMaterialEditorEdit();
         void undo();
@@ -47,8 +51,31 @@ namespace Atlas::Editor {
         static std::string buildFramebufferExportFilter();
         static bool hasSupportedExtension(const std::string &path, const std::vector<std::string> &extensions);
 
+        struct EntityClipboardEntry {
+            bool hasSceneNode = false;
+            SceneNodeComponent sceneNode;
+            bool hasTransform = false;
+            TransformComponent transform;
+            bool hasModel = false;
+            ModelComponent model;
+            bool hasMaterial = false;
+            MaterialComponent material;
+            bool hasLight = false;
+            LightComponent light;
+            bool hasCamera = false;
+            CameraComponent camera;
+            bool hasSkybox = false;
+            SkyboxComponent skybox;
+            bool hasPostProcessing = false;
+            PostProcessingVolumeComponent postProcessing;
+            bool hasScript = false;
+            ScriptComponent script;
+        };
+
         ProjectLayer &projectLayer;
         entt::entity selectedEntity = entt::null;
+        std::vector<entt::entity> selectedEntities;
+        std::vector<EntityClipboardEntry> entityClipboard;
         EditorHistory history;
         bool materialEditorOpen = false;
         entt::entity materialEditorOwner = entt::null;

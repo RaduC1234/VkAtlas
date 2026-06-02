@@ -82,6 +82,7 @@ namespace Atlas {
         void beginOverlayRenderPass(VkCommandBuffer commandBuffer, OverlayLoadOp loadOp = OverlayLoadOp::Load);
         void endOverlayRenderPass(VkCommandBuffer commandBuffer) const;
         void setSceneOutputImage(VkImage image, VkImageView imageView, VkImageLayout imageLayout, VkFormat format, VkExtent2D extent);
+        void clearSceneOutputImage();
         void setSceneViewportExtent(VkExtent2D extent) { sceneViewportExtent = extent; }
 
         CreateInfo createInfo;

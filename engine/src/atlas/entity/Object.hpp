@@ -93,17 +93,32 @@ namespace Atlas {
         AssetHandle<Mesh> meshHandle;
     };
 
-    struct CameraComponent {
-        Camera camera{};
-        ViewMode renderMode{ViewMode::LIT};
-    };
-
     NLOHMANN_JSON_SERIALIZE_ENUM(ViewMode, {
                                  {ViewMode::LIT, "Lit"},
                                  {ViewMode::UNLIT, "Unlit"},
                                  {ViewMode::LIGHTING_ONLY, "LightingOnly"},
                                  {ViewMode::PATH_TRACING, "PathTracing"},
                                  })
+
+    enum class CameraProjection : uint32_t {
+        PERSPECTIVE = 0,
+        ORTHOGRAPHIC
+    };
+
+    NLOHMANN_JSON_SERIALIZE_ENUM(CameraProjection, {
+                                 {CameraProjection::PERSPECTIVE, "Perspective"},
+                                 {CameraProjection::ORTHOGRAPHIC, "Orthographic"},
+                                 })
+
+    struct CameraComponent {
+        Camera camera{};
+        CameraProjection projection{CameraProjection::PERSPECTIVE};
+        ViewMode renderMode{ViewMode::LIT};
+        float perspectiveFovY{0.872664626f};
+        float orthographicHalfHeight{1.398923f};
+        float nearPlane{0.1f};
+        float farPlane{100.0f};
+    };
 
     struct EditorCameraComponent {
     };

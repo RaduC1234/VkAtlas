@@ -3,7 +3,6 @@
 
 namespace Atlas {
     Application::Application(const ApplicationCreateInfo& specification) : specification_(std::move(specification)), renderer_(specification_.rendererCreateInfo), assetManager_(renderer_.resourceManager()) {
-        renderer_.window().setWindowIcon("assets/icons/android_robot.png");
         renderer_.window().setTheme(Window::Theme::Dark);
     }
 
