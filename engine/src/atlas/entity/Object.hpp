@@ -8,6 +8,7 @@
 
 #include "asset/AssetHandle.hpp"
 #include "renderer/Camera.hpp"
+#include "renderer/Renderer.hpp"
 
 
 namespace Atlas {
@@ -94,7 +95,15 @@ namespace Atlas {
 
     struct CameraComponent {
         Camera camera{};
+        ViewMode renderMode{ViewMode::LIT};
     };
+
+    NLOHMANN_JSON_SERIALIZE_ENUM(ViewMode, {
+                                 {ViewMode::LIT, "Lit"},
+                                 {ViewMode::UNLIT, "Unlit"},
+                                 {ViewMode::LIGHTING_ONLY, "LightingOnly"},
+                                 {ViewMode::PATH_TRACING, "PathTracing"},
+                                 })
 
     struct EditorCameraComponent {
     };
@@ -151,6 +160,10 @@ namespace Atlas {
         float contrast{1.0f};
         float saturation{1.0};
         glm::vec3 colorTint = {1.0f, 1.0f, 1.0f};
+        bool bloomEnabled{false};
+        bool vignetteEnabled{true};
+        float bloomStrength{3.0f};
+        float vignetteStrength{2.0f};
     };
 
     struct ScriptBinding {

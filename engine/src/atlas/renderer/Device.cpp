@@ -3,16 +3,21 @@
 
 #include <algorithm>
 #include <cstring>
-#include <limits>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_set>
 
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
+
+#ifdef ATLAS_PROFILE_GPU
+#include <tracy/Tracy.hpp>
+#include <tracy/TracyVulkan.hpp>
+#endif
 
 namespace Atlas {
     RayTracingFunctions &RayTracingFunctions::get() {
@@ -98,6 +103,9 @@ namespace Atlas {
         createCommandPools();
         createTransferCommandBuffer();
         createTransferTimelineSemaphore();
+#if defined(ATLAS_PROFILE_GPU)
+        createGpuProfilerContext();
+#endif
 
         this->executor_ = std::make_unique<ExecutorService>();
     }
@@ -115,6 +123,12 @@ namespace Atlas {
         vkDestroyCommandPool(device_, graphicsCommandPool_, nullptr);
         vkDestroyCommandPool(device_, computeCommandPool_, nullptr);
         vmaDestroyAllocator(allocator_);
+#if defined(ATLAS_PROFILE_GPU)
+        if (gpuProfilerContext_ != nullptr) {
+            TracyVkDestroy(gpuProfilerContext_);
+            gpuProfilerContext_ = nullptr;
+        }
+#endif
         vkDestroyDevice(device_, nullptr);
 
         if constexpr (enableValidationLayers) {
@@ -430,6 +444,27 @@ namespace Atlas {
             throw std::runtime_error("failed to create transfer timeline semaphore!");
     }
 
+#if defined(ATLAS_PROFILE_GPU)
+    void Device::createGpuProfilerContext() {
+        ATLAS_PROFILE_SCOPE("Device::createGpuProfilerContext");
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = graphicsCommandPool_;
+        allocInfo.commandBufferCount = 1;
+
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        if (vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate Tracy GPU setup command buffer!");
+        }
+
+        gpuProfilerContext_ = TracyVkContext(physicalDevice_, device_, graphicsQueue_, commandBuffer);
+        TracyVkContextName(gpuProfilerContext_, "Graphics Queue", strlen("Graphics Queue"));
+
+        vkFreeCommandBuffers(device_, graphicsCommandPool_, 1, &commandBuffer);
+    }
+#endif
+
     bool Device::checkValidationLayerSupport() {
         uint32_t layerCount;
         vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -601,6 +636,7 @@ namespace Atlas {
     }
 
     VkCommandBuffer Device::beginGraphicsCommands() {
+        ATLAS_PROFILE_SCOPE("Device::beginGraphicsCommands");
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -619,12 +655,14 @@ namespace Atlas {
     }
 
     void Device::endGraphicsCommands(VkCommandBuffer commandBuffer) const {
+        ATLAS_PROFILE_SCOPE("Device::endGraphicsCommands");
         submitGraphicsCommands(commandBuffer, VK_NULL_HANDLE);
         vkQueueWaitIdle(graphicsQueue_);
         freeGraphicsCommandBuffer(commandBuffer);
     }
 
     void Device::submitGraphicsCommands(VkCommandBuffer commandBuffer, VkFence fence) const {
+        ATLAS_PROFILE_SCOPE("Device::submitGraphicsCommands");
         vkEndCommandBuffer(commandBuffer);
 
         VkSubmitInfo submitInfo{};
@@ -642,6 +680,7 @@ namespace Atlas {
     }
 
     Device::TransferCmd Device::beginTransferCommands() {
+        ATLAS_PROFILE_SCOPE("Device::beginTransferCommands");
         if (lastTransferTimelineValue_ > 0 && !isTransferComplete(lastTransferTimelineValue_)) {
             VkSemaphoreWaitInfo waitInfo{};
             waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
@@ -665,8 +704,11 @@ namespace Atlas {
     }
 
     uint64_t Device::endTransferCommands(TransferCmd cmd, std::function<void(uint64_t)> onComplete) {
-        if (vkEndCommandBuffer(cmd.buffer) != VK_SUCCESS)
+        ATLAS_PROFILE_SCOPE("Device::endTransferCommands");
+
+        if (vkEndCommandBuffer(cmd.buffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to end transfer command buffer!");
+        }
 
         const uint64_t signalValue = nextTransferTimelineValue_++;
 

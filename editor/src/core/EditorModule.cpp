@@ -1,5 +1,7 @@
 #include "EditorLayer.hpp"
 
+#include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <utility>
 
@@ -28,6 +30,7 @@ namespace Atlas {
         createInfo.projectModule = modulePath;
         createInfo.rendererCreateInfo.window.title = createInfo.name;
         createInfo.rendererCreateInfo.window.properties = Window::Properties::Decorated | Window::Properties::Resizeable;
+        createInfo.rendererCreateInfo.window.inputProvider = &DesktopInputProvider::instance();
         createInfo.rendererCreateInfo.sceneOutputTarget = Renderer::SceneOutputTarget::Texture;
 
         auto *application = new Application(createInfo);

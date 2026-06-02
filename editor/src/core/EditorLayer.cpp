@@ -9,6 +9,7 @@
 #include <imgui.h>
 
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "project/ProjectCreator.hpp"
 #include "project/ProjectResourceImporter.hpp"
 #include "utils/FileDialogs.hpp"
@@ -19,6 +20,7 @@ namespace Atlas::Editor {
     }
 
     void EditorLayer::onAttach() {
+        ATLAS_PROFILE_SCOPE("EditorLayer::onAttach");
         auto &renderer = projectLayer.getRenderer();
         imguiLayer = std::make_unique<ImGuiLayer>(
             renderer.device(),
@@ -36,49 +38,78 @@ namespace Atlas::Editor {
             }
         );
         viewportPanel = std::make_shared<ViewportPanel>(projectLayer, selectedEntity, history, *iconRegistry);
-        renderSettingsPanel = std::make_shared<RenderSettingsPanel>(projectLayer);
         assetExplorerPanel = std::make_shared<AssetExplorerPanel>(projectLayer);
     }
 
     void EditorLayer::onDetach() {
+        ATLAS_PROFILE_SCOPE("EditorLayer::onDetach");
         if (hierarchyPanel) hierarchyPanel->onDetach();
         if (inspectorPanel) inspectorPanel->onDetach();
         if (viewportPanel) viewportPanel->onDetach();
-        if (renderSettingsPanel) renderSettingsPanel->onDetach();
         if (assetExplorerPanel) assetExplorerPanel->onDetach();
         iconRegistry.reset();
         imguiLayer.reset();
     }
 
     void EditorLayer::onUpdate(float) {
+        ATLAS_PROFILE_SCOPE("EditorLayer::onUpdate");
         processPendingProjectLoad();
         ensureEditorCamera();
     }
 
     void EditorLayer::onRender(FrameContext frameContext) {
+        ATLAS_PROFILE_SCOPE("EditorLayer::onRender");
         if (!imguiLayer) {
             return;
         }
 
         auto &renderer = projectLayer.getRenderer();
-        imguiLayer->beginFrame(true);
-        onImGuiRender();
-        imguiLayer->endFrame();
+        {
+            ATLAS_PROFILE_SCOPE("EditorLayer::buildImGui");
+            imguiLayer->beginFrame(true);
+            onImGuiRender();
+            imguiLayer->endFrame();
+        }
 
-        renderer.beginOverlayRenderPass(frameContext.graphicsCommandBuffer, Renderer::OverlayLoadOp::Clear);
-        imguiLayer->render(frameContext.graphicsCommandBuffer);
-        renderer.endOverlayRenderPass(frameContext.graphicsCommandBuffer);
+        {
+            ATLAS_PROFILE_SCOPE("EditorLayer::recordOverlay");
+            ATLAS_PROFILE_GPU_ZONE(renderer.device().gpuProfilerContext(), frameContext.graphicsCommandBuffer, "Editor::OverlayPass");
+            renderer.beginOverlayRenderPass(frameContext.graphicsCommandBuffer, Renderer::OverlayLoadOp::Clear);
+            imguiLayer->render(frameContext.graphicsCommandBuffer);
+            renderer.endOverlayRenderPass(frameContext.graphicsCommandBuffer);
+        }
     }
 
     void EditorLayer::onImGuiRender() {
-        handleShortcuts();
-        drawMenuBar();
-        if (renderSettingsPanel) renderSettingsPanel->onImGuiRender();
-        if (viewportPanel) viewportPanel->onImGuiRender();
-        if (hierarchyPanel) hierarchyPanel->onImGuiRender();
-        if (inspectorPanel) inspectorPanel->onImGuiRender();
-        if (assetExplorerPanel) assetExplorerPanel->onImGuiRender();
-        drawMaterialEditorWindow();
+        ATLAS_PROFILE_SCOPE("EditorLayer::onImGuiRender");
+        {
+            ATLAS_PROFILE_SCOPE("EditorLayer::handleShortcuts");
+            handleShortcuts();
+        }
+        {
+            ATLAS_PROFILE_SCOPE("EditorLayer::drawMenuBar");
+            drawMenuBar();
+        }
+        if (viewportPanel) {
+            ATLAS_PROFILE_SCOPE("ViewportPanel::onImGuiRender");
+            viewportPanel->onImGuiRender();
+        }
+        if (hierarchyPanel) {
+            ATLAS_PROFILE_SCOPE("HierarchyPanel::onImGuiRender");
+            hierarchyPanel->onImGuiRender();
+        }
+        if (inspectorPanel) {
+            ATLAS_PROFILE_SCOPE("InspectorPanel::onImGuiRender");
+            inspectorPanel->onImGuiRender();
+        }
+        if (assetExplorerPanel) {
+            ATLAS_PROFILE_SCOPE("AssetExplorerPanel::onImGuiRender");
+            assetExplorerPanel->onImGuiRender();
+        }
+        {
+            ATLAS_PROFILE_SCOPE("EditorLayer::drawMaterialEditorWindow");
+            drawMaterialEditorWindow();
+        }
     }
 
     void EditorLayer::handleShortcuts() {
@@ -160,7 +191,6 @@ namespace Atlas::Editor {
                 if (hierarchyPanel) hierarchyPanel->visible = true;
                 if (inspectorPanel) inspectorPanel->visible = true;
                 if (viewportPanel) viewportPanel->visible = true;
-                if (renderSettingsPanel) renderSettingsPanel->visible = true;
                 if (assetExplorerPanel) assetExplorerPanel->visible = true;
             }
 
@@ -174,9 +204,6 @@ namespace Atlas::Editor {
             }
             if (ImGui::MenuItem("Properties", nullptr, inspectorPanel && inspectorPanel->visible)) {
                 if (inspectorPanel) inspectorPanel->visible = true;
-            }
-            if (ImGui::MenuItem("Render Settings", nullptr, renderSettingsPanel && renderSettingsPanel->visible)) {
-                if (renderSettingsPanel) renderSettingsPanel->visible = true;
             }
             if (ImGui::MenuItem("Asset Explorer", nullptr, assetExplorerPanel && assetExplorerPanel->visible)) {
                 if (assetExplorerPanel) assetExplorerPanel->visible = true;

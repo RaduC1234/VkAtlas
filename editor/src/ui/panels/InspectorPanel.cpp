@@ -75,6 +75,13 @@ namespace Atlas::Editor {
             drawSkybox(registry);
         }
 
+        if (registry.all_of<PostProcessingVolumeComponent>(selectedEntity)) {
+            drawPostProcessingVolume(registry);
+        }
+
+        ImGui::Separator();
+        drawAddComponentMenu(registry);
+
         ImGui::End();
     }
 
@@ -102,7 +109,55 @@ namespace Atlas::Editor {
         }
     }
 
-    bool InspectorPanel::beginComponent(const char *label) {
+    void InspectorPanel::drawAddComponentMenu(entt::registry &registry) {
+        if (ImGui::Button("Add Component", ImVec2(-1.0f, 0.0f))) {
+            ImGui::OpenPopup("##add_component_popup");
+        }
+
+        if (!ImGui::BeginPopup("##add_component_popup")) {
+            return;
+        }
+
+        if (!registry.all_of<TransformComponent>(selectedEntity) && ImGui::MenuItem("Transform")) {
+            registry.emplace<TransformComponent>(selectedEntity);
+            registry.patch<TransformComponent>(selectedEntity);
+        }
+
+        if (!registry.all_of<ModelComponent>(selectedEntity) && ImGui::MenuItem("Model")) {
+            registry.emplace<ModelComponent>(selectedEntity);
+        }
+
+        if (!registry.all_of<MaterialComponent>(selectedEntity) && ImGui::MenuItem("Material")) {
+            registry.emplace<MaterialComponent>(selectedEntity);
+        }
+
+        if (!registry.all_of<LightComponent>(selectedEntity) && ImGui::MenuItem("Light")) {
+            registry.emplace<LightComponent>(selectedEntity);
+        }
+
+        if (!registry.all_of<CameraComponent>(selectedEntity) && ImGui::MenuItem("Camera")) {
+            registry.emplace<CameraComponent>(selectedEntity);
+        }
+
+        if (!registry.all_of<SkyboxComponent>(selectedEntity) && ImGui::MenuItem("Skybox")) {
+            registry.emplace<SkyboxComponent>(selectedEntity);
+        }
+
+        if (!registry.all_of<PostProcessingVolumeComponent>(selectedEntity) && ImGui::MenuItem("Post Processing")) {
+            registry.emplace<PostProcessingVolumeComponent>(selectedEntity);
+        }
+
+        if (registry.all_of<TransformComponent, ModelComponent, MaterialComponent, LightComponent, CameraComponent,
+                SkyboxComponent, PostProcessingVolumeComponent>(selectedEntity)) {
+            ImGui::BeginDisabled();
+            ImGui::MenuItem("No components available");
+            ImGui::EndDisabled();
+        }
+
+        ImGui::EndPopup();
+    }
+
+    bool InspectorPanel::beginComponent(const char *label, bool *removeRequested) {
         constexpr ImGuiTreeNodeFlags flags =
                 ImGuiTreeNodeFlags_DefaultOpen |
                 ImGuiTreeNodeFlags_Framed |
@@ -112,6 +167,31 @@ namespace Atlas::Editor {
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 4));
         bool open = ImGui::TreeNodeEx(label, flags);
         ImGui::PopStyleVar();
+
+        if (removeRequested) {
+            const ImVec2 headerMin = ImGui::GetItemRectMin();
+            const ImVec2 headerMax = ImGui::GetItemRectMax();
+            const float buttonSize = ImGui::GetFrameHeight() - 6.0f;
+            const ImVec2 buttonMin{headerMax.x - buttonSize - 8.0f, headerMin.y + 3.0f};
+
+            ImGui::SameLine();
+            ImGui::SetCursorScreenPos(buttonMin);
+            ImGui::PushID(label);
+            if (ImGui::InvisibleButton("remove_component", ImVec2(buttonSize, buttonSize))) {
+                *removeRequested = true;
+            }
+
+            const bool hovered = ImGui::IsItemHovered();
+            ImDrawList *drawList = ImGui::GetWindowDrawList();
+            const ImU32 color = ImGui::GetColorU32(hovered ? ImGuiCol_Text : ImGuiCol_TextDisabled);
+            const ImVec2 a{buttonMin.x + 5.0f, buttonMin.y + 5.0f};
+            const ImVec2 b{buttonMin.x + buttonSize - 5.0f, buttonMin.y + buttonSize - 5.0f};
+            const ImVec2 c{buttonMin.x + buttonSize - 5.0f, buttonMin.y + 5.0f};
+            const ImVec2 d{buttonMin.x + 5.0f, buttonMin.y + buttonSize - 5.0f};
+            drawList->AddLine(a, b, color, 1.5f);
+            drawList->AddLine(c, d, color, 1.5f);
+            ImGui::PopID();
+        }
 
         if (open) ImGui::Spacing();
         return open;
@@ -173,7 +253,16 @@ namespace Atlas::Editor {
     }
 
     void InspectorPanel::drawModel(entt::registry &registry) {
-        if (!beginComponent("Model")) return;
+        bool removeRequested = false;
+        const bool open = beginComponent("Model", &removeRequested);
+        if (removeRequested) {
+            if (open) {
+                endComponent();
+            }
+            registry.remove<ModelComponent>(selectedEntity);
+            return;
+        }
+        if (!open) return;
 
         auto &model = registry.get<ModelComponent>(selectedEntity);
         ImGui::LabelText("Mesh", "%s", model.meshHandle.valid() ? "Assigned" : "None");
@@ -183,7 +272,16 @@ namespace Atlas::Editor {
     }
 
     void InspectorPanel::drawMaterial(entt::registry &registry) {
-        if (!beginComponent("Material")) return;
+        bool removeRequested = false;
+        const bool open = beginComponent("Material", &removeRequested);
+        if (removeRequested) {
+            if (open) {
+                endComponent();
+            }
+            registry.remove<MaterialComponent>(selectedEntity);
+            return;
+        }
+        if (!open) return;
 
         auto &component = registry.get<MaterialComponent>(selectedEntity);
         const std::string currentName = component.materialHandle.valid()
@@ -240,7 +338,16 @@ namespace Atlas::Editor {
     }
 
     void InspectorPanel::drawLight(entt::registry &registry) {
-        if (!beginComponent("Light")) return;
+        bool removeRequested = false;
+        const bool open = beginComponent("Light", &removeRequested);
+        if (removeRequested) {
+            if (open) {
+                endComponent();
+            }
+            registry.remove<LightComponent>(selectedEntity);
+            return;
+        }
+        if (!open) return;
 
         auto &light = registry.get<LightComponent>(selectedEntity);
         const LightComponent before = light;
@@ -324,9 +431,31 @@ namespace Atlas::Editor {
     }
 
     void InspectorPanel::drawCamera(entt::registry &registry) {
-        if (!beginComponent("Camera")) return;
+        bool removeRequested = false;
+        const bool open = beginComponent("Camera", &removeRequested);
+        if (removeRequested) {
+            if (open) {
+                endComponent();
+            }
+            registry.remove<CameraComponent>(selectedEntity);
+            return;
+        }
+        if (!open) return;
 
-        const auto &cam = registry.get<CameraComponent>(selectedEntity);
+        auto &cam = registry.get<CameraComponent>(selectedEntity);
+        int renderMode = static_cast<int>(cam.renderMode);
+        constexpr const char *renderModes[] = {
+            "Lit",
+            "Unlit",
+            "Lighting Only",
+            "Path Tracing"
+        };
+
+        if (ImGui::Combo("Render Mode", &renderMode, renderModes, IM_ARRAYSIZE(renderModes))) {
+            cam.renderMode = static_cast<ViewMode>(renderMode);
+            registry.patch<CameraComponent>(selectedEntity);
+        }
+
         const auto data = cam.camera.getData();
 
         ImGui::LabelText("Near", "%.3f", data.nearPlane);
@@ -335,7 +464,16 @@ namespace Atlas::Editor {
     }
 
     void InspectorPanel::drawSkybox(entt::registry &registry) {
-        if (!beginComponent("Skybox")) return;
+        bool removeRequested = false;
+        const bool open = beginComponent("Skybox", &removeRequested);
+        if (removeRequested) {
+            if (open) {
+                endComponent();
+            }
+            registry.remove<SkyboxComponent>(selectedEntity);
+            return;
+        }
+        if (!open) return;
 
         if (auto *node = registry.try_get<SceneNodeComponent>(selectedEntity)) {
             bool enabled = node->visible;
@@ -356,6 +494,43 @@ namespace Atlas::Editor {
         ImGui::LabelText("Skybox", "%s", status(skybox.skyboxHandle));
         ImGui::LabelText("Irradiance", "%s", status(skybox.irradianceHandle));
         ImGui::LabelText("Prefilter", "%s", status(skybox.prefilterHandle));
+
+        endComponent();
+    }
+
+    void InspectorPanel::drawPostProcessingVolume(entt::registry &registry) {
+        bool removeRequested = false;
+        const bool open = beginComponent("Post Processing", &removeRequested);
+        if (removeRequested) {
+            if (open) {
+                endComponent();
+            }
+            registry.remove<PostProcessingVolumeComponent>(selectedEntity);
+            return;
+        }
+        if (!open) return;
+
+        auto &volume = registry.get<PostProcessingVolumeComponent>(selectedEntity);
+        bool changed = false;
+
+        changed |= ImGui::DragFloat("Exposure", &volume.exposure, 0.01f, 0.0f, 10.0f);
+        changed |= ImGui::DragFloat("Contrast", &volume.contrast, 0.01f, 0.0f, 4.0f);
+        changed |= ImGui::DragFloat("Saturation", &volume.saturation, 0.01f, 0.0f, 4.0f);
+        changed |= ImGui::ColorEdit3("Tint", glm::value_ptr(volume.colorTint));
+
+        changed |= ImGui::Checkbox("Bloom", &volume.bloomEnabled);
+        if (volume.bloomEnabled) {
+            changed |= ImGui::DragFloat("Bloom Strength", &volume.bloomStrength, 0.01f, 0.0f, 20.0f);
+        }
+
+        changed |= ImGui::Checkbox("Vignette", &volume.vignetteEnabled);
+        if (volume.vignetteEnabled) {
+            changed |= ImGui::DragFloat("Vignette Strength", &volume.vignetteStrength, 0.01f, 0.0f, 10.0f);
+        }
+
+        if (changed) {
+            registry.patch<PostProcessingVolumeComponent>(selectedEntity);
+        }
 
         endComponent();
     }

@@ -2,10 +2,13 @@
 
 #include <cstdint>
 #include <array>
+#include <utility>
 
 using MouseCode = uint16_t;
 
 namespace Atlas {
+    class IInputProvider;
+
     class Mouse {
     public:
         static constexpr uint32_t MOUSE_BUTTONS = 8;
@@ -26,16 +29,21 @@ namespace Atlas {
             ButtonMiddle = Button2
         };
 
+        static void setProvider(IInputProvider *p);
         static bool isButtonPressed(MouseCode code);
         static bool isDragging();
         static std::pair<double, double> getCursorPosition();
+        static double getScrollX();
+        static double getScrollY();
 
     private:
+        static IInputProvider *provider;
         static std::array<bool, MOUSE_BUTTONS> buttonPressed;
         static double xPos, yPos;
         static double scrollXOffset, scrollYOffset;
         static bool dragging;
 
+        friend class DesktopInputProvider;
 #ifdef _WIN32
     friend class DesktopWindow;
 #endif

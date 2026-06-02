@@ -24,14 +24,16 @@ namespace Atlas::Editor {
 
     private:
         void drawEntityHeader(entt::registry &registry);
+        void drawAddComponentMenu(entt::registry &registry);
         void drawTransform(entt::registry &registry);
         void drawModel(entt::registry &registry);
         void drawMaterial(entt::registry &registry);
         void drawLight(entt::registry &registry);
         void drawCamera(entt::registry &registry);
         void drawSkybox(entt::registry &registry);
+        void drawPostProcessingVolume(entt::registry &registry);
 
-        bool beginComponent(const char *label);
+        bool beginComponent(const char *label, bool *removeRequested = nullptr);
         void endComponent();
 
         ProjectLayer &projectLayer;

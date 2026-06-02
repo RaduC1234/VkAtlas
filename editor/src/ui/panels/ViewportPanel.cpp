@@ -77,6 +77,7 @@ namespace Atlas::Editor {
             renderViewGizmo(imageMin, size);
             renderContextMenu(viewportHovered && !ImViewGuizmo::IsOver() && !ImViewGuizmo::IsUsing());
             renderToolbar(imageMin, size);
+            renderFpsCounter(imageMin, size);
         }
 
         ImGui::End();
@@ -117,7 +118,17 @@ namespace Atlas::Editor {
                 });
 
         // View mode island — anchored to the top-right of the viewport
-        auto &settings = projectLayer.getRenderer().settings();
+        entt::registry *registry = nullptr;
+        entt::entity cameraEntity = entt::null;
+        CameraComponent *cameraComponent = nullptr;
+        if (auto *scene = projectLayer.project().scene()) {
+            registry = &scene->getRegistry();
+            cameraEntity = activeCamera(*registry);
+            if (cameraEntity != entt::null) {
+                cameraComponent = registry->try_get<CameraComponent>(cameraEntity);
+            }
+        }
+
         struct VMEntry {
             const char *icon;
             const char *tip;
@@ -138,13 +149,41 @@ namespace Atlas::Editor {
                     for (int i = 0; i < static_cast<int>(std::size(vms)); ++i) {
                         char id[16];
                         std::snprintf(id, sizeof(id), "##vm%d", i);
-                        if (IconButton(id, vms[i].icon, iconRegistry).active(settings.viewMode == vms[i].val).tooltip(vms[i].tip).render(x, y))
-                            settings.viewMode = vms[i].val;
+                        const bool active = cameraComponent && cameraComponent->renderMode == vms[i].val;
+                        if (IconButton(id, vms[i].icon, iconRegistry).active(active).tooltip(vms[i].tip).render(x, y) && cameraComponent && registry) {
+                            cameraComponent->renderMode = vms[i].val;
+                            registry->patch<CameraComponent>(cameraEntity);
+                        }
                     }
                 });
 
         ImGui::SetCursorScreenPos(restoreCursor);
         ImGui::Dummy({0, 0});
+    }
+
+    void ViewportPanel::renderFpsCounter(const ImVec2 imageMin, const ImVec2 imageSize) {
+        const ImGuiIO &io = ImGui::GetIO();
+        const float frameTimeMs = io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f;
+
+        char text[64]{};
+        std::snprintf(text, sizeof(text), "%.1f FPS  %.2f ms", io.Framerate, frameTimeMs);
+
+        ImDrawList *drawList = ImGui::GetWindowDrawList();
+        const ImVec2 textSize = ImGui::CalcTextSize(text);
+        const ImVec2 padding{10.0f, 6.0f};
+        const ImVec2 margin{12.0f, 12.0f};
+        const ImVec2 min{
+            imageMin.x + margin.x,
+            imageMin.y + imageSize.y - textSize.y - padding.y * 2.0f - margin.y
+        };
+        const ImVec2 max{
+            min.x + textSize.x + padding.x * 2.0f,
+            min.y + textSize.y + padding.y * 2.0f
+        };
+
+        drawList->AddRectFilled(min, max, IM_COL32(8, 10, 14, 190), 7.0f);
+        drawList->AddRect(min, max, IM_COL32(255, 255, 255, 38), 7.0f);
+        drawList->AddText({min.x + padding.x, min.y + padding.y}, IM_COL32(232, 238, 246, 255), text);
     }
 
     // ── Context menu ──────────────────────────────────────────────────────

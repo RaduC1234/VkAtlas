@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <imgui.h>
@@ -26,6 +27,11 @@ namespace Atlas::Editor {
 
         auto &registry = scene->getRegistry();
         auto view = registry.view<SceneNodeComponent>();
+
+        if (ImGui::Button("Add Entity", ImVec2(-1.0f, 0.0f))) {
+            selectedEntity = createEntity(registry);
+        }
+        ImGui::Separator();
 
         const float iconColumnWidth = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x;
         if (ImGui::BeginTable("HierarchyRows", 3, ImGuiTableFlags_SizingStretchProp, ImVec2(0.0f, 0.0f))) {
@@ -79,6 +85,34 @@ namespace Atlas::Editor {
         } else {
             selectedEntity = entt::null;
         }
+    }
+
+    entt::entity HierarchyPanel::createEntity(entt::registry &registry) {
+        const entt::entity entity = registry.create();
+
+        SceneNodeComponent node{};
+        node.name = nextEntityName(registry);
+        registry.emplace<SceneNodeComponent>(entity, std::move(node));
+        registry.emplace<TransformComponent>(entity);
+        registry.patch<TransformComponent>(entity);
+
+        return entity;
+    }
+
+    std::string HierarchyPanel::nextEntityName(entt::registry &registry) const {
+        int nextIndex = 1;
+        for (const entt::entity entity: registry.view<SceneNodeComponent>()) {
+            if (registry.all_of<TransientComponent>(entity)) {
+                continue;
+            }
+
+            const auto &node = registry.get<SceneNodeComponent>(entity);
+            if (!node.deleted) {
+                ++nextIndex;
+            }
+        }
+
+        return "Entity " + std::to_string(nextIndex);
     }
 
     void HierarchyPanel::drawEntityNode(entt::registry &registry, entt::entity entity) {

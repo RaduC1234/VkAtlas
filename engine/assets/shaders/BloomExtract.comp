@@ -1,0 +1,43 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 1, binding = 0, rgba32f) uniform readonly  image2D srcImage;   // geometry_color full res
+layout(set = 1, binding = 1, rgba16f) uniform writeonly image2D dstImage;   // bloom_bright   half res
+
+layout(push_constant) uniform PC {
+    float threshold;
+    float strength;
+    int   radius;
+    int   horizontal;
+    float texelSizeX;
+    float texelSizeY;
+} pc;
+
+float luminance(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+    const ivec2 dstCoord = ivec2(gl_GlobalInvocationID.xy);
+    const ivec2 dstSize  = imageSize(dstImage);
+
+    if (dstCoord.x >= dstSize.x || dstCoord.y >= dstSize.y) return;
+
+    // Sample 2x2 block from full res and average (simple box downsample)
+    const ivec2 srcCoord = dstCoord * 2;
+    vec3 c00 = imageLoad(srcImage, srcCoord + ivec2(0,0)).rgb;
+    vec3 c10 = imageLoad(srcImage, srcCoord + ivec2(1,0)).rgb;
+    vec3 c01 = imageLoad(srcImage, srcCoord + ivec2(0,1)).rgb;
+    vec3 c11 = imageLoad(srcImage, srcCoord + ivec2(1,1)).rgb;
+    vec3 color = (c00 + c10 + c01 + c11) * 0.25;
+
+    // Soft threshold — smoother than hard cutoff
+    float lum    = luminance(color);
+    float soft   = lum - pc.threshold + 0.5;
+    soft         = clamp(soft, 0.0, 1.0);
+    soft         = soft * soft;
+    float weight = max(soft, lum - pc.threshold) / max(lum, 0.0001);
+
+    imageStore(dstImage, dstCoord, vec4(color * weight, 1.0));
+}

@@ -30,6 +30,10 @@ layout(set = 1, binding = 1) uniform usampler2D layers;
 layout(set = 1, binding = 2) uniform sampler2D bloomInput;  // bloom_blurred, half res — GPU bilinear upscales
 
 layout(push_constant) uniform PC {
+    vec4  colorTint;
+    float exposure;
+    float contrast;
+    float saturation;
     float bloomStrength;
     float vignetteStrength;
     uint  flags;            // bit 0 = vignette enabled, bit 1 = bloom enabled
@@ -77,10 +81,14 @@ void main() {
     }
 
     // Exposure
-    vec3 color = max(hdr, vec3(0.0)) * ubo.debugData.exposureMultiplier;
+    vec3 color = max(hdr, vec3(0.0)) * pc.exposure;
 
     // Tonemap
     color = ACESFitted(color);
+    color *= pc.colorTint.rgb;
+    color = mix(vec3(0.5), color, pc.contrast);
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+    color = mix(vec3(luma), color, pc.saturation);
 
     // Vignette — after tonemap, subtle darkening at edges
     if ((pc.flags & FLAG_VIGNETTE) != 0u) {

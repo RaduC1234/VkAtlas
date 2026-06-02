@@ -5,6 +5,10 @@
 #include <vector>
 #include <vk_mem_alloc.h>
 
+#if defined(ATLAS_PROFILE_GPU)
+#include <tracy/TracyVulkan.hpp>
+#endif
+
 #include "core/Window.hpp"
 #include "utils/ExecutorService.hpp"
 
@@ -96,6 +100,9 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         const QueueFamilyIndices &queueFamilyIndices() const { return queueFamilyIndices_; }
         const VkPhysicalDeviceRayTracingPipelinePropertiesKHR &rayTracingPipelineProperties() const { return rtPipelineProperties_; }
         const VkPhysicalDeviceAccelerationStructurePropertiesKHR &accelerationStructureProperties() const { return accelStructureProperties_; }
+#if defined(ATLAS_PROFILE_GPU)
+        TracyVkCtx gpuProfilerContext() const { return gpuProfilerContext_; }
+#endif
 
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
@@ -134,6 +141,9 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         void createCommandPools();
         void createTransferCommandBuffer();
         void createTransferTimelineSemaphore();
+#if defined(ATLAS_PROFILE_GPU)
+        void createGpuProfilerContext();
+#endif
 
         bool checkValidationLayerSupport();
         std::vector<const char *> getRequiredInstanceExtensions() const;
@@ -174,6 +184,9 @@ if (!name) throw std::runtime_error("Failed to load " #name);
 
         VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtPipelineProperties_{};
         VkPhysicalDeviceAccelerationStructurePropertiesKHR accelStructureProperties_{};
+#if defined(ATLAS_PROFILE_GPU)
+        TracyVkCtx gpuProfilerContext_ = nullptr;
+#endif
 
         Window &window_;
         std::unique_ptr<ExecutorService> executor_;

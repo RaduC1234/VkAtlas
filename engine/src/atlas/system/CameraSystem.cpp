@@ -111,6 +111,7 @@ namespace Atlas {
                 tf.translation += moveSpeed * movementDeltaTime * glm::normalize(dir);
             }
 
+            registry.patch<TransformComponent>(entity);
             registry.patch<CameraComponent>(entity, [&](auto &camComp) {
                 camComp.camera.setViewYXZ(tf.translation, tf.rotation);
                 camComp.camera.setPerspectiveProjection(glm::radians(50.0f), screenAspect, 0.1f, 100.0f);

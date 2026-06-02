@@ -10,6 +10,8 @@
 #include "Core.hpp"
 
 namespace Atlas {
+    class IInputProvider;
+
     class Window {
     public:
         enum Properties : uint32_t {
@@ -38,6 +40,7 @@ namespace Atlas {
             std::string title = "Atlas Window";
             std::string iconPath;
             uint32_t properties = Decorated | Resizeable;
+            IInputProvider *inputProvider = nullptr;
         };
 
         virtual ~Window() = default;
@@ -52,6 +55,7 @@ namespace Atlas {
         virtual void setCursorMode(CursorMode cursorMode) { assert(true && "Method not implemented"); }
 
         virtual void setWindowIcon(const std::string &iconPath) { assert(true && "Method not implemented"); }
+        virtual void setTitle(const std::string &title) { assert(true && "Method not implemented"); }
 
         virtual void setTheme(Theme theme) { assert(true && "Method not implemented"); }
         virtual Theme getTheme() const { assert(true && "Method not implemented"); return Theme::Dark; }

@@ -33,6 +33,7 @@ namespace Atlas {
 
         void setCursorMode(CursorMode cursorMode) override;
         void setWindowIcon(const std::string &iconPath) override;
+        void setTitle(const std::string &title) override;
         void setTheme(Theme theme) override;
         Theme getTheme() const override { return theme; }
         void *getNativeHandle() const override;

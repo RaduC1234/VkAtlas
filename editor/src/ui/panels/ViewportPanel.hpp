@@ -44,6 +44,7 @@ namespace Atlas::Editor {
         void renderLightBillboards(ImVec2 imageMin, ImVec2 imageSize);
         void renderObjectGizmo(ImVec2 imageMin, ImVec2 imageSize, bool viewportHovered);
         void renderViewGizmo(ImVec2 imageMin, ImVec2 imageSize);
+        void renderFpsCounter(ImVec2 imageMin, ImVec2 imageSize);
         void addPrimitive(ViewportPrimitive primitive);
         void addLight(LightType type);
         AssetHandle<Mesh> primitiveMesh(ViewportPrimitive primitive);

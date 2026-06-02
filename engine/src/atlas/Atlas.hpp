@@ -3,6 +3,10 @@
 #include "asset/AssetManager.hpp"
 
 #include "core/Application.hpp"
+#include "input/IInputProvider.hpp"
+#ifdef ATLAS_PLATFORM_DESKTOP
+#include "../platform/desktop/DesktopInputProvider.hpp"
+#endif
 #include "core/Layer.hpp"
 #include "core/LayerStack.hpp"
 #include "core/Log.hpp"

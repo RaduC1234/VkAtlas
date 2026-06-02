@@ -1,6 +1,6 @@
 #include "DesktopWindow.hpp"
 
-#include "core/Keyboard.hpp"
+#include "DesktopInputProvider.hpp"
 
 #ifdef ATLAS_PLATFORM_DESKTOP
 
@@ -14,7 +14,6 @@
 #include <dwmapi.h>
 #include <windowsx.h>
 
-#include "core/Mouse.hpp"
 
 #pragma comment(lib, "dwmapi.lib")
 
@@ -396,6 +395,9 @@ namespace Atlas {
         glfwSetKeyCallback(glfwWindow, keyboardKeyCallback);
         glfwSetCharCallback(glfwWindow, keyboardTextCallback);
 
+        Keyboard::setProvider(&DesktopInputProvider::instance());
+        Mouse::setProvider(&DesktopInputProvider::instance());
+
         if (!properties.iconPath.empty())
             DesktopWindow::setWindowIcon(properties.iconPath);
 
@@ -453,6 +455,10 @@ namespace Atlas {
         GLFWimage img{w, h, pixels};
         glfwSetWindowIcon(glfwWindow, 1, &img);
         stbi_image_free(pixels);
+    }
+
+    void DesktopWindow::setTitle(const std::string &title) {
+        glfwSetWindowTitle(glfwWindow, title.c_str());
     }
 
     void DesktopWindow::setTheme(Theme theme) {

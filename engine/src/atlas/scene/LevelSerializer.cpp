@@ -248,6 +248,10 @@ namespace Atlas {
         component.contrast = readFloat(data, "contrast", component.contrast);
         component.saturation = readFloat(data, "saturation", component.saturation);
         component.colorTint = readVector(data, "colorTint", component.colorTint);
+        component.bloomEnabled = readBool(data, "bloomEnabled", component.bloomEnabled);
+        component.vignetteEnabled = readBool(data, "vignetteEnabled", component.vignetteEnabled);
+        component.bloomStrength = readFloat(data, "bloomStrength", component.bloomStrength);
+        component.vignetteStrength = readFloat(data, "vignetteStrength", component.vignetteStrength);
         registry.emplace<PostProcessingVolumeComponent>(entity, std::move(component));
     }
 
@@ -352,8 +356,12 @@ namespace Atlas {
                 registry.emplace<TransformComponent>(entity, component->get<TransformComponent>());
             }
 
-            if (componentData(*components, "Camera")) {
-                registry.emplace<CameraComponent>(entity);
+            if (const auto *component = componentData(*components, "Camera")) {
+                CameraComponent camera{};
+                if (const auto renderMode = component->find("renderMode"); renderMode != component->end() && !renderMode->is_null()) {
+                    camera.renderMode = renderMode->get<ViewMode>();
+                }
+                registry.emplace<CameraComponent>(entity, std::move(camera));
             }
 
             if (const auto *component = componentData(*components, "Model")) {
@@ -437,8 +445,10 @@ namespace Atlas {
             if (const auto *component = registry.try_get<TransformComponent>(entity)) {
                 components["Transform"] = *component;
             }
-            if (registry.all_of<CameraComponent>(entity)) {
-                components["Camera"] = Json::object();
+            if (const auto *component = registry.try_get<CameraComponent>(entity)) {
+                Json camera;
+                camera["renderMode"] = component->renderMode;
+                components["Camera"] = camera;
             }
             if (const auto *component = registry.try_get<ModelComponent>(entity)) {
                 Json model;
@@ -478,6 +488,10 @@ namespace Atlas {
                 volume["contrast"] = component->contrast;
                 volume["saturation"] = component->saturation;
                 volume["colorTint"] = component->colorTint;
+                volume["bloomEnabled"] = component->bloomEnabled;
+                volume["vignetteEnabled"] = component->vignetteEnabled;
+                volume["bloomStrength"] = component->bloomStrength;
+                volume["vignetteStrength"] = component->vignetteStrength;
                 components["PostProcessingVolume"] = volume;
             }
             if (const auto *component = registry.try_get<ScriptComponent>(entity)) {

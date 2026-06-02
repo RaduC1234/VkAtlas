@@ -9,6 +9,7 @@
 
 #include "asset/AssetManager.hpp"
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "entity/Object.hpp"
 #include "renderer/abstraction/GPUBuffer.hpp"
 
@@ -31,7 +32,7 @@ namespace Atlas {
     }
 
     void GeometryStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
-        out.push_back(Resource::Description::color("geometry_color", VK_FORMAT_R32G32B32A32_SFLOAT));
+        out.push_back(Resource::Description::color("geometry_color", VK_FORMAT_R16G16B16A16_SFLOAT));
         out.push_back(Resource::Description::depth("geometry_depth", VK_FORMAT_D24_UNORM_S8_UINT));
     }
 
@@ -128,10 +129,15 @@ namespace Atlas {
     }
 
     void GeometryStage::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
+        ATLAS_PROFILE_SCOPE("GeometryStage::record");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "GeometryStage");
+
         begin(cmd);
 
         const auto &draws = std::get<0>(*drawData);
         if (!draws.empty()) {
+            ATLAS_PROFILE_SCOPE("GeometryStage::opaqueDraws");
+            ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "GeometryStage::OpaqueDraws");
             opaquePipeline->bind(cmd);
 
             const VkDescriptorSet sets[] = {
@@ -154,6 +160,8 @@ namespace Atlas {
         }
 
         if (drawSkybox && skyboxPipeline) {
+            ATLAS_PROFILE_SCOPE("GeometryStage::skybox");
+            ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "GeometryStage::Skybox");
             skyboxPipeline->bind(cmd);
             const VkDescriptorSet sets[] = {globalSet, skyboxDescriptorSet};
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &sets[0], 0, nullptr);

@@ -1,4 +1,5 @@
 #include "OutputStage.hpp"
+#include "core/Profiler.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/abstraction/GPUImage.hpp"
 
@@ -32,6 +33,8 @@ namespace Atlas {
     }
 
     void OutputStage::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {
+        ATLAS_PROFILE_SCOPE("OutputStage::record");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "OutputStage");
         renderer.setSceneOutputImage(
             postColorSource->image(),
             postColorSource->view(0),
@@ -47,6 +50,8 @@ namespace Atlas {
     }
 
     void OutputStage::recordToSwapChain(VkCommandBuffer cmd) {
+        ATLAS_PROFILE_SCOPE("OutputStage::recordToSwapChain");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "OutputStage::SwapChainBlit");
         VkImage swapImage = renderer.getCurrentSwapchainImage();
 
         // sourceLayout is GENERAL for ray tracing / compute writers.
@@ -138,6 +143,8 @@ namespace Atlas {
     }
 
     void OutputStage::recordToTexture(VkCommandBuffer cmd) {
+        ATLAS_PROFILE_SCOPE("OutputStage::recordToTexture");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "OutputStage::TextureOutputBarrier");
         const bool sourceIsShaderWrite = sourceLayout == VK_IMAGE_LAYOUT_GENERAL;
         const VkPipelineStageFlags srcStage = sourceIsShaderWrite
                                                   ? (VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)

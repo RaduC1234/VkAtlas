@@ -3,6 +3,7 @@
 #include <array>
 #include <stdexcept>
 
+#include "core/Profiler.hpp"
 #include "core/Window.hpp"
 #include "ui/theme/EditorTheme.hpp"
 
@@ -11,7 +12,8 @@
 #include <imgui_impl_vulkan.h>
 
 namespace Atlas {
-    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()), nativeWindow(window.getNativeHandle()) {
+    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()), atlasDevice(&device), nativeWindow(window.getNativeHandle()) {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::create");
         createDescriptorPool(device);
 
         IMGUI_CHECKVERSION();
@@ -46,6 +48,7 @@ namespace Atlas {
     }
 
     ImGuiLayer::~ImGuiLayer() {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::destroy");
         if (device != VK_NULL_HANDLE) {
             vkDeviceWaitIdle(device);
             ImGui_ImplVulkan_Shutdown();
@@ -60,6 +63,7 @@ namespace Atlas {
     }
 
     void ImGuiLayer::beginFrame(bool createDockSpace) {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::beginFrame");
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -93,10 +97,13 @@ namespace Atlas {
     }
 
     void ImGuiLayer::endFrame() {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::endFrame");
         ImGui::Render();
     }
 
     void ImGuiLayer::render(VkCommandBuffer commandBuffer) {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::render");
+        ATLAS_PROFILE_GPU_ZONE(atlasDevice->gpuProfilerContext(), commandBuffer, "Editor::ImGuiDrawData");
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
     }
 
@@ -113,6 +120,7 @@ namespace Atlas {
     }
 
     void ImGuiLayer::createDescriptorPool(Device &device) {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::createDescriptorPool");
         constexpr std::array<VkDescriptorPoolSize, 3> poolSizes{
             {
                 {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},

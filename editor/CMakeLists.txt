@@ -8,12 +8,39 @@ list(REMOVE_ITEM EDITOR_SOURCES "src/EditorEntryPoint.cpp")
 set(LUNASVG_BUILD_EXAMPLES OFF CACHE BOOL "Disable LunaSVG examples" FORCE)
 add_subdirectory(dependencies/lunasvg)
 
+find_package(Vulkan REQUIRED)
+
+add_library(imgui OBJECT
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_draw.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_widgets.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_demo.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_tables.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_glfw.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_vulkan.cpp
+)
+
+set_target_properties(imgui PROPERTIES
+        POSITION_INDEPENDENT_CODE ON
+)
+
+target_link_libraries(imgui PUBLIC
+        glfw
+        Vulkan::Vulkan
+)
+
+target_include_directories(imgui PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui
+        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends
+)
+
 add_library(atlas_editor_module STATIC ${EDITOR_SOURCES})
 atlas_set_output_dirs(atlas_editor_module)
 
 target_include_directories(atlas_editor_module PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/ImViewGuizmo
+        ${CMAKE_SOURCE_DIR}/engine/dependencies/glfw/include
 )
 
 target_link_libraries(atlas_editor_module PUBLIC
@@ -21,6 +48,7 @@ target_link_libraries(atlas_editor_module PUBLIC
 )
 
 target_link_libraries(atlas_editor_module PRIVATE
+        imgui
         tinyobjloader
         tinygltf
         lunasvg::lunasvg

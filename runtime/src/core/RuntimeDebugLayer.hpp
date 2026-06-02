@@ -5,12 +5,12 @@
 namespace Atlas::Runtime {
     class RuntimeDebugLayer final : public Layer {
     public:
-        RuntimeDebugLayer() : Layer("RuntimeDebugLayer") {}
+        RuntimeDebugLayer(Window& window);
 
-        void onUpdate(float deltaTime);
-        void onImGuiRender();
+        void onUpdate(float deltaTime) override;
 
     private:
+        Window& window;
         float frameTime = 0.0f;
     };
 }

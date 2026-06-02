@@ -15,6 +15,8 @@ namespace Atlas::Editor {
         void deleteSelected();
 
     private:
+        entt::entity createEntity(entt::registry &registry);
+        std::string nextEntityName(entt::registry &registry) const;
         void drawEntityNode(entt::registry &registry, entt::entity entity);
         void drawVisibilityButton(entt::registry &registry, entt::entity entity);
         void drawDeleteButton(entt::entity entity);

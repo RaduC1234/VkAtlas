@@ -5,6 +5,7 @@
 #include "renderer/Renderer.hpp"
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -20,11 +21,12 @@ namespace Atlas {
         std::filesystem::path projectManifest;
         std::filesystem::path projectModule;
         Renderer::CreateInfo rendererCreateInfo;
+        std::function<void(Window &, float)> onFrame;
     };
 
     class Application {
     public:
-        Application(const ApplicationCreateInfo& specification);
+        Application(const ApplicationCreateInfo &specification);
         ~Application();
 
         Application(const Application &) = delete;

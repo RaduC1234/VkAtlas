@@ -14,7 +14,6 @@
 #include "ui/panels/HierarchyPanel.hpp"
 #include "ui/panels/InspectorPanel.hpp"
 #include "ui/panels/ViewportPanel.hpp"
-#include "ui/panels/RenderSettingsPanel.hpp"
 #include "ui/widgets/MaterialEditor.hpp"
 
 namespace Atlas::Editor {
@@ -63,7 +62,6 @@ namespace Atlas::Editor {
         std::shared_ptr<HierarchyPanel> hierarchyPanel;
         std::shared_ptr<InspectorPanel> inspectorPanel;
         std::shared_ptr<ViewportPanel> viewportPanel;
-        std::shared_ptr<RenderSettingsPanel> renderSettingsPanel;
         std::shared_ptr<AssetExplorerPanel> assetExplorerPanel;
     };
 }

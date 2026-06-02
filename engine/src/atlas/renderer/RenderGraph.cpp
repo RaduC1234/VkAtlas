@@ -1,5 +1,8 @@
 #include "RenderGraph.hpp"
 
+#include <typeinfo>
+
+#include "core/Profiler.hpp"
 #include "Renderer.hpp"
 
 namespace Atlas {
@@ -137,7 +140,10 @@ namespace Atlas {
     }
 
     void RenderGraph::build(entt::registry &registry) {
+        ATLAS_PROFILE_SCOPE("RenderGraph::build");
         for (auto &stage: stages_) {
+            const char *stageName = typeid(*stage).name();
+            ATLAS_PROFILE_SCOPE_DYNAMIC(stageName);
             stage->onUpdate(registry);
         }
     }
@@ -216,14 +222,22 @@ namespace Atlas {
     }
 
     void RenderGraph::render(const FrameContext frameContext, VkDescriptorSet globalSet) {
+        ATLAS_PROFILE_SCOPE("RenderGraph::render");
         for (auto &node: nodes_) {
             // Everything runs on the graphics command buffer.
             // The graphics queue family supports compute operations, so compute
             // stages record vkCmdDispatch into the same command buffer without
             // any queue ownership transfers.
             VkCommandBuffer cmd = frameContext.graphicsCommandBuffer;
+            const char *stageName = typeid(*node.stage).name();
+            ATLAS_PROFILE_SCOPE_DYNAMIC(stageName);
+            ATLAS_PROFILE_GPU_ZONE_DYNAMIC(device.gpuProfilerContext(), cmd, stageName);
 
-            emitBarriers(cmd, node);
+            {
+                ATLAS_PROFILE_SCOPE("RenderGraph::emitBarriers");
+                ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "RenderGraph::Barriers");
+                emitBarriers(cmd, node);
+            }
             node.stage->record(cmd, globalSet);
         }
     }

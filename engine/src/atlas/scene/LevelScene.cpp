@@ -4,6 +4,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "core/Profiler.hpp"
 #include "entity/Object.hpp"
 #include "scene/LevelSerializer.hpp"
 
@@ -24,22 +25,33 @@ namespace Atlas {
         ensureCamera();
         ensureSkybox();
         updateCameras();
-        renderSystem->build(registry);
+        renderSystem->build(registry, registry.get<CameraComponent>(activeCamera()).renderMode);
     }
 
     void LevelScene::onUpdate(float deltaTime) {
+        ATLAS_PROFILE_SCOPE("LevelScene::onUpdate");
         ensureCamera();
         ensureSkybox();
-        cameraSystem->update(registry, deltaTime, renderer.getAspectRatio());
-        updateCameras();
-        renderSystem->build(registry);
+        {
+            ATLAS_PROFILE_SCOPE("LevelScene::cameraSystemUpdate");
+            cameraSystem->update(registry, deltaTime, renderer.getAspectRatio());
+        }
+        {
+            ATLAS_PROFILE_SCOPE("LevelScene::updateCameras");
+            updateCameras();
+        }
+        {
+            ATLAS_PROFILE_SCOPE("LevelScene::renderSystemBuild");
+            renderSystem->build(registry, registry.get<CameraComponent>(activeCamera()).renderMode);
+        }
     }
 
     void LevelScene::onRender(FrameContext frameContext) {
+        ATLAS_PROFILE_SCOPE("LevelScene::onRender");
         const entt::entity entity = activeCamera();
         if (entity != entt::null) {
             const CameraComponent &camera = registry.get<CameraComponent>(entity);
-            renderSystem->render(frameContext, camera.camera.getData(), debugData());
+            renderSystem->render(frameContext, camera.camera.getData(), debugData(), camera.renderMode);
         }
     }
 
