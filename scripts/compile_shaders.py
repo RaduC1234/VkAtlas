@@ -3,7 +3,7 @@ import shutil
 import sys
 from pathlib import Path
 
-SHADER_DIR = Path("assets/shaders")
+SHADER_DIR = Path("engine/assets/shaders")
 
 EXTENSIONS = ["vert", "frag", "comp"]
 RT_EXTENSIONS = ["rchit", "rgen", "rmiss", "rahit", "rint", "rcall"]

@@ -1,17 +1,30 @@
 #define ATLAS_NO_RT_MACROS
 #include "Device.hpp"
 
+#include <algorithm>
+#include <cstring>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_set>
 
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
+#ifdef ATLAS_PROFILE_GPU
+#include <tracy/Tracy.hpp>
+#include <tracy/TracyVulkan.hpp>
+#endif
+
 namespace Atlas {
+    RayTracingFunctions &RayTracingFunctions::get() {
+        static RayTracingFunctions instance;
+        return instance;
+    }
+
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, void *pUserData) {
         const char *message = pCallbackData && pCallbackData->pMessage ? pCallbackData->pMessage : "(no message)";
 
@@ -46,7 +59,7 @@ namespace Atlas {
         }
     }
 
-    const char * Device::vkResultToString(VkResult result) {
+    const char *Device::vkResultToString(VkResult result) {
         switch (result) {
             case VK_SUCCESS: return "VK_SUCCESS";
             case VK_NOT_READY: return "VK_NOT_READY";
@@ -80,22 +93,42 @@ namespace Atlas {
         }
     }
 
-    Device::Device(Window &window) : window_{window} {
+    Device::Device(Window &window, CreateInfo createInfo) : window_{window} {
         createVkInstance();
         setupDebugMessenger();
         createSurface();
         pickPhysicalDevice();
-        createLogicalDevice();
+        createLogicalDevice(createInfo);
         createVmaAllocator();
         createCommandPools();
+        createTransferCommandBuffer();
+        createTransferTimelineSemaphore();
+#if defined(ATLAS_PROFILE_GPU)
+        createGpuProfilerContext();
+#endif
 
         this->executor_ = std::make_unique<ExecutorService>();
     }
 
     Device::~Device() {
+        if (transferTimelineSemaphore_ != VK_NULL_HANDLE) {
+            vkDestroySemaphore(device_, transferTimelineSemaphore_, nullptr);
+        }
+
+        if (transferCommandBuffer_ != VK_NULL_HANDLE) {
+            vkFreeCommandBuffers(device_, transferCommandPool_, 1, &transferCommandBuffer_);
+        }
+
+        vkDestroyCommandPool(device_, transferCommandPool_, nullptr);
         vkDestroyCommandPool(device_, graphicsCommandPool_, nullptr);
         vkDestroyCommandPool(device_, computeCommandPool_, nullptr);
         vmaDestroyAllocator(allocator_);
+#if defined(ATLAS_PROFILE_GPU)
+        if (gpuProfilerContext_ != nullptr) {
+            TracyVkDestroy(gpuProfilerContext_);
+            gpuProfilerContext_ = nullptr;
+        }
+#endif
         vkDestroyDevice(device_, nullptr);
 
         if constexpr (enableValidationLayers) {
@@ -112,7 +145,7 @@ namespace Atlas {
         createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
         createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
         createInfo.pfnUserCallback = debugCallback;
-        createInfo.pUserData = nullptr; // Optional
+        createInfo.pUserData = nullptr;
     }
 
     void Device::createVkInstance() {
@@ -140,7 +173,6 @@ namespace Atlas {
         if constexpr (enableValidationLayers) {
             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers_.size());
             createInfo.ppEnabledLayerNames = validationLayers_.data();
-
             populateDebugMessengerCreateInfo(debugCreateInfo);
             createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *) &debugCreateInfo;
         } else {
@@ -219,7 +251,7 @@ namespace Atlas {
         return best;
     }
 
-    void Device::createLogicalDevice() {
+    void Device::createLogicalDevice(CreateInfo deviceCreateInfo) {
         queueFamilyIndices_ = findQueueFamilies(physicalDevice_);
 
         const std::set<uint32_t> uniqueFamilies = {
@@ -322,7 +354,7 @@ namespace Atlas {
         createInfo.pNext = &feats2;
         createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCIs.size());
         createInfo.pQueueCreateInfos = queueCIs.data();
-        createInfo.pEnabledFeatures = nullptr; // MUST be null when using pNext feature chain
+        createInfo.pEnabledFeatures = nullptr;
         createInfo.enabledExtensionCount = static_cast<uint32_t>(allExts.size());
         createInfo.ppEnabledExtensionNames = allExts.data();
 
@@ -379,7 +411,59 @@ namespace Atlas {
         if (vkCreateCommandPool(device_, &poolInfo, nullptr, &computeCommandPool_) != VK_SUCCESS) {
             throw std::runtime_error("failed to create compute command pool!");
         }
+
+        poolInfo.queueFamilyIndex = queueFamilyIndices.transferFamily.value();
+        poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT | VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        if (vkCreateCommandPool(device_, &poolInfo, nullptr, &transferCommandPool_) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create transfer command pool!");
+        }
     }
+
+    void Device::createTransferCommandBuffer() {
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = transferCommandPool_;
+        allocInfo.commandBufferCount = 1;
+
+        if (vkAllocateCommandBuffers(device_, &allocInfo, &transferCommandBuffer_) != VK_SUCCESS)
+            throw std::runtime_error("failed to allocate transfer command buffer!");
+    }
+
+    void Device::createTransferTimelineSemaphore() {
+        VkSemaphoreTypeCreateInfo typeInfo{};
+        typeInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
+        typeInfo.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+        typeInfo.initialValue = 0;
+
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        semaphoreInfo.pNext = &typeInfo;
+
+        if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &transferTimelineSemaphore_) != VK_SUCCESS)
+            throw std::runtime_error("failed to create transfer timeline semaphore!");
+    }
+
+#if defined(ATLAS_PROFILE_GPU)
+    void Device::createGpuProfilerContext() {
+        ATLAS_PROFILE_SCOPE("Device::createGpuProfilerContext");
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandPool = graphicsCommandPool_;
+        allocInfo.commandBufferCount = 1;
+
+        VkCommandBuffer commandBuffer = VK_NULL_HANDLE;
+        if (vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate Tracy GPU setup command buffer!");
+        }
+
+        gpuProfilerContext_ = TracyVkContext(physicalDevice_, device_, graphicsQueue_, commandBuffer);
+        TracyVkContextName(gpuProfilerContext_, "Graphics Queue", strlen("Graphics Queue"));
+
+        vkFreeCommandBuffers(device_, graphicsCommandPool_, 1, &commandBuffer);
+    }
+#endif
 
     bool Device::checkValidationLayerSupport() {
         uint32_t layerCount;
@@ -390,30 +474,23 @@ namespace Atlas {
 
         for (const char *layerName: validationLayers_) {
             bool layerFound = false;
-
             for (const auto &layerProperties: availableLayers) {
-                if (strcmp(layerName, layerProperties.layerName) == 0) {
+                if (std::strcmp(layerName, layerProperties.layerName) == 0) {
                     layerFound = true;
                     break;
                 }
             }
-
-            if (!layerFound) {
-                return false;
-            }
+            if (!layerFound) return false;
         }
-
         return true;
     }
 
     std::vector<const char *> Device::getRequiredInstanceExtensions() const {
         auto extensions = window_.getRequiredExtensions();
-
         if constexpr (enableValidationLayers) {
             extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
         }
-
-        extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME); // ray tracing
+        extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
         return extensions;
     }
 
@@ -421,19 +498,16 @@ namespace Atlas {
         std::vector<const char *> deviceExtensions;
         deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         deviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-
         deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
-        deviceExtensions.push_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
 
         if constexpr (enableValidationLayers) {
-            deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
-            deviceExtensions.push_back(VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME);
+            /*deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+            deviceExtensions.push_back(VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME);*/
         }
-
         return deviceExtensions;
     }
 
@@ -468,39 +542,30 @@ namespace Atlas {
 
         for (uint32_t i = 0; i < queueFamilies.size(); i++) {
             const auto &family = queueFamilies[i];
-
             if (family.queueCount == 0) continue;
 
-            if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
                 indices.graphicsFamily = i;
-            }
 
             if (surface_ != VK_NULL_HANDLE) {
                 VkBool32 presentSupport = false;
                 vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface_, &presentSupport);
-                if (presentSupport) {
-                    indices.presentFamily = i;
-                }
+                if (presentSupport) indices.presentFamily = i;
             } else {
                 indices.presentFamily = indices.graphicsFamily;
             }
 
-            if ((family.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+            if ((family.queueFlags & VK_QUEUE_COMPUTE_BIT) && !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT))
                 indices.computeFamily = i;
-            }
 
-            if ((family.queueFlags & VK_QUEUE_TRANSFER_BIT) && !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT) && !(family.queueFlags & VK_QUEUE_COMPUTE_BIT)) {
+            if ((family.queueFlags & VK_QUEUE_TRANSFER_BIT) &&
+                !(family.queueFlags & VK_QUEUE_GRAPHICS_BIT) &&
+                !(family.queueFlags & VK_QUEUE_COMPUTE_BIT))
                 indices.transferFamily = i;
-            }
         }
 
-        if (!indices.computeFamily.has_value()) {
-            indices.computeFamily = indices.graphicsFamily;
-        }
-
-        if (!indices.transferFamily.has_value()) {
-            indices.transferFamily = indices.graphicsFamily;
-        }
+        if (!indices.computeFamily.has_value()) indices.computeFamily = indices.graphicsFamily;
+        if (!indices.transferFamily.has_value()) indices.transferFamily = indices.graphicsFamily;
 
         return indices;
     }
@@ -510,28 +575,20 @@ namespace Atlas {
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
 
         std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-        vkEnumerateDeviceExtensionProperties(
-            device,
-            nullptr,
-            &extensionCount,
-            availableExtensions.data());
+        vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
         auto deviceExtensions = getRequiredDeviceExtensions();
         std::set<std::string> requiredExtensions(deviceExtensions.begin(), deviceExtensions.end());
 
-        for (const auto &extension: availableExtensions) {
+        for (const auto &extension: availableExtensions)
             requiredExtensions.erase(extension.extensionName);
-        }
 
         return requiredExtensions.empty();
     }
 
     SwapChainSupportDetails Device::querySwapChainSupport(VkPhysicalDevice device) {
         SwapChainSupportDetails details;
-
-        if (surface_ == VK_NULL_HANDLE) {
-            return details;
-        }
+        if (surface_ == VK_NULL_HANDLE) return details;
 
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface_, &details.capabilities);
 
@@ -569,20 +626,20 @@ namespace Atlas {
             VkFormatProperties props;
             vkGetPhysicalDeviceFormatProperties(physicalDevice_, format, &props);
 
-            if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
+            if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features)
                 return format;
-            } else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
+            else if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features)
                 return format;
-            }
         }
         throw std::runtime_error("failed to find supported format!");
     }
 
-    VkCommandBuffer Device::beginSingleTimeCommands() {
+    VkCommandBuffer Device::beginGraphicsCommands() {
+        ATLAS_PROFILE_SCOPE("Device::beginGraphicsCommands");
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandPool = graphicsCommandPool_; // use graphics for now until asset streaming is implemented
+        allocInfo.commandPool = graphicsCommandPool_;
         allocInfo.commandBufferCount = 1;
 
         VkCommandBuffer commandBuffer;
@@ -596,7 +653,15 @@ namespace Atlas {
         return commandBuffer;
     }
 
-    void Device::endSingleTimeCommands(VkCommandBuffer commandBuffer) const {
+    void Device::endGraphicsCommands(VkCommandBuffer commandBuffer) const {
+        ATLAS_PROFILE_SCOPE("Device::endGraphicsCommands");
+        submitGraphicsCommands(commandBuffer, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue_);
+        freeGraphicsCommandBuffer(commandBuffer);
+    }
+
+    void Device::submitGraphicsCommands(VkCommandBuffer commandBuffer, VkFence fence) const {
+        ATLAS_PROFILE_SCOPE("Device::submitGraphicsCommands");
         vkEndCommandBuffer(commandBuffer);
 
         VkSubmitInfo submitInfo{};
@@ -604,10 +669,93 @@ namespace Atlas {
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &commandBuffer;
 
-        vkQueueSubmit(graphicsQueue_, 1, &submitInfo, VK_NULL_HANDLE);
-        vkQueueWaitIdle(graphicsQueue_);
+        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, fence) != VK_SUCCESS) {
+            throw std::runtime_error("failed to submit graphics command buffer!");
+        }
+    }
 
+    void Device::freeGraphicsCommandBuffer(VkCommandBuffer commandBuffer) const {
         vkFreeCommandBuffers(device_, graphicsCommandPool_, 1, &commandBuffer);
+    }
+
+    Device::TransferCmd Device::beginTransferCommands() {
+        ATLAS_PROFILE_SCOPE("Device::beginTransferCommands");
+        if (lastTransferTimelineValue_ > 0 && !isTransferComplete(lastTransferTimelineValue_)) {
+            VkSemaphoreWaitInfo waitInfo{};
+            waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+            waitInfo.semaphoreCount = 1;
+            waitInfo.pSemaphores = &transferTimelineSemaphore_;
+            waitInfo.pValues = &lastTransferTimelineValue_;
+            vkWaitSemaphores(device_, &waitInfo, UINT64_MAX);
+        }
+
+        if (vkResetCommandBuffer(transferCommandBuffer_, 0) != VK_SUCCESS)
+            throw std::runtime_error("failed to reset transfer command buffer!");
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        if (vkBeginCommandBuffer(transferCommandBuffer_, &beginInfo) != VK_SUCCESS)
+            throw std::runtime_error("failed to begin transfer command buffer!");
+
+        return {transferCommandBuffer_};
+    }
+
+    uint64_t Device::endTransferCommands(TransferCmd cmd, std::function<void(uint64_t)> onComplete) {
+        ATLAS_PROFILE_SCOPE("Device::endTransferCommands");
+
+        if (vkEndCommandBuffer(cmd.buffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to end transfer command buffer!");
+        }
+
+        const uint64_t signalValue = nextTransferTimelineValue_++;
+
+        VkTimelineSemaphoreSubmitInfo timelineInfo{};
+        timelineInfo.sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO;
+        timelineInfo.signalSemaphoreValueCount = 1;
+        timelineInfo.pSignalSemaphoreValues = &signalValue;
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.pNext = &timelineInfo;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &cmd.buffer;
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = &transferTimelineSemaphore_;
+
+        if (vkQueueSubmit(transferQueue_, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS)
+            throw std::runtime_error("failed to submit transfer command buffer!");
+
+        lastTransferTimelineValue_ = signalValue;
+
+        if (onComplete) {
+            pendingTransferCallback_ = std::move(onComplete);
+            pendingTransferSignalValue_ = signalValue;
+        }
+
+        return signalValue;
+    }
+
+    bool Device::isTransferComplete(uint64_t timelineValue) const {
+        if (timelineValue == 0) return true;
+
+        uint64_t completedValue = 0;
+        if (vkGetSemaphoreCounterValue(device_, transferTimelineSemaphore_, &completedValue) != VK_SUCCESS)
+            throw std::runtime_error("failed to read transfer timeline semaphore!");
+
+        return completedValue >= timelineValue;
+    }
+
+    void Device::pollTransferCallbacks() {
+        if (!pendingTransferCallback_) return;
+        if (!isTransferComplete(pendingTransferSignalValue_)) return;
+
+        const uint64_t signalValue = pendingTransferSignalValue_;
+        auto callback = std::move(pendingTransferCallback_);
+        pendingTransferCallback_ = nullptr;
+        pendingTransferSignalValue_ = 0;
+        callback(signalValue);
     }
 } // namespace Atlas
 

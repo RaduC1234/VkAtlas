@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "name": "{{STARTUP_LEVEL}}",
+  "entities": [
+    {
+      "id": "camera",
+      "name": "Camera",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "translation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 3.0
+          },
+          "scale": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        "Camera": {}
+      }
+    },
+    {
+      "id": "skybox",
+      "name": "Skybox",
+      "parent": null,
+      "components": {
+        "Skybox": {}
+      }
+    }
+  ]
+}

@@ -3,10 +3,7 @@
 #include <memory>
 #include <string>
 #include <mutex>
-
-#include <fmt/color.h>
-#include <fmt/format.h>
-#include <fmt/args.h>
+#include <format>
 
 namespace Atlas {
     enum class LogLevel {
@@ -21,9 +18,7 @@ namespace Atlas {
     public:
         static void init();
 
-        static std::shared_ptr<Log> &getCoreLogger() {
-            return coreLogger;
-        }
+        static std::shared_ptr<Log> &getCoreLogger();
 
         void setLogLevel(LogLevel level) {
             logLevel = level;
@@ -34,10 +29,8 @@ namespace Atlas {
         void log(LogLevel level, const std::string &message);
 
         template<typename... Args>
-        void log(LogLevel level, const std::string &format, Args &&... args) {
-            fmt::dynamic_format_arg_store<fmt::format_context> store;
-            (store.push_back(std::forward<Args>(args)), ...);
-            auto message = fmt::vformat(format, store);
+        void log(LogLevel level, const std::string &formatString, Args &&... args) {
+            auto message = std::vformat(formatString, std::make_format_args(args...));
             log(level, message);
         }
 
@@ -46,10 +39,7 @@ namespace Atlas {
         LogLevel logLevel = LogLevel::Trace;
         std::mutex logMutex;
 
-    private:
         std::string getLogPrefix(LogLevel level);
-
-        fmt::color getLogColor(LogLevel level);
     };
 }
 

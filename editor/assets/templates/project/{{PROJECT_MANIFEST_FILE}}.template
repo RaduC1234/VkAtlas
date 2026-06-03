@@ -1,0 +1,9 @@
+{
+  "name": "{{PROJECT_NAME}}",
+  "engineVersion": "{{ENGINE_VERSION}}",
+  "assetRoot": "assets",
+  "startupLevel": "{{STARTUP_LEVEL_PATH}}",
+  "levels": [
+    "{{STARTUP_LEVEL_PATH}}"
+  ]
+}

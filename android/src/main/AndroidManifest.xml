@@ -25,7 +25,7 @@
 
             <meta-data
                     android:name="android.app.lib_name"
-                    android:value="atlas_engine"/>
+                    android:value="atlas_runtime"/>
         </activity>
     </application>
 

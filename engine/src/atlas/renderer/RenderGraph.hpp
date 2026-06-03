@@ -8,7 +8,7 @@
 
 #include "Device.hpp"
 #include "Renderer.hpp"
-#include "stage/IRenderStage.hpp"
+#include "stage/RenderStage.hpp"
 
 namespace Atlas {
     class RenderGraph {
@@ -26,7 +26,7 @@ namespace Atlas {
                 return *this;
             }
 
-            Builder &addStage(std::unique_ptr<IRenderStage> stage) {
+            Builder &addStage(std::unique_ptr<RenderStage> stage) {
                 stages_.push_back(std::move(stage));
                 return *this;
             }
@@ -43,7 +43,7 @@ namespace Atlas {
             Device &device;
             uint32_t width_ = 0;
             uint32_t height_ = 0;
-            std::vector<std::unique_ptr<IRenderStage> > stages_;
+            std::vector<std::unique_ptr<RenderStage> > stages_;
         };
 
         RenderGraph(const RenderGraph &) = delete;
@@ -71,7 +71,7 @@ namespace Atlas {
         };
 
         struct Node {
-            IRenderStage *stage = nullptr;
+            RenderStage *stage = nullptr;
             std::vector<std::string> inputs;
             std::vector<std::string> outputs;
             std::vector<Node *> dependsOn;
@@ -87,19 +87,19 @@ namespace Atlas {
         void emitBarriers(VkCommandBuffer cmd, const Node &node) const;
 
         static void topoSort(std::vector<Node> &nodes);
-        static VkImageLayout writeLayoutFor(IRenderStage::Resource::Type type);
-        static VkImageLayout readLayoutFor(IRenderStage::Resource::Type type);
+        static VkImageLayout writeLayoutFor(RenderStage::Resource::Type type);
+        static VkImageLayout readLayoutFor(RenderStage::Resource::Type type);
         static VkAccessFlags writeAccessFor(VkImageLayout layout);
         static VkPipelineStageFlags writeStageFor(VkImageLayout layout);
-        static VkImageAspectFlags aspectFor(IRenderStage::Resource::Type type);
+        static VkImageAspectFlags aspectFor(RenderStage::Resource::Type type);
 
         Device &device;
         Mode mode;
         uint32_t width;
         uint32_t height;
 
-        std::vector<std::unique_ptr<IRenderStage> > stages_;
+        std::vector<std::unique_ptr<RenderStage> > stages_;
         std::vector<Node> nodes_;
-        std::unordered_map<std::string, IRenderStage::Resource> ownedResources_;
+        std::unordered_map<std::string, RenderStage::Resource> ownedResources_;
     };
 } // namespace Atlas

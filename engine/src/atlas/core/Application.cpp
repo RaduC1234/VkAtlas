@@ -1,55 +1,65 @@
-#include "Application.hpp"
-
-// std
-#include <chrono>
-
-#include "asset/AssetManager.hpp"
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-
-#include "scene/OfficeScene.hpp"
+#include "core/Application.hpp"
+#include "core/Profiler.hpp"
 
 namespace Atlas {
-    Application::Application(const ApplicationSpecification &specification) : specification(specification), renderer(Renderer::Settings{.windowSettings = Window::Settings{.title = specification.name}}) {
-        this->renderer.window().setWindowIcon("assets/icons/android_robot.png");
-        this->renderer.window().setTheme(Window::Theme::DARK);
-
-        currentScene = std::make_unique<OfficeScene>(renderer);
-
-        if (currentScene) {
-            currentScene->onLoad(NULL);
-        }
+    Application::Application(const ApplicationCreateInfo& specification) : specification_(std::move(specification)), renderer_(specification_.rendererCreateInfo), assetManager_(renderer_.resourceManager()) {
+        renderer_.window().setTheme(Window::Theme::Dark);
     }
 
     Application::~Application() {
-        if (currentScene) {
-            currentScene->onDelete();
-        }
+        layers_.clear();
     }
 
     void Application::run() {
+        ATLAS_PROFILE_THREAD("Main Thread");
         auto currentTime = std::chrono::high_resolution_clock::now();
 
-        while (!renderer.window().shouldClose()) {
-            renderer.window().pollEvents();
+        while (!renderer_.window().shouldClose()) {
+            ATLAS_PROFILE_SCOPE("Application::frame");
 
-            auto newTime = std::chrono::high_resolution_clock::now();
-            float deltaTime = std::chrono::duration_cast<std::chrono::duration<float> >(newTime - currentTime).count();
-            currentTime = newTime;
-
-            FrameContext frame = renderer.beginFrame();
-            if (frame.graphicsCommandBuffer == VK_NULL_HANDLE)
-                continue;
-
-            if (currentScene) {
-                currentScene->onUpdate(deltaTime);
-                currentScene->onRender(frame);
+            {
+                ATLAS_PROFILE_SCOPE("Application::pollEvents");
+                renderer_.window().pollEvents();
             }
 
-            renderer.endFrame();
+            auto newTime = std::chrono::high_resolution_clock::now();
+            const float deltaTime = std::chrono::duration_cast<std::chrono::duration<float>>(newTime - currentTime).count();
+            currentTime = newTime;
+
+            if (specification_.onFrame) {
+                ATLAS_PROFILE_SCOPE("Application::onFrame");
+                specification_.onFrame(renderer_.window(), deltaTime);
+            }
+
+            {
+                ATLAS_PROFILE_SCOPE("Application::assetUpdate");
+                assetManager_.update();
+            }
+
+            FrameContext frame = renderer_.beginFrame();
+            if (frame.graphicsCommandBuffer == VK_NULL_HANDLE) {
+                continue;
+            }
+
+            for (const auto &layer: layers_) {
+                const std::string zoneName = layer->getName() + "::onUpdate";
+                ATLAS_PROFILE_SCOPE_DYNAMIC(zoneName.c_str());
+                layer->onUpdate(deltaTime);
+            }
+
+            for (const auto &layer: layers_) {
+                const std::string zoneName = layer->getName() + "::onRender";
+                ATLAS_PROFILE_SCOPE_DYNAMIC(zoneName.c_str());
+                layer->onRender(frame);
+            }
+
+            {
+                ATLAS_PROFILE_SCOPE("Application::endFrame");
+                renderer_.endFrame();
+            }
+            ATLAS_PROFILE_FRAME();
         }
 
-        vkDeviceWaitIdle(renderer.device().device());
+        vkDeviceWaitIdle(renderer_.device().device());
     }
-} // namespace
+}

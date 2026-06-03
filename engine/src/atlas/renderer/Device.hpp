@@ -1,9 +1,14 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <vector>
-
 #include <vk_mem_alloc.h>
+
+#if defined(ATLAS_PROFILE_GPU)
+#include <tracy/TracyVulkan.hpp>
+#endif
+
 #include "core/Window.hpp"
 #include "utils/ExecutorService.hpp"
 
@@ -14,6 +19,7 @@ namespace Atlas {
     constexpr bool enableValidationLayers = true;
 #endif
 
+#pragma region RayTracingFunctions
     struct RayTracingFunctions {
         PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
         PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
@@ -41,11 +47,9 @@ if (!name) throw std::runtime_error("Failed to load " #name);
 #undef LOAD
         }
 
-        static RayTracingFunctions &get() {
-            static RayTracingFunctions instance;
-            return instance;
-        }
+        static RayTracingFunctions &get();
     };
+#pragma endregion
 
     struct SwapChainSupportDetails {
         VkSurfaceCapabilitiesKHR capabilities{};
@@ -66,7 +70,11 @@ if (!name) throw std::runtime_error("Failed to load " #name);
 
     class Device {
     public:
-        Device(Window &window);
+        struct CreateInfo {
+            bool enableRayTracing = false;
+        };
+
+        Device(Window &window, CreateInfo createInfo);
         ~Device();
 
         Device(const Device &) = delete;
@@ -82,6 +90,8 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         VkQueue transferQueue() const { return transferQueue_; }
         VkCommandPool getGraphicsCommandPool() const { return graphicsCommandPool_; }
         VkCommandPool getComputeCommandPool() const { return computeCommandPool_; }
+        VkCommandPool getTransferCommandPool() const { return transferCommandPool_; }
+        VkSemaphore transferTimelineSemaphore() const { return transferTimelineSemaphore_; }
         const VkInstance &getInstance() const { return vkInstance_; }
         const VkPhysicalDevice &getPhysicalDevice() const { return physicalDevice_; }
         const VmaAllocator &allocator() const { return allocator_; }
@@ -93,14 +103,35 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         QueueFamilyIndices findPhysicalQueueFamilies() { return findQueueFamilies(physicalDevice_); }
         const QueueFamilyIndices &queueFamilyIndices() const { return queueFamilyIndices_; }
         const VkPhysicalDeviceRayTracingPipelinePropertiesKHR &rayTracingPipelineProperties() const { return rtPipelineProperties_; }
+        const VkPhysicalDeviceAccelerationStructurePropertiesKHR &accelerationStructureProperties() const { return accelStructureProperties_; }
+#if defined(ATLAS_PROFILE_GPU)
+        TracyVkCtx gpuProfilerContext() const { return gpuProfilerContext_; }
+#endif
 
         uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
         VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 
-        VkCommandBuffer beginSingleTimeCommands();
-        void endSingleTimeCommands(VkCommandBuffer commandBuffer) const;
+        // Single time commands — synchronous, graphics queue
+        VkCommandBuffer beginGraphicsCommands();
+        void endGraphicsCommands(VkCommandBuffer commandBuffer) const;
+        void submitGraphicsCommands(VkCommandBuffer commandBuffer, VkFence fence) const;
+        void freeGraphicsCommandBuffer(VkCommandBuffer commandBuffer) const;
+
+        // Transfer commands — async, transfer queue, one at a time
+        struct TransferCmd {
+            VkCommandBuffer buffer;
+        };
+
+        TransferCmd beginTransferCommands();
+        uint64_t endTransferCommands(TransferCmd cmd,
+                                     std::function<void(uint64_t)> onComplete = nullptr);
+
+        bool isTransferComplete(uint64_t timelineValue) const;
+        void pollTransferCallbacks();
+        uint64_t currentTransferTimelineValue() const { return nextTransferTimelineValue_ - 1; }
 
         static const char *vkResultToString(VkResult result);
+
     private:
         static constexpr uint32_t APPLICATION_VERSION = VK_MAKE_VERSION(1, 0, 0);
         static constexpr const char *APPLICATION_NAME = "Atlas Engine";
@@ -109,9 +140,14 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         void setupDebugMessenger();
         void createSurface();
         void pickPhysicalDevice();
-        void createLogicalDevice();
+        void createLogicalDevice(CreateInfo createInfo);
         void createVmaAllocator();
         void createCommandPools();
+        void createTransferCommandBuffer();
+        void createTransferTimelineSemaphore();
+#if defined(ATLAS_PROFILE_GPU)
+        void createGpuProfilerContext();
+#endif
 
         bool checkValidationLayerSupport();
         std::vector<const char *> getRequiredInstanceExtensions() const;
@@ -122,6 +158,7 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         bool checkDeviceExtensionSupport(VkPhysicalDevice device);
         void outputRequiredInstanceExtensions(const std::vector<const char *> &required);
         SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
+
 
         VkInstance vkInstance_ = VK_NULL_HANDLE;
         VkDebugUtilsMessengerEXT debugMessenger_ = VK_NULL_HANDLE;
@@ -135,10 +172,24 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         QueueFamilyIndices queueFamilyIndices_;
         VkCommandPool graphicsCommandPool_ = VK_NULL_HANDLE;
         VkCommandPool computeCommandPool_ = VK_NULL_HANDLE;
+        VkCommandPool transferCommandPool_ = VK_NULL_HANDLE;
+
+        // Single transfer command buffer — reset and reused each update()
+        VkCommandBuffer transferCommandBuffer_ = VK_NULL_HANDLE;
+        uint64_t lastTransferTimelineValue_ = 0;
+        VkSemaphore transferTimelineSemaphore_ = VK_NULL_HANDLE;
+        uint64_t nextTransferTimelineValue_ = 1;
+
+        std::function<void(uint64_t)> pendingTransferCallback_;
+        uint64_t pendingTransferSignalValue_ = 0;
+
         VmaAllocator allocator_ = VK_NULL_HANDLE;
 
         VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtPipelineProperties_{};
         VkPhysicalDeviceAccelerationStructurePropertiesKHR accelStructureProperties_{};
+#if defined(ATLAS_PROFILE_GPU)
+        TracyVkCtx gpuProfilerContext_ = nullptr;
+#endif
 
         Window &window_;
         std::unique_ptr<ExecutorService> executor_;

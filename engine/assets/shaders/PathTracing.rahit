@@ -1,0 +1,64 @@
+#version 460
+#extension GL_EXT_ray_tracing          : require
+#extension GL_EXT_nonuniform_qualifier : require
+#extension GL_EXT_scalar_block_layout  : require
+
+struct Vertex {
+    vec3 position;
+    vec3 color;
+    vec3 normal;
+    vec2 uv;
+    vec4 tangent;
+};
+
+struct ObjectData {
+    mat4  modelMatrix;
+    mat4  normalMatrix;
+    uvec4 textureIndices;
+    vec4  baseColor;
+    vec4  materialFactors;
+    vec4  sheenColorStrength;
+    uint  firstIndex;
+    uint  indexCount;
+    uint  firstVertex;
+    uint  flags;
+};
+
+const uint MATERIAL_FLAG_ALPHA_MASKED = 1u << 0u;
+
+layout(scalar, set = 1, binding = 2) readonly buffer VertexBuffer { Vertex vertices[]; };
+layout(scalar, set = 1, binding = 3) readonly buffer IndexBuffer  { uint   indices[];  };
+layout(scalar, set = 1, binding = 4) readonly buffer ObjectBuffer { ObjectData objects[]; };
+layout(set = 1, binding = 6) uniform sampler2D textures[];
+
+layout(location = 1) rayPayloadInEXT bool shadowPayload;
+
+hitAttributeEXT vec2 barycentrics;
+
+void main() {
+    ObjectData obj = objects[gl_InstanceCustomIndexEXT];
+
+    if ((obj.flags & MATERIAL_FLAG_ALPHA_MASKED) != 0u) {
+        uint i0 = indices[obj.firstIndex + gl_PrimitiveID * 3 + 0];
+        uint i1 = indices[obj.firstIndex + gl_PrimitiveID * 3 + 1];
+        uint i2 = indices[obj.firstIndex + gl_PrimitiveID * 3 + 2];
+
+        Vertex v0 = vertices[obj.firstVertex + i0];
+        Vertex v1 = vertices[obj.firstVertex + i1];
+        Vertex v2 = vertices[obj.firstVertex + i2];
+
+        vec3 bary = vec3(1.0 - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
+        vec2 uv = v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z;
+
+        float alpha = obj.textureIndices.x == 0u
+            ? obj.baseColor.a
+            : texture(textures[nonuniformEXT(obj.textureIndices.x)], uv).a * obj.baseColor.a;
+        if (alpha < 0.5) {
+            ignoreIntersectionEXT;
+            return;
+        }
+    }
+
+    shadowPayload = true;
+    terminateRayEXT;
+}

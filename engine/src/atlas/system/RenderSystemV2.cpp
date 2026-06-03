@@ -1,27 +1,28 @@
 #include "RenderSystemV2.hpp"
 
-#include <ranges>
-#include <unordered_set>
-
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
+#include "renderer/stage/CullingStage.hpp"
 #include "renderer/stage/GeometryStage.hpp"
 #include "renderer/stage/OutputStage.hpp"
 #include "renderer/stage/PathTracingStage.hpp"
 #include "renderer/stage/PostProcessingStage.hpp"
 
 namespace Atlas {
-    RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer) : device(device) {
+    RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer, AssetManager &assets) : device(device), renderer(renderer) {
         createGlobalUbo();
 
         auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
-            .addStage<GeometryStage>(device, *globalSetLayout)
-            .addStage<PostProcessPass>(device, *globalSetLayout)
+            .addStage<CullingStage>(device, assets)
+            .addStage<GeometryStage>(device, assets, *globalSetLayout)
+            .addStage<PostProcessPass>(device, *globalSetLayout, false)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));
 
         auto rayTracingGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
-            .addStage<PathTracingStage>(device, *globalSetLayout)
+            .addStage<PathTracingStage>(device, assets, *globalSetLayout)
+            .addStage<PostProcessPass>(device, *globalSetLayout, true)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));
@@ -30,35 +31,36 @@ namespace Atlas {
         renderGraphs[ViewMode::PATH_TRACING] = std::move(rayTracingGraph);
     }
 
-
-    void RenderSystemV2::build(entt::registry &registry) {
-        std::unordered_set<RenderGraph *> built;
-
-        for (auto &graph: renderGraphs | std::views::values) {
-            if (built.insert(graph.get()).second) {
-                graph->build(registry);
-            }
-        }
+    void RenderSystemV2::build(entt::registry &registry, ViewMode viewMode) {
+        ATLAS_PROFILE_SCOPE("RenderSystemV2::build");
+        renderGraphs.at(viewMode)->build(registry);
     }
 
-    void RenderSystemV2::render(const FrameContext frameContext,const Camera::Data &cameraData,const DebugData &debugData) const {
+    void RenderSystemV2::render(const FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData, const ViewMode viewMode) const {
+        ATLAS_PROFILE_SCOPE("RenderSystemV2::render");
         GlobalUbo globalUbo{};
         globalUbo.cameraData = cameraData;
-        globalUbo.debugData = debugData;
-        globalUboBuffers[frameContext.index]->uploadData(&globalUbo, sizeof(GlobalUbo));
+        globalUbo.debugData.irradianceMultiplier = debugData.irradianceMultiplier;
+        globalUbo.debugData.exposureMultiplier = debugData.exposureMultiplier;
+        globalUbo.debugData.viewMode = viewMode;
 
-        renderGraphs.at(debugData.viewMode)->render(frameContext, globalDescriptorSets[frameContext.index]);
+        {
+            ATLAS_PROFILE_SCOPE("RenderSystemV2::uploadGlobalUbo");
+            globalUboBuffers[frameContext.index]->uploadData(&globalUbo, sizeof(GlobalUbo));
+        }
+
+        renderGraphs.at(viewMode)->render(frameContext, globalDescriptorSets[frameContext.index]);
     }
 
     void RenderSystemV2::createGlobalUbo() {
         globalSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL)
-                .build();
+            .addBinding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_ALL)
+            .build();
 
         globalPool = DescriptorPool::Builder(device)
-                .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
-                .build();
+            .setMaxSets(SwapChain::MAX_FRAMES_IN_FLIGHT)
+            .addPoolSize(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, SwapChain::MAX_FRAMES_IN_FLIGHT)
+            .build();
 
         globalUboBuffers.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
         globalDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
@@ -78,8 +80,8 @@ namespace Atlas {
 
             auto bufferInfo = globalUboBuffers[i]->descriptorInfo();
             DescriptorWriter(*globalSetLayout, *globalPool)
-                    .writeBuffer(0, &bufferInfo)
-                    .build(globalDescriptorSets[i]);
+                .writeBuffer(0, &bufferInfo)
+                .build(globalDescriptorSets[i]);
         }
     }
 } // namespace Atlas

@@ -1,326 +1,263 @@
 #pragma once
 
+#include <algorithm>
+#include <concepts>
+#include <cstddef>
 #include <filesystem>
-#include <string>
-#include <vector>
+#include <fstream>
 #include <memory>
-#include <tiny_gltf.h>
+#include <mutex>
+#include <string>
+#include <type_traits>
 #include <unordered_map>
-#include <entt/entity/registry.hpp>
+#include <utility>
+#include <vector>
 
-#include "accessors/IAssetAccessor.hpp"
+#include "Cubemap.hpp"
+#include "AssetHandle.hpp"
+#include "Material.hpp"
+#include "Mesh.hpp"
+#include "Texture.hpp"
 #include "core/Log.hpp"
-#include "renderer/resources/Cubemap.hpp"
-#include "renderer/resources/Mesh.hpp"
-#include "renderer/resources/Sampler.hpp"
+
 
 namespace Atlas {
-    /**
-     * @brief Abstract base class for platform-agnostic asset management
-     *
-     * This class provides a singleton pattern for platform-specific
-     * asset manager implementations.
-     */
+    class ResourceManager;
 
-    using AssetHandle = int32_t;
-    constexpr AssetHandle INVALID_ASSET_HANDLE = -1;
+    template<typename T>
+    concept FileLoadable = (std::signed_integral<T> || std::unsigned_integral<T> || std::same_as<T, std::byte>) && !std::same_as<T, bool>;
 
     class AssetManager {
     public:
-#pragma region Class methods
-        virtual ~AssetManager() = default;
+        explicit AssetManager(ResourceManager &resourceManager);
+        ~AssetManager();
 
-        /**
-         * @brief Create the singleton instance of AssetManager
-         * @param device Vulkan device reference
-         * @param nativeApp Platform-specific application handle (android_app* on Android, nullptr on desktop)
-         * @return Reference to the created AssetManager instance
-         */
-        static AssetManager &create(Device &device, void *nativeApp = nullptr);
+        AssetManager(const AssetManager &) = delete;
+        AssetManager &operator=(const AssetManager &) = delete;
+        AssetManager(AssetManager &&) = delete;
+        AssetManager &operator=(AssetManager &&) = delete;
 
-        /**
-         * @brief Get the singleton instance of AssetManager
-         * @return Reference to the AssetManager instance
-         */
-        static AssetManager &get();
+        template<AssetType T>
+        AssetHandle<T> store(std::shared_ptr<T> asset, const std::string &virtualPath);
 
-        /**
-         * @brief Reset and destroy the singleton instance
-         */
-        static void destroy();
+        template<AssetType T>
+        AssetHandle<T> store(const std::string &virtualPath);
 
-#pragma endregion
+        template<AssetType T>
+        AssetHandle<T> find(const std::string &virtualPath);
 
-#pragma region Loaders
-        /**
-         * @brief Load a texture and return its handle
-         * @param virtualPath Virtual path to the texture (e.g., "textures/wood.png")
-         * @param format
-         * @param addressMode
-         * @return AssetHandle for the loaded texture
-         */
-        AssetHandle loadTexture(const std::string &virtualPath, VkFormat format = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
-        /**
-         * @brief Load a skybox/cubemap asset and return its handle
-         *
-         * This overload accepts a single HDR/equirectangular image or a cubemap descriptor path.
-         * If an equirectangular HDR is provided the implementation should convert it to a cubemap.
-         *
-         * @param virtualPath Path to an HDR or cubemap resource
-         * @return AssetHandle for the created/loaded cubemap, or INVALID_ASSET_HANDLE on failure
-         */
-        AssetHandle loadCubemap(const std::string &virtualPath);
+        template<AssetType T>
+        std::vector<std::string> assetPaths();
 
-        /**
-         * @brief Load a cubemap from six individual face images and return its handle
-         *
-         * Faces are provided in the order: right, left, top, bottom, front, back.
-         *
-         * @return AssetHandle for the created cubemap, or INVALID_ASSET_HANDLE on failure
-         */
-        AssetHandle loadCubemap(const std::string &right, const std::string &left, const std::string &top, const std::string &bottom, const std::string &front, const std::string &back);
-#pragma endregion
+        std::filesystem::path rootPath() const;
+        void overwriteRootPath(const std::filesystem::path &path);
 
-#pragma region Creators
-        /**
-         * @brief Create a procedural sphere mesh and return its handle
-         * @param radius Sphere radius
-         * @param segments Number of horizontal segments
-         * @param rings Number of vertical rings
-         * @return AssetHandle for the created sphere mesh
-         */
-        AssetHandle createSphere(float radius = 1.0f, uint32_t segments = 32, uint32_t rings = 16);
+        void update();
+        void clearCaches();
 
-        /**
-         * @brief Create a procedural cube mesh and return its handle
-         * @param size Cube size
-         * @return AssetHandle for the created cube mesh
-         */
-        AssetHandle createCube(float size = 1.0f);
-
-        /**
-         * @brief Create a simple procedural plane mesh and return its handle
-         *
-         * Generates a single quad (two triangles) centered at the origin, aligned
-         * to the XZ plane (Y up). The details (normals, UVs) are created by the
-         * implementation.
-         *
-         * @param width Plane width along X
-         * @param height Plane height along Z
-         * @return AssetHandle for the created plane mesh
-         */
-        AssetHandle createPlane(float width = 1, float height = 1);
-
-        /**
-         * @brief Create a default white 1x1 texture and return its handle
-         * @return AssetHandle for the created white texture
-         */
-        AssetHandle createDefaultWhiteTexture();
-#pragma endregion
-
-#pragma region Getters
-        /**
-         * @brief Get texture by handle
-         * @param handle Asset handle
-         * @return Shared pointer to Sampler, or nullptr if not found
-         */
-        std::shared_ptr<Sampler> getTexture(AssetHandle handle);
-
-        /**
-         * @brief Get mesh by handle
-         * @param handle Asset handle
-         * @return Shared pointer to Mesh, or nullptr if not found
-         */
-        std::shared_ptr<Mesh> getMesh(AssetHandle handle);
-
-        /**
-         * @brief Get cubemap/cube texture by handle
-         * @param handle Asset handle
-         * @return Shared pointer to Cubemap, or nullptr if not found
-         */
-        std::shared_ptr<Cubemap> getCubemap(AssetHandle handle);
-
-        /**
-         * @brief Get the virtual path for a given handle (for debugging)
-         * @param handle Asset handle
-         * @return Virtual path string
-         */
-        [[nodiscard]] std::string getPath(AssetHandle handle) const;
-
-        AssetHandle getHandle(const std::string &virtualPath) const;
-
-        /**
-         * @brief Create or return an existing mesh from raw vertex/index data
-         *
-         * This helper checks internal hashes/pools and either returns an existing
-         * handle for identical geometry or creates a new Mesh asset, stores it in
-         * the mesh pool and returns the new handle.
-         *
-         * @param vertices Vertex list for the mesh
-         * @param indices Index list for the mesh
-         * @param virtualPath Optional virtual path used for debugging/lookup
-         * @return AssetHandle referring to the created or existing mesh
-         */
-        AssetHandle getOrCreateMesh(const std::vector<Mesh::Vertex> &vertices, const std::vector<uint32_t> &indices, const std::string &virtualPath);
-
-        /**
-         * @brief Create or return an existing texture from raw pixel data
-         *
-         * Checks internal pools and hashes to deduplicate identical textures. If
-         * none exists it creates a new Sampler asset and stores it in the texture pool.
-         *
-         * @param pixels Pointer to RGBA/encoded pixel data
-         * @param width Texture width
-         * @param height Texture height
-         * @param format Vulkan pixel format of the provided data
-         * @param virtualPath Optional virtual path used for debugging/lookup
-         * @return AssetHandle referring to the created or existing texture
-         */
-        AssetHandle getOrCreateTexture(const unsigned char *pixels, uint32_t width, uint32_t height, VkFormat format, const std::string &virtualPath);
-#pragma endregion
-
-#pragma region Deleters
-        /**
-         * @brief Free a texture asset and release GPU memory
-         *
-         * Removes the texture from internal pools, clears all lookup maps (pathToHandle,
-         * handleToPath, hashToHandle), and releases the shared_ptr. This allows the
-         * texture's destructor to free GPU memory (VkImage, VkImageView, VkDeviceMemory).
-         *
-         * @param handle Asset handle to free
-         * @return true if asset was freed, false if handle was invalid or not found
-         *
-         * @note This is safe to call even if other systems hold references to the texture.
-         *       GPU memory will only be freed when the last shared_ptr is released.
-         *
-         * @warning Do not call this for assets still referenced by active entities in the scene.
-         *          Ensure all MaterialComponent references are updated before freeing.
-         *
-         * Example usage:
-         * @code
-         * AssetHandle texHandle = AssetManager::get().loadTexture("textures/old_texture.png");
-         * // ... use texture ...
-         * if (AssetManager::get().freeTexture(texHandle)) {
-         *     AT_INFO("Texture freed successfully");
-         * }
-         * @endcode
-         */
-        bool freeTexture(AssetHandle handle);
-
-        /**
-         * @brief Free a mesh asset and release GPU memory
-         *
-         * Removes the mesh from internal pools, clears all lookup maps (pathToHandle,
-         * handleToPath, hashToHandle), and releases the shared_ptr. This allows the
-         * mesh's destructor to free GPU memory (vertex/index buffers, VkDeviceMemory).
-         *
-         * @param handle Asset handle to free
-         * @return true if asset was freed, false if handle was invalid or not found
-         *
-         * @note This is safe to call even if other systems hold references to the mesh.
-         *       GPU memory will only be freed when the last shared_ptr is released.
-         *
-         * @warning Do not call this for assets still referenced by active entities in the scene.
-         *          Ensure all ModelComponent references are updated before freeing.
-         *
-         * Example usage:
-         * @code
-         * AssetHandle meshHandle = AssetManager::get().loadMesh("models/old_model.obj");
-         * // ... use mesh ...
-         * if (AssetManager::get().freeMesh(meshHandle)) {
-         *     AT_INFO("Mesh freed successfully");
-         * }
-         * @endcode
-         */
-        bool freeMesh(AssetHandle handle);
-
-        /**
-         * @brief Free a cubemap asset and release GPU memory
-         *
-         * @param handle Asset handle to free
-         * @return true if asset was freed, false if handle was invalid or not found
-         *
-         * @note Currently not implemented - returns false with warning log
-         */
-        bool freeCubemap(AssetHandle handle);
-
-        /**
-         * @brief Free any asset (texture, mesh, or cubemap) by handle
-         *
-         * Automatically detects the asset type and calls the appropriate free function.
-         * Useful when you don't know the asset type at runtime.
-         *
-         * @param handle Asset handle to free
-         * @return true if asset was freed, false if handle was invalid or not found
-         *
-         * Example usage:
-         * @code
-         * // Free any asset without knowing its type
-         * AssetHandle someHandle = getSomeAssetHandle();
-         * if (AssetManager::get().freeAsset(someHandle)) {
-         *     AT_INFO("Asset freed successfully");
-         * } else {
-         *     AT_WARN("Failed to free asset or handle not found");
-         * }
-         * @endcode
-         */
-        bool freeAsset(AssetHandle handle);
-#pragma endregion
-
-        std::vector<entt::entity> importAsset(const std::string &virtualPath, entt::registry &registry, entt::entity parentEntity);
-
-#pragma region non-coherent functions
-        /**
-         * @brief Load a text file from assets
-         * @param path Path to the resource relative to assets directory
-         * @return Vector of characters containing the file data
-         */
-        static std::vector<char> loadFileAsU8(const std::string &path);
-        static void saveFileAsU8(const std::vector<char> &data, const std::string &path);
-
+        template<FileLoadable T>
+        static std::vector<T> loadFileAs(const std::string &path);
+        template<FileLoadable T>
+        static void saveFileFrom(const std::vector<T> &data, const std::string &path);
         static std::string loadFileAsString(const std::string &path);
         static void saveFileAsString(const std::string &data, const std::string &path);
-#pragma endregion
-        /**
-         * @brief Get the platform-specific assets path
-         * @return Path to the assets directory
-         */
-        [[nodiscard]] virtual std::filesystem::path rootPath() const = 0;
+        static std::filesystem::path resolveFilePath(const std::string &path);
 
-    protected:
-        /**
-         * @brief Protected constructor for derived classes
-         * @param device Vulkan device reference
-         * @param nativeApp Platform-specific application handle
-         */
-        explicit AssetManager(Device &device, void *nativeApp = nullptr);
-
-        template<typename T, typename... Args>
-        void registerLoader(Args &&... args) {
-            auto loader = std::make_shared<T>(std::forward<Args>(args)...);
-            for (auto &ext: loader->extensions())
-                accessors.emplace(ext, loader);
+    private:
+        template<typename T>
+        auto &hashMap() {
+            if constexpr (std::same_as<T, Texture>) return textureByHash_;
+            if constexpr (std::same_as<T, Mesh>) return meshByHash_;
+            if constexpr (std::same_as<T, Cubemap>) return cubemapByHash_;
         }
 
-        Device &device;
-        void *nativeApp;
+        template<typename T>
+        auto &pathMap() {
+            if constexpr (std::same_as<T, Texture>) return textureByPath_;
+            if constexpr (std::same_as<T, Mesh>) return meshByPath_;
+            if constexpr (std::same_as<T, Cubemap>) return cubemapByPath_;
+            if constexpr (std::same_as<T, Material>) return materialByPath_;
+        }
 
-        static std::shared_ptr<AssetManager> instance;
-        // AssetManager.hpp — change in protected section
-        std::unordered_map<std::string, std::shared_ptr<ILoader> > accessors;
+        template<GPUAssetType T>
+        auto &pendingList() {
+            if constexpr (std::same_as<T, Texture>) return pendingTextures_;
+            if constexpr (std::same_as<T, Mesh>) return pendingMeshes_;
+            if constexpr (std::same_as<T, Cubemap>) return pendingCubemaps_;
+        }
 
-        // Handle generation
-        AssetHandle nextHandle = 1; // 0 and negative values are invalid
+        template<typename T>
+        using WeakState = std::weak_ptr<typename AssetHandle<T>::State>;
 
-        // Bidirectional lookup
-        std::unordered_map<std::string, AssetHandle> pathToHandle;
-        std::unordered_map<AssetHandle, std::string> handleToPath;
+        std::unordered_map<uint64_t, WeakState<Texture> > textureByHash_;
+        std::unordered_map<uint64_t, WeakState<Mesh> > meshByHash_;
+        std::unordered_map<uint64_t, WeakState<Cubemap> > cubemapByHash_;
 
-        std::unordered_map<size_t, AssetHandle> hashToHandle;
+        std::unordered_map<std::string, WeakState<Texture> > textureByPath_;
+        std::unordered_map<std::string, WeakState<Mesh> > meshByPath_;
+        std::unordered_map<std::string, WeakState<Cubemap> > cubemapByPath_;
+        std::unordered_map<std::string, WeakState<Material> > materialByPath_;
 
-        // Resource pools
-        std::unordered_map<AssetHandle, std::shared_ptr<Sampler> > texturePool;
-        std::unordered_map<AssetHandle, std::shared_ptr<Mesh> > meshPool;
-        std::unordered_map<AssetHandle, std::shared_ptr<Cubemap> > cubemapPool;
+        std::mutex pendingMutex_;
+        std::vector<WeakState<Texture> > pendingTextures_;
+        std::vector<WeakState<Mesh> > pendingMeshes_;
+        std::vector<WeakState<Cubemap> > pendingCubemaps_;
+
+        ResourceManager &resourceManager_;
+        std::filesystem::path rootPath_;
+
+        std::filesystem::path resolveAssetPath(const std::string &path) const;
     };
+
+    template<AssetType T>
+    AssetHandle<T> AssetManager::store(std::shared_ptr<T> asset, const std::string &virtualPath) {
+        std::lock_guard lock(pendingMutex_);
+
+        // 1. Dedup by path - if this exact path is already tracked and still alive, return it
+        auto &byPath = pathMap<T>();
+        if (auto it = byPath.find(virtualPath); it != byPath.end()) {
+            if (auto state = it->second.lock()) {
+                AT_TRACE("Asset dedup hit (path: {})", virtualPath);
+                return AssetHandle<T>(state, virtualPath);
+            }
+        }
+
+        if constexpr (GPUAssetType<T>) {
+            const uint64_t hash = asset->getHash();
+
+            // 2. Dedup by hash - same content under a different path
+            auto &byHash = hashMap<T>();
+            if (auto it = byHash.find(hash); it != byHash.end()) {
+                if (auto state = it->second.lock()) {
+                    AT_TRACE("Asset dedup hit (hash: {}), aliasing path: {}", hash, virtualPath);
+                    byPath[virtualPath] = state; // register the new path alias
+                    return AssetHandle<T>(state, virtualPath);
+                }
+            }
+
+            // 3. New GPU asset
+            auto state = std::make_shared<typename AssetHandle<T>::State>();
+            state->asset = std::move(asset);
+            state->gpu = nullptr; // filled by update()
+
+            byHash[hash] = state;
+            byPath[virtualPath] = state;
+            pendingList<T>().push_back(state);
+
+            AT_TRACE("Stored asset (path: {}, hash: {})", virtualPath, hash);
+            return AssetHandle<T>(state, virtualPath);
+        } else {
+            // CPU assets are mutable, so path identity is the stable key.
+            auto state = std::make_shared<typename AssetHandle<T>::State>();
+            state->asset = std::move(asset);
+            state->gpu = nullptr;
+            byPath[virtualPath] = state;
+
+            AT_TRACE("Stored CPU asset (path: {})", virtualPath);
+            return AssetHandle<T>(state, virtualPath);
+        }
+    }
+
+    template<AssetType T>
+    AssetHandle<T> AssetManager::store(const std::string &virtualPath) {
+        if constexpr (std::is_same_v<T, Texture>) {
+            return store(Texture::fromFile(resolveAssetPath(virtualPath).string()), virtualPath);
+        } else if constexpr (std::is_same_v<T, Cubemap>) {
+            return store(Cubemap::fromFile(resolveAssetPath(virtualPath).string()), virtualPath);
+        } else if constexpr (std::is_same_v<T, Mesh>) {
+            return store(Mesh::fromFile(resolveAssetPath(virtualPath).string()), virtualPath);
+        } else if constexpr (std::is_same_v<T, Material>) {
+            return store(Material::fromFile(resolveAssetPath(virtualPath).string(), *this), virtualPath);
+        } else {
+            static_assert(AssetType<T>, "AssetManager::store(path) only supports Atlas asset types");
+        }
+    }
+
+    template<AssetType T>
+    AssetHandle<T> AssetManager::find(const std::string &virtualPath) {
+        std::lock_guard lock(pendingMutex_);
+
+        auto &byPath = pathMap<T>();
+        if (auto it = byPath.find(virtualPath); it != byPath.end()) {
+            if (auto state = it->second.lock()) {
+                return AssetHandle<T>(state, virtualPath);
+            }
+        }
+
+        return AssetHandle<T>::invalid();
+    }
+
+    template<AssetType T>
+    std::vector<std::string> AssetManager::assetPaths() {
+        std::lock_guard lock(pendingMutex_);
+
+        std::vector<std::string> paths;
+        auto &byPath = pathMap<T>();
+        paths.reserve(byPath.size());
+
+        for (const auto &[path, weakState]: byPath) {
+            if (!weakState.expired()) {
+                paths.push_back(path);
+            }
+        }
+
+        std::ranges::sort(paths);
+        return paths;
+    }
+
+    template<FileLoadable T>
+    std::vector<T> AssetManager::loadFileAs(const std::string &path) {
+        const std::filesystem::path filePath = resolveFilePath(path);
+
+        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            AT_ERROR("Failed to open file: {}", filePath.string());
+            return {};
+        }
+
+        const std::streamsize size = file.tellg();
+        if (size < 0) {
+            AT_ERROR("Failed to determine file size: {}", filePath.string());
+            return {};
+        }
+
+        file.seekg(0, std::ios::beg);
+
+        std::vector<T> buffer(static_cast<size_t>(size));
+        if (size > 0 && !file.read(reinterpret_cast<char *>(buffer.data()), size)) {
+            AT_ERROR("Failed to read file: {}", filePath.string());
+            return {};
+        }
+
+        return buffer;
+    }
+
+    template<FileLoadable T>
+    void AssetManager::saveFileFrom(const std::vector<T> &data, const std::string &path) {
+        try {
+            const std::filesystem::path filePath = resolveFilePath(path);
+
+            if (filePath.has_parent_path()) {
+                std::filesystem::create_directories(filePath.parent_path());
+            }
+
+            std::ofstream out(filePath, std::ios::binary);
+            if (!out.is_open()) {
+                AT_ERROR("Failed to open file for writing: {}", filePath.string());
+                return;
+            }
+
+            if (!data.empty()) {
+                out.write(reinterpret_cast<const char *>(data.data()), static_cast<std::streamsize>(data.size()));
+                if (!out) {
+                    AT_ERROR("Failed to write data to file: {}", filePath.string());
+                    return;
+                }
+            }
+
+            AT_TRACE("Saved {} bytes to {}", data.size(), filePath.string());
+        } catch (const std::exception &e) {
+            AT_ERROR("Exception while saving file: {}", e.what());
+        }
+    }
 }
