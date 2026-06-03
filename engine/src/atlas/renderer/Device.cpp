@@ -503,11 +503,10 @@ namespace Atlas {
         deviceExtensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
-        deviceExtensions.push_back(VK_KHR_RAY_TRACING_POSITION_FETCH_EXTENSION_NAME);
 
         if constexpr (enableValidationLayers) {
-            deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
-            deviceExtensions.push_back(VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME);
+            /*deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+            deviceExtensions.push_back(VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME);*/
         }
         return deviceExtensions;
     }
