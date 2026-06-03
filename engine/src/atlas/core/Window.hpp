@@ -19,7 +19,6 @@ namespace Atlas {
             Decorated = BIT(1),
             Resizeable = BIT(2),
             NonResizeable = BIT(3),
-            CustomTitlebar = BIT(4),
         };
 
         enum class CursorMode {

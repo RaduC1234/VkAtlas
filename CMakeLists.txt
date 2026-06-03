@@ -58,10 +58,7 @@ add_subdirectory(engine)
 
 # Desktop umbrella
 if (WIN32 OR (UNIX AND NOT APPLE AND NOT ANDROID))
-    add_subdirectory(samples/office)
-    add_subdirectory(runtime)
+    add_subdirectory(desktop_runtime)
     add_subdirectory(editor)
-    add_subdirectory(tools/atlas_pack)
 endif ()
 
-add_subdirectory(tools/brdf_lut)

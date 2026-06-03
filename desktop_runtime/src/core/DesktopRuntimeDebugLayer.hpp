@@ -3,9 +3,9 @@
 #include <core/Layer.hpp>
 
 namespace Atlas::Runtime {
-    class RuntimeDebugLayer final : public Layer {
+    class DesktopRuntimeDebugLayer final : public Layer {
     public:
-        RuntimeDebugLayer(Window& window);
+        DesktopRuntimeDebugLayer(Window& window);
 
         void onUpdate(float deltaTime) override;
 

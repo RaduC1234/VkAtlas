@@ -3,6 +3,7 @@
 #include <array>
 #include <stdexcept>
 
+#include "asset/AssetManager.hpp"
 #include "core/Profiler.hpp"
 #include "core/Window.hpp"
 #include "renderer/resources/GPUTexture.hpp"
@@ -22,7 +23,9 @@ namespace Atlas {
 
         ImGuiIO &io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-        //io.Fonts->AddFontFromFileTTF("assets/engine/Roboto-Medium.ttf", 15.0f);
+
+        const std::string fontPath = AssetManager::resolveFilePath("##editor/fonts/Roboto-Medium.ttf").string();
+        io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 15.0f);
 
         Editor::EditorTheme::apply(
             window.getTheme() == Window::Theme::Light

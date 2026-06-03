@@ -54,11 +54,6 @@ target_link_libraries(atlas_editor_module PRIVATE
         lunasvg::lunasvg
 )
 
-target_compile_definitions(atlas_editor_module PRIVATE
-        ATLAS_DEFAULT_PROJECT_MANIFEST="${CMAKE_SOURCE_DIR}/samples/office/project.atlas.json"
-        ATLAS_DEFAULT_PROJECT_MODULE="$<TARGET_FILE:atlas_office_project>"
-)
-
 add_executable(atlas_editor
         src/EditorEntryPoint.cpp
 )
@@ -73,8 +68,3 @@ if (TARGET atlas_office_project)
 endif ()
 
 atlas_copy_runtime_dependencies(atlas_editor "$<TARGET_FILE_DIR:atlas_editor>")
-
-target_compile_definitions(atlas_editor PRIVATE
-        ATLAS_DEFAULT_PROJECT_MANIFEST="${CMAKE_SOURCE_DIR}/samples/office/project.atlas.json"
-        ATLAS_DEFAULT_PROJECT_MODULE="$<TARGET_FILE:atlas_office_project>"
-)
