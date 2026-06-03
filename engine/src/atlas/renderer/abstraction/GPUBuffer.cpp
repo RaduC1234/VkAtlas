@@ -143,6 +143,18 @@ namespace Atlas {
         }
     }
 
+    void GPUBuffer::invalidate(VkDeviceSize size, VkDeviceSize offset) {
+        if (size == VK_WHOLE_SIZE) {
+            size = totalSize_ - offset;
+        }
+        if (size == 0) {
+            return;
+        }
+        if (vmaInvalidateAllocation(device_.allocator(), allocation_, offset, size) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to invalidate buffer memory!");
+        }
+    }
+
     void GPUBuffer::writeToIndex(const void *data, int index) {
         assert(mapped_ && "Buffer must be mapped before writing");
         assert(index >= 0 && static_cast<uint32_t>(index) < instanceCount_);
@@ -171,7 +183,7 @@ namespace Atlas {
     }
 
     void GPUBuffer::copy(Device &device, VkBuffer src, VkBuffer dst, VkDeviceSize size, VkDeviceSize srcOffset, VkDeviceSize dstOffset) {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.beginGraphicsCommands();
 
         VkBufferCopy copyRegion{};
         copyRegion.srcOffset = srcOffset;
@@ -179,11 +191,11 @@ namespace Atlas {
         copyRegion.size = size;
         vkCmdCopyBuffer(commandBuffer, src, dst, 1, &copyRegion);
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.endGraphicsCommands(commandBuffer);
     }
 
     void GPUBuffer::copyToImage(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {
-        VkCommandBuffer commandBuffer = device.beginSingleTimeCommands();
+        VkCommandBuffer commandBuffer = device.beginGraphicsCommands();
 
         vkCmdCopyBufferToImage(
             commandBuffer,
@@ -194,7 +206,7 @@ namespace Atlas {
             regions.data()
         );
 
-        device.endSingleTimeCommands(commandBuffer);
+        device.endGraphicsCommands(commandBuffer);
     }
 
     void GPUBuffer::copy(Device &device, VkBuffer src, VkImage dst, VkImageLayout layout, const std::vector<VkBufferImageCopy> &regions) {

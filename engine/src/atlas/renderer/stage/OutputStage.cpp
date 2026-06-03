@@ -1,22 +1,11 @@
 #include "OutputStage.hpp"
+#include "core/Profiler.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/abstraction/GPUImage.hpp"
-#include "backends/imgui_impl_vulkan.h"
 
 namespace Atlas {
     OutputStage::OutputStage(Device &device, Renderer &renderer)
-        : IRenderStage(Queue::GRAPHICS), device(device), renderer(renderer) {
-    }
-
-    OutputStage::~OutputStage() {
-        if (viewportSampler != VK_NULL_HANDLE)
-            vkDestroySampler(device.device(), viewportSampler, nullptr);
-        if (viewportTexture != VK_NULL_HANDLE)
-            ImGui_ImplVulkan_RemoveTexture(viewportTexture);
-    }
-
-    bool OutputStage::isImGuiTarget() const {
-        return renderer.settings.imguiWindowRenderTarget;
+        : RenderStage(Queue::GRAPHICS), device(device), renderer(renderer) {
     }
 
     void OutputStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
@@ -32,37 +21,37 @@ namespace Atlas {
         auto layoutIt = ctx.finalLayouts.find("post_color");
         if (layoutIt != ctx.finalLayouts.end()) {
             sourceLayout = layoutIt->second;
-            restoreLayout = sourceLayout == VK_IMAGE_LAYOUT_GENERAL
-                                ? sourceLayout
-                                : VK_IMAGE_LAYOUT_UNDEFINED;
+            restoreLayout = sourceLayout;
         }
 
-        if (!isImGuiTarget()) return;
-
-        VkSamplerCreateInfo si{};
-        si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-        si.magFilter = VK_FILTER_LINEAR;
-        si.minFilter = VK_FILTER_LINEAR;
-        si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        vkCreateSampler(device.device(), &si, nullptr, &viewportSampler);
-
-        viewportTexture = ImGui_ImplVulkan_AddTexture(
-            viewportSampler,
+        renderer.setSceneOutputImage(
+            postColorSource->image(),
             postColorSource->view(0),
-            sourceLayout
-        );
+            sourceLayout,
+            postColorSource->format(),
+            postColorSource->extent());
     }
 
     void OutputStage::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {
-        if (isImGuiTarget()) {
-            recordToViewport(cmd);
+        ATLAS_PROFILE_SCOPE("OutputStage::record");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "OutputStage");
+        renderer.setSceneOutputImage(
+            postColorSource->image(),
+            postColorSource->view(0),
+            sourceLayout,
+            postColorSource->format(),
+            postColorSource->extent());
+
+        if (renderer.createInfo.sceneOutputTarget == Renderer::SceneOutputTarget::Texture) {
+            recordToTexture(cmd);
         } else {
             recordToSwapChain(cmd);
         }
     }
 
     void OutputStage::recordToSwapChain(VkCommandBuffer cmd) {
+        ATLAS_PROFILE_SCOPE("OutputStage::recordToSwapChain");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "OutputStage::SwapChainBlit");
         VkImage swapImage = renderer.getCurrentSwapchainImage();
 
         // sourceLayout is GENERAL for ray tracing / compute writers.
@@ -113,7 +102,7 @@ namespace Atlas {
                        swapImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                        1, &region, VK_FILTER_LINEAR);
 
-        // Post-blit: swapchain → PRESENT_SRC_KHR for the ImGui render pass
+        // Post-blit: present the swapchain image and restore post_color for any later sampling.
         VkImageMemoryBarrier post[2]{};
         uint32_t postCount = 0;
 
@@ -129,29 +118,33 @@ namespace Atlas {
         post[postCount].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
         ++postCount;
 
-        VkPipelineStageFlags restoreDst = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkPipelineStageFlags postDst = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
         if (restoreLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
             post[postCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             post[postCount].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             post[postCount].newLayout = restoreLayout;
             post[postCount].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            post[postCount].dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+            post[postCount].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             post[postCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             post[postCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             post[postCount].image = postColorSource->image();
             post[postCount].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             ++postCount;
-            restoreDst |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+            if (restoreLayout == VK_IMAGE_LAYOUT_GENERAL) {
+                post[postCount - 1].dstAccessMask |= VK_ACCESS_SHADER_WRITE_BIT;
+                postDst |= VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+            }
         }
 
         vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT, restoreDst,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, postDst,
                              0, 0, nullptr, 0, nullptr, postCount, post);
     }
 
-    void OutputStage::recordToViewport(VkCommandBuffer cmd) {
-        VkImage swapImage = renderer.getCurrentSwapchainImage();
-
+    void OutputStage::recordToTexture(VkCommandBuffer cmd) {
+        ATLAS_PROFILE_SCOPE("OutputStage::recordToTexture");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "OutputStage::TextureOutputBarrier");
         const bool sourceIsShaderWrite = sourceLayout == VK_IMAGE_LAYOUT_GENERAL;
         const VkPipelineStageFlags srcStage = sourceIsShaderWrite
                                                   ? (VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
@@ -160,47 +153,20 @@ namespace Atlas {
                                             ? VK_ACCESS_SHADER_WRITE_BIT
                                             : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-        // 1. Make post_color visible to ImGui in the descriptor layout registered
-        //    with ImGui_ImplVulkan_AddTexture.
-        // 2. swapchain  UNDEFINED → PRESENT_SRC_KHR so the ImGui render pass
-        //    (initialLayout = PRESENT_SRC_KHR, LOAD_OP_LOAD) finds a valid layout.
-        //    We clear it to black via the render pass clearValue, so discarding
-        //    the previous swapchain content with UNDEFINED oldLayout is correct.
-        VkImageMemoryBarrier barriers[2]{};
-
-        barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barriers[0].oldLayout = sourceLayout;
-        barriers[0].newLayout = sourceLayout;
-        barriers[0].srcAccessMask = srcAccess;
-        barriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barriers[0].image = postColorSource->image();
-        barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-        barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        barriers[1].newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-        barriers[1].srcAccessMask = 0;
-        barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-                                    VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barriers[1].image = swapImage;
-        barriers[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = sourceLayout;
+        barrier.newLayout = sourceLayout;
+        barrier.srcAccessMask = srcAccess;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = postColorSource->image();
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
         vkCmdPipelineBarrier(cmd,
-                             srcStage | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-                             0, 0, nullptr, 0, nullptr, 2, barriers);
-
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::Begin("Viewport");
-        ImGui::PopStyleVar();
-
-        ImVec2 size = ImGui::GetContentRegionAvail();
-        ImGui::Image(viewportTexture, size);
-
-        ImGui::End();
+                             srcStage,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 } // namespace Atlas

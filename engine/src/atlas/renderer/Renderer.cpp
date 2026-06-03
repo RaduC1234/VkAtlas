@@ -5,45 +5,68 @@
 #include <cassert>
 #include <stdexcept>
 
-#include <imgui_internal.h>
+#include "Device.hpp"
+#include "core/Profiler.hpp"
 #include "entity/Object.hpp"
 
 namespace Atlas {
-    Renderer::Renderer(const Settings &settings) : settings(settings) {
-        this->window_ = Window::create(settings.windowSettings);
-        this->device_ = std::make_unique<Device>(*window_);
-        AssetManager::create(*device_, settings.windowSettings.pNativeApp);
-        //this->sameFamily = device_->queueFamilyIndices().graphicsFamily.value() == device_->queueFamilyIndices().computeFamily.value();
+    Renderer::Renderer(const CreateInfo &createInfo) : createInfo(createInfo) {
+        this->window_ = Window::create(createInfo.window);
+        this->device_ = std::make_unique<Device>(*window_, Device::CreateInfo{createInfo.enableRaytracing});
+        this->resourceManager_ = std::make_unique<ResourceManager>(*device_);
 
         recreateSwapChain();
         createCommandBuffers();
         createComputeSyncObjects();
-        createImGuiLayer();
     }
 
     Renderer::~Renderer() {
+        vkDeviceWaitIdle(device_->device());
+
         for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroyFence(device_->device(), computeInFlightFences[i], nullptr);
             vkDestroySemaphore(device_->device(), computeFinishedSemaphores[i], nullptr); // missing
         }
 
         freeCommandBuffers();
-        AssetManager::destroy();
     }
 
     float Renderer::getAspectRatio() const {
-        if (settings.imguiWindowRenderTarget) {
-            if (ImGuiWindow *viewport = ImGui::FindWindowByName("Viewport")) {
-                return viewport->InnerRect.GetWidth() / viewport->InnerRect.GetHeight();
-            }
+        if (sceneViewportExtent.width > 0 &&
+            sceneViewportExtent.height > 0) {
+            return static_cast<float>(sceneViewportExtent.width) / static_cast<float>(sceneViewportExtent.height);
         }
+
         return swapChain_->extentAspectRatio();
     }
 
+    VkCommandBuffer Renderer::currentGraphicsCommandBuffer() const {
+        return getCurrentGraphicsCommandBuffer();
+    }
+
+    void Renderer::setSceneOutputImage(VkImage image, VkImageView imageView, VkImageLayout imageLayout, VkFormat format, VkExtent2D extent) {
+        sceneOutputImage = {
+            .image = image,
+            .imageView = imageView,
+            .imageLayout = imageLayout,
+            .format = format,
+            .extent = extent
+        };
+    }
+
+    void Renderer::clearSceneOutputImage() {
+        sceneOutputImage = {};
+    }
+
     FrameContext Renderer::beginFrame() {
+        ATLAS_PROFILE_SCOPE("Renderer::beginFrame");
         assert(!isFrameStarted && "Can't call beginFrame while already in progress");
 
-        auto result = swapChain_->acquireNextImage(&currentImageIndex);
+        VkResult result = VK_SUCCESS;
+        {
+            ATLAS_PROFILE_SCOPE("Renderer::acquireNextImage");
+            result = swapChain_->acquireNextImage(&currentImageIndex);
+        }
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             recreateSwapChain();
@@ -63,14 +86,13 @@ namespace Atlas {
         if (vkBeginCommandBuffer(graphicsCommandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
+        ATLAS_PROFILE_GPU_ZONE(device_->gpuProfilerContext(), graphicsCommandBuffer, "Renderer::BeginFrame");
 
         auto computeCommandBuffer = getCurrentComputeCommandBuffer();
         vkResetCommandBuffer(computeCommandBuffer, 0);
         if (vkBeginCommandBuffer(computeCommandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording compute command buffer!");
         }
-
-        this->imGuiLayer_->beginFrame(settings.imguiWindowRenderTarget);
 
         return {
             .graphicsCommandBuffer = graphicsCommandBuffer,
@@ -80,26 +102,13 @@ namespace Atlas {
     }
 
     void Renderer::endFrame() {
+        ATLAS_PROFILE_SCOPE("Renderer::endFrame");
         assert(isFrameStarted && "Can't call endFrame while not in progress");
 
         auto graphicsCommandBuffer = getCurrentGraphicsCommandBuffer();
         auto computeCommandBuffer = getCurrentComputeCommandBuffer();
 
-        VkClearValue clear{};
-        clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-
-        VkRenderPassBeginInfo rpInfo{};
-        rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        rpInfo.renderPass = swapChain_->getImGuiRenderPass();
-        rpInfo.framebuffer = swapChain_->getImGuiFrameBuffer(currentImageIndex);
-        rpInfo.renderArea.offset = {0, 0};
-        rpInfo.renderArea.extent = swapChain_->getSwapChainExtent();
-        rpInfo.clearValueCount = 1;
-        rpInfo.pClearValues = &clear;
-
-        vkCmdBeginRenderPass(graphicsCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-        imGuiLayer_->endFrame(graphicsCommandBuffer);
-        vkCmdEndRenderPass(graphicsCommandBuffer);
+        ATLAS_PROFILE_GPU_COLLECT(device_->gpuProfilerContext(), graphicsCommandBuffer);
 
         if (vkEndCommandBuffer(graphicsCommandBuffer) != VK_SUCCESS) {
             throw std::runtime_error("failed to record command buffer!");
@@ -110,7 +119,12 @@ namespace Atlas {
             throw std::runtime_error("failed to record compute command buffer!");
         }
 
-        auto result = swapChain_->submitCommandBuffers(graphicsCommandBuffer, {}, &currentImageIndex);
+        VkResult result = VK_SUCCESS;
+        {
+            ATLAS_PROFILE_SCOPE("Renderer::submitAndPresent");
+            result = swapChain_->submitCommandBuffers(graphicsCommandBuffer, {}, &currentImageIndex);
+        }
+
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || window_->wasWindowResized()) {
             window_->resetWindowResizedFlag();
             recreateSwapChain();
@@ -123,6 +137,7 @@ namespace Atlas {
     }
 
     void Renderer::beginSwapChainRenderPass(VkCommandBuffer commandBuffer) {
+        ATLAS_PROFILE_SCOPE("Renderer::beginSwapChainRenderPass");
         assert(isFrameStarted && "Can't call beginSwapChainRenderPass if frame is not in progress");
         assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't begin render pass on command buffer from a different frame");
 
@@ -155,10 +170,39 @@ namespace Atlas {
     }
 
     void Renderer::endSwapChainRenderPass(VkCommandBuffer commandBuffer) const {
+        ATLAS_PROFILE_SCOPE("Renderer::endSwapChainRenderPass");
         assert(isFrameStarted && "Can't call endSwapChainRenderPass if frame is not in progress");
         assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't end render pass on command buffer from a different frame");
 
-        // imGuiLayer->endFrame(commandBuffer);
+        vkCmdEndRenderPass(commandBuffer);
+    }
+
+    void Renderer::beginOverlayRenderPass(VkCommandBuffer commandBuffer, OverlayLoadOp loadOp) {
+        ATLAS_PROFILE_SCOPE("Renderer::beginOverlayRenderPass");
+        assert(isFrameStarted && "Can't call beginOverlayRenderPass if frame is not in progress");
+        assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't begin overlay render pass on command buffer from a different frame");
+
+        VkClearValue clear{};
+        clear.color = {{0.005f, 0.006f, 0.008f, 1.0f}};
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        const bool clearOverlay = loadOp == OverlayLoadOp::Clear;
+        renderPassInfo.renderPass = getOverlayRenderPass(loadOp);
+        renderPassInfo.framebuffer = clearOverlay ? swapChain_->getOverlayClearFrameBuffer(currentImageIndex) : swapChain_->getOverlayFrameBuffer(currentImageIndex);
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = swapChain_->getSwapChainExtent();
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clear;
+
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    }
+
+    void Renderer::endOverlayRenderPass(VkCommandBuffer commandBuffer) const {
+        ATLAS_PROFILE_SCOPE("Renderer::endOverlayRenderPass");
+        assert(isFrameStarted && "Can't call endOverlayRenderPass if frame is not in progress");
+        assert(commandBuffer == getCurrentGraphicsCommandBuffer() && "Can't end overlay render pass on command buffer from a different frame");
+
         vkCmdEndRenderPass(commandBuffer);
     }
 
@@ -190,18 +234,21 @@ namespace Atlas {
             device_->device(),
             device_->getGraphicsCommandPool(),
             static_cast<uint32_t>(graphicsCommandBuffers_.size()),
-            graphicsCommandBuffers_.data());
+            graphicsCommandBuffers_.data()
+        );
         graphicsCommandBuffers_.clear();
 
         vkFreeCommandBuffers(
             device_->device(),
             device_->getComputeCommandPool(),
             static_cast<uint32_t>(computeCommandBuffers.size()),
-            computeCommandBuffers.data());
+            computeCommandBuffers.data()
+        );
         computeCommandBuffers.clear();
     }
 
     void Renderer::recreateSwapChain() {
+        ATLAS_PROFILE_SCOPE("Renderer::recreateSwapChain");
         auto extent = window_->getExtent();
         while (extent.width == 0 || extent.height == 0) {
             extent = window_->getExtent();
@@ -241,14 +288,5 @@ namespace Atlas {
                 throw std::runtime_error("failed to create compute semaphore!");
             }
         }
-    }
-
-    void Renderer::createImGuiLayer() {
-        this->imGuiLayer_ = std::make_unique<ImGuiLayer>(
-            *device_,
-            *window_,
-            swapChain_->getImGuiRenderPass(),
-            static_cast<uint32_t>(getImageCount())
-        );
     }
 }

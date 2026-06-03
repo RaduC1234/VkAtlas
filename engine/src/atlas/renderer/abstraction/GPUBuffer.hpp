@@ -267,6 +267,13 @@ namespace Atlas {
         void flush(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
 
         /**
+         * @brief Invalidates a mapped allocation range so GPU writes become visible to the host.
+         * @param size Number of bytes to invalidate. VK_WHOLE_SIZE invalidates to the end of the buffer.
+         * @param offset Byte offset into the allocation.
+         */
+        void invalidate(VkDeviceSize size = VK_WHOLE_SIZE, VkDeviceSize offset = 0);
+
+        /**
          * @brief Copies one instance of data into the aligned slot at @p index. Buffer must be mapped.
          * @param data Pointer to a single instance.
          * @param index Index within the buffer (e.g., object index).

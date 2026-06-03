@@ -1,16 +1,18 @@
 #pragma once
+#include <cstdint>
+
 #include <entt/signal/sigh.hpp>
 
-#include "IRenderStage.hpp"
+#include "RenderStage.hpp"
 #include "asset/AssetManager.hpp"
 #include "renderer/Camera.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
 #include "renderer/abstraction/Pipeline.hpp"
 
 namespace Atlas {
-    class PathTracingStage : public IRenderStage {
+    class PathTracingStage : public RenderStage {
     public:
-        PathTracingStage(Device &device, const DescriptorSetLayout &globalSetLayout);
+        PathTracingStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout);
         ~PathTracingStage();
 
         void getDeclaredOutputs(std::vector<Resource::Description> &out) const override;
@@ -27,11 +29,13 @@ namespace Atlas {
         void createPipeline();
         void buildSBT();
         void updateDescriptorSet();
-        void updateDescriptorSets();
         void onCameraUpdated(entt::registry &registry, entt::entity entity);
         void onCameraDestroyed(entt::registry &registry, entt::entity entity);
+        entt::entity activeCamera(entt::registry &registry) const;
 
-        uint32_t registerTexture(AssetHandle handle);
+        uint64_t sceneBuildSignature(entt::registry &registry, bool &waitingForMeshes) const;
+        uint64_t textureReadinessSignature() const;
+        uint32_t registerTexture(AssetHandle<Texture> handle);
         static bool cameraDataChanged(const Camera::Data &lhs, const Camera::Data &rhs);
 
         uint32_t alignUp(uint32_t size, uint32_t alignment) const;
@@ -42,9 +46,11 @@ namespace Atlas {
         static constexpr uint32_t MAX_BOUNCES = 6;
 
         Device &device;
+        AssetManager &assets;
         const DescriptorSetLayout &globalSetLayout;
 
         GPUImage *outputImage = nullptr;
+        GPUImage *geometryDepth = nullptr;
         AccelerationStructure tlas_;
 
         std::unique_ptr<GPUBuffer> objectBuffer;
@@ -57,6 +63,9 @@ namespace Atlas {
         std::unique_ptr<DescriptorPool> ptPool;
         VkDescriptorSet ptSet = VK_NULL_HANDLE;
         VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE; // alias for ptSet
+        VkSampler envSampler = VK_NULL_HANDLE;
+        AssetHandle<Cubemap> envHandle;
+        bool envReady = false;
 
         VkPipelineLayout pipelineLayout = VK_NULL_HANDLE;
         std::unique_ptr<Pipeline> pipeline;
@@ -73,14 +82,15 @@ namespace Atlas {
         uint32_t lightCount = 0;
         bool active = true;
         bool hasCameraData = false;
+        bool sceneBuilt = false;
+        uint64_t lastSceneBuildSignature = 0;
+        uint64_t lastTextureReadinessSignature = 0;
         Camera::Data lastCameraData{};
         entt::scoped_connection cameraConstructConnection;
         entt::scoped_connection cameraUpdateConnection;
         entt::scoped_connection cameraDestroyConnection;
 
-        // Texture registry
-        std::unordered_map<AssetHandle, uint32_t> handleToSlot;
+        std::unordered_map<AssetHandle<Texture>, uint32_t> handleToSlot;
         uint32_t nextTextureSlot = 1;
-        AssetHandle defaultWhiteHandle = INVALID_ASSET_HANDLE;
     };
 }

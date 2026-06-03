@@ -6,6 +6,8 @@
 
 namespace Atlas {
     void Camera::setOrthographicProjection(float left, float right, float top, float bottom, float near, float far) {
+        nearPlane = near;
+        farPlane = far;
         projectionMatrix = glm::mat4{1.0f};
         projectionMatrix[0][0] = 2.f / (right - left);
         projectionMatrix[1][1] = 2.f / (bottom - top);
@@ -17,6 +19,8 @@ namespace Atlas {
 
     void Camera::setPerspectiveProjection(float fovY, float aspect, float near, float far) {
         assert(glm::abs(aspect - std::numeric_limits<float>::epsilon()) > 0.0f);
+        nearPlane = near;
+        farPlane = far;
         const float tanHalfFovy = tan(fovY / 2.f);
         projectionMatrix = glm::mat4{0.0f};
         projectionMatrix[0][0] = 1.f / (aspect * tanHalfFovy);

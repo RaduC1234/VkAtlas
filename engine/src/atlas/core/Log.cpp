@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-#if defined(__ANDROID__)
+#if defined(ATLAS_PLATFORM_ANDROID)
 #include <android/log.h>
 #elif defined(_WIN32)
 #include <windows.h>
@@ -18,6 +18,14 @@ namespace Atlas {
         }
     }
 
+    std::shared_ptr<Log> &Log::getCoreLogger() {
+        if (!coreLogger) {
+            init();
+        }
+
+        return coreLogger;
+    }
+
     std::string Log::getLogPrefix(LogLevel level) {
         switch (level) {
             case LogLevel::Trace: return "[TRACE]";
@@ -26,17 +34,6 @@ namespace Atlas {
             case LogLevel::Error: return "[ERROR]";
             case LogLevel::Fatal: return "[FATAL]";
             default:              return "[LOG]";
-        }
-    }
-
-    fmt::color Log::getLogColor(LogLevel level) {
-        switch (level) {
-            case LogLevel::Trace: return fmt::color::white;
-            case LogLevel::Info:  return fmt::color::magenta;
-            case LogLevel::Warn:  return fmt::color::yellow;
-            case LogLevel::Error: return fmt::color::red;
-            case LogLevel::Fatal: return fmt::color::crimson;
-            default:              return fmt::color::white;
         }
     }
 
@@ -55,10 +52,21 @@ namespace Atlas {
         }
         SetConsoleTextAttribute(hConsole, color);
     }
+#else
+    static const char* getAnsiColorCode(LogLevel level) {
+        switch (level) {
+            case LogLevel::Trace: return "\x1b[37m";
+            case LogLevel::Info:  return "\x1b[35m";
+            case LogLevel::Warn:  return "\x1b[33m";
+            case LogLevel::Error: return "\x1b[31m";
+            case LogLevel::Fatal: return "\x1b[91m";
+            default:              return "\x1b[37m";
+        }
+    }
 #endif
 
     void Log::platformLog(LogLevel level, const std::string& prefix, const std::string& message) {
-#if defined(__ANDROID__)
+#if defined(ATLAS_PLATFORM_ANDROID)
         android_LogPriority priority;
         switch (level) {
             case LogLevel::Trace: priority = ANDROID_LOG_VERBOSE; break;
@@ -70,13 +78,13 @@ namespace Atlas {
         }
         __android_log_print(priority, "Atlas", "%s: %s", prefix.c_str(), message.c_str());
 
-#elif defined(_WIN32)
+#elif defined(ATLAS_PLATFORM_WINDOWS)
         setConsoleColor(level);
         std::cout << prefix << " " << message << std::endl;
         setConsoleColor(LogLevel::Trace); // Reset
 
 #else
-        fmt::print(fg(getLogColor(level)), "{} {}\n", prefix, message);
+        std::cout << getAnsiColorCode(level) << prefix << " " << message << "\x1b[0m" << std::endl;
 #endif
     }
 

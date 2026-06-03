@@ -1,25 +1,23 @@
 #pragma once
 
 #include <entt/entity/registry.hpp>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
 
-#include "IRenderStage.hpp"
+#include "RenderStage.hpp"
 #include "entity/Object.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
 #include "renderer/abstraction/GPUImage.hpp"
 #include "renderer/abstraction/Pipeline.hpp"
-#include "utils/Storage.hpp"
 
 namespace Atlas {
-    class GeometryStage : public IRenderStage {
+    class GeometryStage : public RenderStage {
     public:
-        static constexpr uint32_t MAX_TEXTURES = 1024;
-        static constexpr uint32_t MAX_OBJECTS = 10000;
-        static constexpr uint32_t MAX_LIGHTS = 32;
-        static constexpr VkDeviceSize VERTEX_BUDGET = sizeof(Mesh::Vertex) * 1'000'000;
-        static constexpr VkDeviceSize INDEX_BUDGET = sizeof(uint32_t) * 3'000'000;
-
-        GeometryStage(Device &device, const DescriptorSetLayout &globalSetLayout);
+        GeometryStage(Device &device, AssetManager &assets,
+                      const DescriptorSetLayout &globalSetLayout);
         ~GeometryStage() override;
 
         GeometryStage(const GeometryStage &) = delete;
@@ -38,38 +36,19 @@ namespace Atlas {
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 
     private:
-        struct GPUObjectData {
-            glm::mat4 modelMatrix;
-            glm::mat4 normalMatrix;
-            glm::uvec4 textureIndices;
-            glm::vec4 baseColor;
-        };
+        static constexpr uint32_t MAX_TEXTURES = 1024;
 
-        struct MeshAllocation {
-            uint32_t firstVertex = 0;
-            uint32_t vertexCount = 0;
-            uint32_t firstIndex = 0;
-            uint32_t indexCount = 0;
-        };
-
-        struct Light {
-            uint32_t type{static_cast<uint32_t>(LightType::SPOT)};
-            float intensity{1.0f};
-            float range{0.0f};
-            float innerConeAngle{0.0f};
-            glm::vec3 color{1.0f};
-            float outerConeAngle{glm::radians(45.0f)};
-            glm::vec3 position{0.0f};
-            float width{0.0f};
-            glm::vec3 direction{0.0f, -1.0f, 0.0f};
-            float height{0.0f};
-        };
+        using RasterDraw = std::pair<AssetHandle<Mesh>, uint32_t>;
+        using RasterTextureBinding = std::pair<AssetHandle<Texture>, uint32_t>;
+        using RasterDrawData = std::tuple<std::vector<RasterDraw>, std::vector<RasterTextureBinding>, uint32_t>;
 
         Device &device;
+        AssetManager &assets;
         const DescriptorSetLayout &globalSetLayout;
 
         const GPUImage *colorTarget = nullptr;
         const GPUImage *depthTarget = nullptr;
+        const RasterDrawData *drawData = nullptr;
 
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
@@ -84,32 +63,26 @@ namespace Atlas {
         std::unique_ptr<DescriptorSetLayout> environmentSetLayout;
         VkDescriptorSet environmentSet = VK_NULL_HANDLE;
 
+        std::unique_ptr<DescriptorPool> texturePool;
         std::unique_ptr<DescriptorSetLayout> textureSetLayout;
-        VkDescriptorSet bindlessTextureSet = VK_NULL_HANDLE;
-        uint32_t nextTextureSlot = 1;
-        std::unordered_map<AssetHandle, uint32_t> handleToTextureSlot;
-        AssetHandle defaultWhiteHandle = INVALID_ASSET_HANDLE;
+        VkDescriptorSet textureSet = VK_NULL_HANDLE;
+        uint32_t boundTextureRevision = 0;
 
         std::unique_ptr<DescriptorSetLayout> objectDataSetLayout;
-        Storage<GPUObjectData> opaqueObjectData;
-        std::unique_ptr<GPUBuffer> objectDataBuffer;
         VkDescriptorSet objectDataSet = VK_NULL_HANDLE;
-        std::unique_ptr<GPUBuffer> opaqueIndirectCommandBuffer;
 
-        Storage<Light> lights;
-        std::unique_ptr<GPUBuffer> lightsBuffer;
-        VkDescriptorSet lightSet = VK_NULL_HANDLE;
         std::unique_ptr<DescriptorSetLayout> lightSetLayout;
+        VkDescriptorSet lightSet = VK_NULL_HANDLE;
 
         std::unique_ptr<DescriptorSetLayout> skyboxSetLayout;
         VkDescriptorSet skyboxDescriptorSet = VK_NULL_HANDLE;
-        AssetHandle boundSkyboxHandle = INVALID_ASSET_HANDLE;
-
-        std::unique_ptr<GPUBuffer> mergedVertexBuffer;
-        std::unique_ptr<GPUBuffer> mergedIndexBuffer;
-        uint32_t nextVertex = 0;
-        uint32_t nextIndex = 0;
-        std::unordered_map<AssetHandle, MeshAllocation> meshAllocations;
+        AssetHandle<Cubemap> boundIrradianceHandle;
+        bool boundIrradianceReady = false;
+        AssetHandle<Cubemap> boundPrefilterHandle;
+        bool boundPrefilterReady = false;
+        AssetHandle<Cubemap> boundSkyboxHandle;
+        bool boundSkyboxReady = false;
+        bool drawSkybox = false;
 
         void begin(VkCommandBuffer cmd);
         void end(VkCommandBuffer cmd);
@@ -119,12 +92,20 @@ namespace Atlas {
         void createPipelineLayout();
         void createPipelines();
         void createDescriptors();
-        void createGPUBuffers();
 
-        uint32_t registerTexture(AssetHandle handle);
-        void registerMesh(AssetHandle handle);
-        uint32_t resolveTextureIndex(AssetHandle handle) const;
+        AssetHandle<Texture> loadRawLookupTexture(const std::string &path, uint32_t width, uint32_t height, VkFormat format);
+        void loadLookupTextures();
+        void updateTextureDescriptors();
+        void updateLookupTextureDescriptors();
+        void updateSkyboxDescriptors(const SkyboxComponent &skybox);
 
         static VkPipelineDepthStencilStateCreateInfo makeStencilWrite(uint8_t ref);
+
+        AssetHandle<Texture> ltcMatLUT;
+        AssetHandle<Texture> ltcAmpLUT;
+        AssetHandle<Texture> brdfLUT;
+        bool boundLtcMatReady = false;
+        bool boundLtcAmpReady = false;
+        bool boundBrdfReady = false;
     };
 } // namespace Atlas

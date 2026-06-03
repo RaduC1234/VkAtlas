@@ -1,15 +1,23 @@
 #pragma once
 
-#include "renderer/Camera.hpp"
-#include "asset/AssetManager.hpp"
+#include <string>
+#include <vector>
 
-#include <glm/glm.hpp>
+#include <entt/entity/entity.hpp>
+#include <nlohmann/json.hpp>
+
+#include "asset/AssetHandle.hpp"
+#include "renderer/Camera.hpp"
+#include "renderer/Renderer.hpp"
+
 
 namespace Atlas {
     struct SceneNodeComponent {
         std::string name;
         entt::entity parent = entt::null;
         std::vector<entt::entity> children;
+        bool visible = true;
+        bool deleted = false;
     };
 
     struct TransformComponent {
@@ -79,28 +87,53 @@ namespace Atlas {
         }
     };
 
+    NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(TransformComponent, translation, scale, rotation);
+
     struct ModelComponent {
-        AssetHandle meshHandle = INVALID_ASSET_HANDLE;
+        AssetHandle<Mesh> meshHandle;
     };
+
+    NLOHMANN_JSON_SERIALIZE_ENUM(ViewMode, {
+                                 {ViewMode::LIT, "Lit"},
+                                 {ViewMode::UNLIT, "Unlit"},
+                                 {ViewMode::LIGHTING_ONLY, "LightingOnly"},
+                                 {ViewMode::PATH_TRACING, "PathTracing"},
+                                 })
+
+    enum class CameraProjection : uint32_t {
+        PERSPECTIVE = 0,
+        ORTHOGRAPHIC
+    };
+
+    NLOHMANN_JSON_SERIALIZE_ENUM(CameraProjection, {
+                                 {CameraProjection::PERSPECTIVE, "Perspective"},
+                                 {CameraProjection::ORTHOGRAPHIC, "Orthographic"},
+                                 })
 
     struct CameraComponent {
         Camera camera{};
+        CameraProjection projection{CameraProjection::PERSPECTIVE};
+        ViewMode renderMode{ViewMode::LIT};
+        float perspectiveFovY{0.872664626f};
+        float orthographicHalfHeight{1.398923f};
+        float nearPlane{0.1f};
+        float farPlane{100.0f};
+    };
+
+    struct EditorCameraComponent {
+    };
+
+    struct TransientComponent {
     };
 
     struct MaterialComponent {
-        glm::vec4 baseColor = glm::vec4{1.0f};
-        AssetHandle albedoTexture = INVALID_ASSET_HANDLE;
-        AssetHandle normalMap = INVALID_ASSET_HANDLE;
-        AssetHandle metallicRoughnessMap = INVALID_ASSET_HANDLE;
-        AssetHandle ambientOcclusion = INVALID_ASSET_HANDLE;
-        bool alphaMasked{false};
-        bool transparent{false};
+        AssetHandle<Material> materialHandle;
     };
 
     struct SkyboxComponent {
-        AssetHandle skyboxHandle = INVALID_ASSET_HANDLE;
-        AssetHandle irradianceHandle = INVALID_ASSET_HANDLE;
-        AssetHandle prefilterHandle = INVALID_ASSET_HANDLE;
+        AssetHandle<Cubemap> skyboxHandle;
+        AssetHandle<Cubemap> irradianceHandle;
+        AssetHandle<Cubemap> prefilterHandle;
     };
 
     enum class LightType : uint32_t {
@@ -110,6 +143,14 @@ namespace Atlas {
         DIRECTIONAL, // Uses KHR_punctual_lights
         RECT // Uses ATLAS_special_lights
     };
+
+    NLOHMANN_JSON_SERIALIZE_ENUM(LightType, {
+                                 {LightType::UNKNOWN, "Unknown"},
+                                 {LightType::POINT, "Point"},
+                                 {LightType::SPOT, "Spot"},
+                                 {LightType::DIRECTIONAL, "Directional"},
+                                 {LightType::RECT, "Rectangle"},
+                                 })
 
     struct LightComponent {
         LightType type{LightType::POINT};
@@ -134,9 +175,19 @@ namespace Atlas {
         float contrast{1.0f};
         float saturation{1.0};
         glm::vec3 colorTint = {1.0f, 1.0f, 1.0f};
+        bool bloomEnabled{false};
+        bool vignetteEnabled{true};
+        float bloomStrength{3.0f};
+        float vignetteStrength{2.0f};
     };
 
-    struct DirtyTag {
-        bool dirty{false};
+    struct ScriptBinding {
+        std::string type;
+        bool enabled = true;
+        nlohmann::json properties = nlohmann::json::object();
+    };
+
+    struct ScriptComponent {
+        std::vector<ScriptBinding> scripts;
     };
 }

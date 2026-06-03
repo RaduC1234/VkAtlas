@@ -12,38 +12,37 @@
 
 
 namespace Atlas {
-    enum class ViewMode : uint32_t {
-        LIT,
-        UNLIT,
-        LIGHTING_ONLY,
-        PATH_TRACING
-    };
-
+    class AssetManager;
     struct alignas(16) DebugData {
         float irradianceMultiplier{1.0f};
         float exposureMultiplier{1.0f};
-        ViewMode viewMode{ViewMode::LIT};
-        float _padding{};
     };
 
     class RenderSystemV2 {
     public:
-        static constexpr uint32_t G_BUFFER_HEIGHT = 1920;
-        static constexpr uint32_t G_BUFFER_WIDTH = 1080;
+        static constexpr uint32_t G_BUFFER_HEIGHT = 1080;
+        static constexpr uint32_t G_BUFFER_WIDTH = 1920;
 
-        RenderSystemV2(Device &device, Renderer &renderer);
+        RenderSystemV2(Device &device, Renderer &renderer, AssetManager &assets);
         ~RenderSystemV2() = default;
 
         RenderSystemV2(const RenderSystemV2 &) = delete;
         RenderSystemV2 &operator=(const RenderSystemV2 &) = delete;
 
-        void build(entt::registry &registry);
-        void render(FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData) const;
+        void build(entt::registry &registry, ViewMode viewMode);
+        void render(FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData, ViewMode viewMode) const;
 
     private:
+        struct alignas(16) ShaderDebugData {
+            float irradianceMultiplier{1.0f};
+            float exposureMultiplier{1.0f};
+            ViewMode viewMode{ViewMode::LIT};
+            float _padding{};
+        };
+
         struct alignas(16) GlobalUbo {
             Camera::Data cameraData{};
-            DebugData debugData{};
+            ShaderDebugData debugData{};
         };
 
         void createGlobalUbo();
@@ -51,6 +50,7 @@ namespace Atlas {
         bool pathTracingCameraChanged(const Camera::Data &cameraData) const;
 
         Device &device;
+        Renderer &renderer;
         std::unordered_map<ViewMode, std::shared_ptr<RenderGraph> > renderGraphs;
 
         // Set 0 - Global descriptors (UBO)

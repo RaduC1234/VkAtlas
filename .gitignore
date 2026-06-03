@@ -6,6 +6,8 @@ Thumbs.db
 *.swp
 *~
 
+**/.cxx
+
 ehthumbs.db
 Icon
 Desktop.ini
@@ -75,12 +77,14 @@ app/build/
 *.tar.gz
 *.rar
 *.spv
+**/.claude
 
 **/build/**
 **/bin/**
 **/lib/**
 **/obj/**
 **/intermediates/**
+**/docs/**
 
 **/engine/dependencies/*/build/
 **/engine/dependencies/*/lib/
@@ -101,8 +105,8 @@ npm-debug.log*
 imgui.ini
 
 /assets/**
-!/assets/shaders/
-!/assets/shaders/**
+!/engine/assets/shaders/
+!/engine/assets/shaders/**
 /assets/shaders/**/*.spv
 !/assets/engine
 !/assets/engine**

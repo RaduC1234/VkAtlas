@@ -46,8 +46,8 @@ for row in range(SIZE):
         ltc_amp[row, col] = [amp, fres, 0.0, 1.0]
 
 os.makedirs('../assets/engine', exist_ok=True)
-ltc_mat.tofile('../assets/engine/ltc_mat.bin')
-ltc_amp.tofile('../assets/engine/ltc_amp.bin')
+ltc_mat.tofile('../assets/engine/ltc_mat.lut.bin')
+ltc_amp.tofile('../assets/engine/ltc_amp.lut.bin')
 
 expected_bytes = SIZE * SIZE * 4 * 4  # 64*64 texels * 4 channels * 4 bytes
 print(f"Done. Each file: {expected_bytes} bytes ({SIZE}x{SIZE} x RGBA32F)")
