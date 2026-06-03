@@ -29,9 +29,8 @@ namespace Atlas {
         RenderSystemV2(const RenderSystemV2 &) = delete;
         RenderSystemV2 &operator=(const RenderSystemV2 &) = delete;
 
-        void build(entt::registry &registry);
         void build(entt::registry &registry, ViewMode viewMode);
-        void render(FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData) const;
+        void render(FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData, ViewMode viewMode) const;
 
     private:
         struct alignas(16) ShaderDebugData {

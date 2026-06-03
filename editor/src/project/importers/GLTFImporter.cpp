@@ -737,6 +737,10 @@ namespace Atlas::Editor {
         if (ext.Has("exposure")) volume.exposure = tinyValueFloat(ext.Get("exposure"), volume.exposure);
         if (ext.Has("contrast")) volume.contrast = tinyValueFloat(ext.Get("contrast"), volume.contrast);
         if (ext.Has("saturation")) volume.saturation = tinyValueFloat(ext.Get("saturation"), volume.saturation);
+        if (ext.Has("bloomEnabled") && ext.Get("bloomEnabled").IsBool()) volume.bloomEnabled = ext.Get("bloomEnabled").Get<bool>();
+        if (ext.Has("vignetteEnabled") && ext.Get("vignetteEnabled").IsBool()) volume.vignetteEnabled = ext.Get("vignetteEnabled").Get<bool>();
+        if (ext.Has("bloomStrength")) volume.bloomStrength = tinyValueFloat(ext.Get("bloomStrength"), volume.bloomStrength);
+        if (ext.Has("vignetteStrength")) volume.vignetteStrength = tinyValueFloat(ext.Get("vignetteStrength"), volume.vignetteStrength);
 
         if (ext.Has("colorTint") && ext.Get("colorTint").IsArray()) {
             const auto &arr = ext.Get("colorTint").Get<tinygltf::Value::Array>();

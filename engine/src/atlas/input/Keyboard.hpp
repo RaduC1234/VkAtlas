@@ -5,10 +5,13 @@
 #include <queue>
 
 namespace Atlas {
+    class IInputProvider;
     using KeyCode = uint16_t;
 
     class Keyboard {
     public:
+        static void setProvider(IInputProvider *p);
+
         /**
          * @brief Returns whether a key is currently pressed.
          * @param code The KeyCode representing the key.
@@ -154,8 +157,10 @@ namespace Atlas {
         static std::queue<uint32_t> keyTyped;
 
     private:
+        static IInputProvider *provider;
         static std::vector<bool> keyPressed;
 
+        friend class DesktopInputProvider;
 #ifdef _WIN32
         friend class DesktopWindow;
 #endif

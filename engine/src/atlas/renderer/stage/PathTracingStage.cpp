@@ -11,6 +11,7 @@
 #include <functional>
 
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "entity/Object.hpp"
 
 namespace Atlas {
@@ -48,6 +49,7 @@ namespace Atlas {
         glm::mat4 normalMatrix;
         glm::uvec4 textureIndices;
         glm::vec4 baseColor;
+        glm::vec4 materialFactors;
         glm::vec4 sheenColorStrength;
         uint32_t firstIndex;
         uint32_t indexCount;
@@ -178,6 +180,7 @@ namespace Atlas {
     }
 
     void PathTracingStage::onUpdate(entt::registry &registry) {
+        ATLAS_PROFILE_SCOPE("PathTracingStage::onUpdate");
         cameraConstructConnection = registry.on_construct<CameraComponent>().connect<&PathTracingStage::onCameraUpdated>(*this);
         cameraUpdateConnection = registry.on_update<CameraComponent>().connect<&PathTracingStage::onCameraUpdated>(*this);
         cameraDestroyConnection = registry.on_destroy<CameraComponent>().connect<&PathTracingStage::onCameraDestroyed>(*this);
@@ -326,6 +329,7 @@ namespace Atlas {
                     registerTexture(material->occlusionTexture)
                 ),
                 .baseColor = material->baseColor,
+                .materialFactors = glm::vec4(material->metallic, material->roughness, material->alphaCutoff, 0.0f),
                 .sheenColorStrength = glm::vec4(material->sheenColor, material->sheenStrength),
                 .firstIndex = firstIndex,
                 .indexCount = static_cast<uint32_t>(model.meshHandle->indices().size()),
@@ -371,10 +375,13 @@ namespace Atlas {
         lightCount = static_cast<uint32_t>(cpuLights.size());
 
 
-        if (!tlasInstances.empty()) {
-            tlas_ = AccelerationStructure::buildTLAS(device, tlasInstances);
-        } else {
-            tlas_ = AccelerationStructure{};
+        {
+            ATLAS_PROFILE_SCOPE("PathTracingStage::buildSceneAcceleration");
+            if (!tlasInstances.empty()) {
+                tlas_ = AccelerationStructure::buildTLAS(device, tlasInstances);
+            } else {
+                tlas_ = AccelerationStructure{};
+            }
         }
 
         // ---- Upload packed geometry -----------------------------------------
@@ -431,6 +438,8 @@ namespace Atlas {
     }
 
     void PathTracingStage::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
+        ATLAS_PROFILE_SCOPE("PathTracingStage::record");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PathTracingStage");
         if (!outputImage || !accumulationImage) {
             return;
         }
@@ -439,6 +448,7 @@ namespace Atlas {
         // On sample 0 their contents are discarded; subsequent samples preserve
         // the HDR accumulation while later stages read geometry_color in GENERAL.
         {
+            ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PathTracingStage::PrepareImages");
             const bool preserveAccumulation = currentSample > 0;
 
             std::array<VkImageMemoryBarrier, 2> barriers{};
@@ -471,83 +481,89 @@ namespace Atlas {
             return;
         }
 
-        pipeline->bind(cmd);
+        {
+            ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PathTracingStage::TraceRays");
+            pipeline->bind(cmd);
 
-        const std::array sets = {
-            globalSet,
-            ptSet,
-        };
+            const std::array sets = {
+                globalSet,
+                ptSet,
+            };
 
-        vkCmdBindDescriptorSets(cmd,
-                                VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                pipelineLayout,
-                                0,
-                                sets.size(), sets.data(),
-                                0, nullptr);
+            vkCmdBindDescriptorSets(cmd,
+                                    VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                                    pipelineLayout,
+                                    0,
+                                    sets.size(), sets.data(),
+                                    0, nullptr);
 
-        const PushConstants pc{
-            .sampleIndex = currentSample,
-            .maxBounces = MAX_BOUNCES,
-            .frameIndex = frameIndex,
-            .lightCount = lightCount,
-        };
+            const PushConstants pc{
+                .sampleIndex = currentSample,
+                .maxBounces = MAX_BOUNCES,
+                .frameIndex = frameIndex,
+                .lightCount = lightCount,
+            };
 
-        vkCmdPushConstants(cmd, pipelineLayout,
-                           VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
-                           0, sizeof(PushConstants), &pc);
+            vkCmdPushConstants(cmd, pipelineLayout,
+                               VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+                               0, sizeof(PushConstants), &pc);
 
-        const auto extent = outputImage->extent();
+            const auto extent = outputImage->extent();
 
-        vkCmdTraceRaysKHR(cmd, &sbtRaygen, &sbtMiss, &sbtHit, &sbtCallable, extent.width, extent.height, 1);
+            vkCmdTraceRaysKHR(cmd, &sbtRaygen, &sbtMiss, &sbtHit, &sbtCallable, extent.width, extent.height, 1);
+        }
 
-        VkImageMemoryBarrier pre[2]{};
+        {
+            ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PathTracingStage::ClearDepth");
+            VkImageMemoryBarrier pre[2]{};
 
-        pre[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        pre[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-        pre[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        pre[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        pre[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        pre[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre[0].image = outputImage->image();
-        pre[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            pre[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            pre[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+            pre[0].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+            pre[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            pre[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            pre[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            pre[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            pre[0].image = outputImage->image();
+            pre[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
-        pre[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        pre[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        pre[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        pre[1].srcAccessMask = 0;
-        pre[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        pre[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre[1].image = geometryDepth->image();
-        pre[1].subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
+            pre[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            pre[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            pre[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            pre[1].srcAccessMask = 0;
+            pre[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            pre[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            pre[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            pre[1].image = geometryDepth->image();
+            pre[1].subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
 
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             0, 0, nullptr, 0, nullptr, 2, pre);
+            vkCmdPipelineBarrier(cmd,
+                                 VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 2, pre);
 
-        VkClearDepthStencilValue clearDS{1.0f, 0};
-        VkImageSubresourceRange dsRange{VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
-        vkCmdClearDepthStencilImage(cmd,
-                                    geometryDepth->image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                    &clearDS, 1, &dsRange);
+            VkClearDepthStencilValue clearDS{1.0f, 0};
+            VkImageSubresourceRange dsRange{VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
+            vkCmdClearDepthStencilImage(cmd,
+                                        geometryDepth->image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                        &clearDS, 1, &dsRange);
 
-        VkImageMemoryBarrier post{};
-        post.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        post.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        post.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        post.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        post.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        post.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post.image = geometryDepth->image();
-        post.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
+            VkImageMemoryBarrier post{};
+            post.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            post.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            post.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            post.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            post.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            post.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            post.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            post.image = geometryDepth->image();
+            post.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
 
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-                             0, 0, nullptr, 0, nullptr, 1, &post);
+            vkCmdPipelineBarrier(cmd,
+                                 VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 0, 0, nullptr, 0, nullptr, 1, &post);
+        }
 
         currentSample++;
         frameIndex++;
@@ -866,6 +882,9 @@ namespace Atlas {
             hashVec3(seed, transform.scale);
             hashVec3(seed, transform.rotation);
             hashVec4(seed, material->baseColor);
+            hashValue(seed, material->metallic);
+            hashValue(seed, material->roughness);
+            hashValue(seed, material->alphaCutoff);
             hashValue(seed, static_cast<uint32_t>(material->shadingModel));
             hashValue(seed, material->sheenStrength);
             hashVec3(seed, material->sheenColor);

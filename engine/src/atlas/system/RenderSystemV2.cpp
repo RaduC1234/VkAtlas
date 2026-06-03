@@ -1,6 +1,7 @@
 #include "RenderSystemV2.hpp"
 
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "renderer/stage/CullingStage.hpp"
 #include "renderer/stage/GeometryStage.hpp"
 #include "renderer/stage/OutputStage.hpp"
@@ -30,23 +31,23 @@ namespace Atlas {
         renderGraphs[ViewMode::PATH_TRACING] = std::move(rayTracingGraph);
     }
 
-    void RenderSystemV2::build(entt::registry &registry) {
-        build(registry, renderer.settings().viewMode);
-    }
-
     void RenderSystemV2::build(entt::registry &registry, ViewMode viewMode) {
+        ATLAS_PROFILE_SCOPE("RenderSystemV2::build");
         renderGraphs.at(viewMode)->build(registry);
     }
 
-    void RenderSystemV2::render(const FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData) const {
-        const ViewMode viewMode = renderer.settings().viewMode;
-
+    void RenderSystemV2::render(const FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData, const ViewMode viewMode) const {
+        ATLAS_PROFILE_SCOPE("RenderSystemV2::render");
         GlobalUbo globalUbo{};
         globalUbo.cameraData = cameraData;
         globalUbo.debugData.irradianceMultiplier = debugData.irradianceMultiplier;
         globalUbo.debugData.exposureMultiplier = debugData.exposureMultiplier;
         globalUbo.debugData.viewMode = viewMode;
-        globalUboBuffers[frameContext.index]->uploadData(&globalUbo, sizeof(GlobalUbo));
+
+        {
+            ATLAS_PROFILE_SCOPE("RenderSystemV2::uploadGlobalUbo");
+            globalUboBuffers[frameContext.index]->uploadData(&globalUbo, sizeof(GlobalUbo));
+        }
 
         renderGraphs.at(viewMode)->render(frameContext, globalDescriptorSets[frameContext.index]);
     }

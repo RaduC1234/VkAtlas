@@ -5,6 +5,7 @@
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "renderer/abstraction/GPUBuffer.hpp"
 
 namespace Atlas {
@@ -29,6 +30,7 @@ namespace Atlas {
     }
 
     void CullingStage::onUpdate(entt::registry &registry) {
+        ATLAS_PROFILE_SCOPE("CullingStage::onUpdate");
         if (!signalsConnected_) {
             connectSignals(registry);
             signalsConnected_ = true;
@@ -57,6 +59,7 @@ namespace Atlas {
     }
 
     void CullingStage::rebuild(entt::registry &registry) {
+        ATLAS_PROFILE_SCOPE("CullingStage::rebuild");
         draws_.clear();
         objectData_.clear();
         lightData_.clear();
@@ -94,6 +97,7 @@ namespace Atlas {
                 .normalMatrix   = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
                 .textureIndices = glm::uvec4(albedoIdx, normalIdx, mrIdx, aoIdx),
                 .baseColor      = material->baseColor,
+                .materialFactors = glm::vec4(material->metallic, material->roughness, material->alphaCutoff, 0.0f),
             };
 
             if (material->baseColor.w >= 1.0f && material->alphaMode != AlphaMode::BLEND) {

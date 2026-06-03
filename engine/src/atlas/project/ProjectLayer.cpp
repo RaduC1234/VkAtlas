@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "core/Profiler.hpp"
 #include "renderer/Renderer.hpp"
 
 namespace Atlas {
@@ -15,7 +16,9 @@ namespace Atlas {
     }
 
     void ProjectLayer::onAttach() {
-        projectInstance.load(renderer, assets, manifestPath, moduleOverride, startupLevelOverride);
+        if (!manifestPath.empty()) {
+            projectInstance.load(renderer, assets, manifestPath, moduleOverride, startupLevelOverride);
+        }
     }
 
     void ProjectLayer::onDetach() {
@@ -23,12 +26,14 @@ namespace Atlas {
     }
 
     void ProjectLayer::onUpdate(float deltaTime) {
+        ATLAS_PROFILE_SCOPE("ProjectLayer::onUpdate");
         if (auto *scene = projectInstance.scene()) {
             scene->onUpdate(deltaTime);
         }
     }
 
     void ProjectLayer::onRender(FrameContext frameContext) {
+        ATLAS_PROFILE_SCOPE("ProjectLayer::onRender");
         if (auto *scene = projectInstance.scene()) {
             scene->onRender(frameContext);
         }

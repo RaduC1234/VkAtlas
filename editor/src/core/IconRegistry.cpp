@@ -9,6 +9,7 @@
 
 #include <lunasvg.h>
 
+#include "asset/AssetManager.hpp"
 #include "asset/Texture.hpp"
 #include "core/Log.hpp"
 #include "renderer/Device.hpp"
@@ -165,28 +166,9 @@ namespace Atlas::Editor {
 
     std::filesystem::path IconRegistry::resolveEditorPath(const std::filesystem::path &path) {
         const std::string generic = path.generic_string();
-        constexpr const char *editorPrefix = "##editor";
-
-        if (generic == editorPrefix || generic.starts_with(std::string(editorPrefix) + "/")) {
-            const std::filesystem::path relative = generic == editorPrefix
-                ? std::filesystem::path{}
-                : std::filesystem::path(generic.substr(std::string(editorPrefix).size() + 1));
-
-            const std::filesystem::path editorAssets = std::filesystem::path("editor") / "assets";
-            for (auto directory = std::filesystem::current_path(); !directory.empty(); directory = directory.parent_path()) {
-                const std::filesystem::path candidate = directory / editorAssets / relative;
-                if (std::filesystem::exists(candidate)) {
-                    return candidate;
-                }
-
-                if (directory == directory.root_path()) {
-                    break;
-                }
-            }
-
-            return editorAssets / relative;
+        if (generic.starts_with("##")) {
+            return AssetManager::resolveFilePath(generic);
         }
-
         return path;
     }
 

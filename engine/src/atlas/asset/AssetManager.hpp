@@ -61,6 +61,7 @@ namespace Atlas {
         static void saveFileFrom(const std::vector<T> &data, const std::string &path);
         static std::string loadFileAsString(const std::string &path);
         static void saveFileAsString(const std::string &data, const std::string &path);
+        static std::filesystem::path resolveFilePath(const std::string &path);
 
     private:
         template<typename T>
@@ -105,7 +106,6 @@ namespace Atlas {
         ResourceManager &resourceManager_;
         std::filesystem::path rootPath_;
 
-        static std::filesystem::path resolveFilePath(const std::string &path);
         std::filesystem::path resolveAssetPath(const std::string &path) const;
     };
 

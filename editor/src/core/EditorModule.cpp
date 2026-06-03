@@ -1,5 +1,7 @@
 #include "EditorLayer.hpp"
 
+#include <cstdint>
+#include <cstdio>
 #include <filesystem>
 #include <utility>
 
@@ -16,11 +18,11 @@
 namespace Atlas {
     Application *CreateApplication(ApplicationCommandLineArgs args) {
         const std::filesystem::path manifestPath = args.count > 1
-                                                       ? args.values[1]
-                                                       : ATLAS_DEFAULT_PROJECT_MANIFEST;
+                                                       ? std::filesystem::path(args.values[1])
+                                                       : std::filesystem::path{};
         const std::filesystem::path modulePath = args.count > 1
                                                      ? std::filesystem::path{}
-                                                     : ATLAS_DEFAULT_PROJECT_MODULE;
+                                                     : std::filesystem::path{};
 
         ApplicationCreateInfo createInfo{};
         createInfo.name = "Atlas Editor";
@@ -28,6 +30,7 @@ namespace Atlas {
         createInfo.projectModule = modulePath;
         createInfo.rendererCreateInfo.window.title = createInfo.name;
         createInfo.rendererCreateInfo.window.properties = Window::Properties::Decorated | Window::Properties::Resizeable;
+        createInfo.rendererCreateInfo.window.inputProvider = &DesktopInputProvider::instance();
         createInfo.rendererCreateInfo.sceneOutputTarget = Renderer::SceneOutputTarget::Texture;
 
         auto *application = new Application(createInfo);

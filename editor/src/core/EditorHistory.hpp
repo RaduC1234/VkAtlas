@@ -53,6 +53,8 @@ namespace Atlas::Editor {
         void push(Entry entry);
         void apply(entt::registry &registry, const Entry &entry, bool redo);
         static void refreshCamera(entt::registry &registry, entt::entity entity);
+        static void refreshLightFromTransform(entt::registry &registry, entt::entity entity);
+        static void refreshTransformFromLight(entt::registry &registry, entt::entity entity);
 
         std::vector<Entry> undoStack;
         std::vector<Entry> redoStack;

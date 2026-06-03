@@ -3,7 +3,10 @@
 #include <array>
 #include <stdexcept>
 
+#include "asset/AssetManager.hpp"
+#include "core/Profiler.hpp"
 #include "core/Window.hpp"
+#include "renderer/resources/GPUTexture.hpp"
 #include "ui/theme/EditorTheme.hpp"
 
 #include <imgui.h>
@@ -11,7 +14,8 @@
 #include <imgui_impl_vulkan.h>
 
 namespace Atlas {
-    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()), nativeWindow(window.getNativeHandle()) {
+    ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()), atlasDevice(&device), nativeWindow(window.getNativeHandle()) {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::create");
         createDescriptorPool(device);
 
         IMGUI_CHECKVERSION();
@@ -19,7 +23,9 @@ namespace Atlas {
 
         ImGuiIO &io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-        io.Fonts->AddFontFromFileTTF("assets/engine/Roboto-Medium.ttf", 15.0f);
+
+        const std::string fontPath = AssetManager::resolveFilePath("##editor/fonts/Roboto-Medium.ttf").string();
+        io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 15.0f);
 
         Editor::EditorTheme::apply(
             window.getTheme() == Window::Theme::Light
@@ -46,6 +52,7 @@ namespace Atlas {
     }
 
     ImGuiLayer::~ImGuiLayer() {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::destroy");
         if (device != VK_NULL_HANDLE) {
             vkDeviceWaitIdle(device);
             ImGui_ImplVulkan_Shutdown();
@@ -60,6 +67,7 @@ namespace Atlas {
     }
 
     void ImGuiLayer::beginFrame(bool createDockSpace) {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::beginFrame");
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -93,26 +101,38 @@ namespace Atlas {
     }
 
     void ImGuiLayer::endFrame() {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::endFrame");
         ImGui::Render();
     }
 
     void ImGuiLayer::render(VkCommandBuffer commandBuffer) {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::render");
+        ATLAS_PROFILE_GPU_ZONE(atlasDevice->gpuProfilerContext(), commandBuffer, "Editor::ImGuiDrawData");
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
     }
 
     VkDescriptorSet ImGuiLayer::addTexture(VkImageView imageView, VkImageLayout imageLayout) {
-        return addTexture(VK_NULL_HANDLE, imageView, imageLayout);
+        return addTexture(IGPUResource::default_<GPUTexture>().descriptor().sampler, imageView, imageLayout);
     }
 
     VkDescriptorSet ImGuiLayer::addTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout) {
+        if (imageView == VK_NULL_HANDLE || imageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+            return VK_NULL_HANDLE;
+        }
+
         return ImGui_ImplVulkan_AddTexture(sampler, imageView, imageLayout);
     }
 
     void ImGuiLayer::removeTexture(VkDescriptorSet texture) {
+        if (texture == VK_NULL_HANDLE) {
+            return;
+        }
+
         ImGui_ImplVulkan_RemoveTexture(texture);
     }
 
     void ImGuiLayer::createDescriptorPool(Device &device) {
+        ATLAS_PROFILE_SCOPE("ImGuiLayer::createDescriptorPool");
         constexpr std::array<VkDescriptorPoolSize, 3> poolSizes{
             {
                 {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},

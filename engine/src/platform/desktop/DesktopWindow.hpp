@@ -8,21 +8,10 @@
 
 namespace Atlas {
 
-    struct CaptionBar {
-        void *hwnd    = nullptr;
-        int   hovered = -1;  // 0=min, 1=max/restore, 2=close
-        int   pressed = -1;
-
-        void create(void *ownerHwnd);
-        void destroy();
-        void reposition(void *ownerHwnd) const;
-        void invalidate() const;
-    };
-
     class DesktopWindow : public Window {
     public:
-        DesktopWindow(const CreateInfo &properties);
-        ~DesktopWindow() override;
+        explicit DesktopWindow(const CreateInfo &properties);
+        ~DesktopWindow() override = default;
 
         bool shouldClose() override;
         void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const override;
@@ -33,18 +22,14 @@ namespace Atlas {
 
         void setCursorMode(CursorMode cursorMode) override;
         void setWindowIcon(const std::string &iconPath) override;
+        void setTitle(const std::string &title) override;
         void setTheme(Theme theme) override;
+        void setDecorated(bool decorated) override;
         Theme getTheme() const override { return theme; }
         void *getNativeHandle() const override;
 
-        GLFWwindow *glfwWindow         = nullptr;
-        void       *originalWindowProc = nullptr;
-        bool        customTitleBar     = false;
-        CaptionBar  captionBar;
-        Theme theme;
-
-        void installCustomTitleBar();
-        void removeCustomTitleBar();
+        GLFWwindow *glfwWindow = nullptr;
+        Theme theme = Theme::Dark;
 
         static void framebufferResizeCallback(GLFWwindow *w, int width, int height);
         static void mouseCursorPositionCallback(GLFWwindow *w, double xPos, double yPos);

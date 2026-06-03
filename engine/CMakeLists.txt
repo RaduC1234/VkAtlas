@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.22)
 
 project("atlas_engine")
 
-option(ATLAS_ENABLE_TRACY_DEBUG "Enable Tracy profiling for Debug builds" ON)
-
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS "src/*.cpp" "src/*.hpp")
 
 if (ATLAS_PLATFORM_DESKTOP_BUILD)
@@ -41,7 +39,6 @@ set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 set(JSON_Install OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(dependencies/KTX-Software)
-add_subdirectory(dependencies/fmt)
 add_subdirectory(dependencies/glm)
 add_subdirectory(dependencies/entt)
 add_subdirectory(dependencies/VulkanMemoryAllocator)
@@ -55,7 +52,6 @@ target_include_directories(stb_image INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/depen
 target_link_libraries(atlas_engine PUBLIC
         glm::glm-header-only
         stb_image
-        fmt::fmt-header-only
         EnTT::EnTT
         nlohmann_json::nlohmann_json
 )
@@ -81,11 +77,16 @@ if (ANDROID)
 
 elseif (WIN32)
     find_package(Vulkan REQUIRED)
+    set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
     add_subdirectory(dependencies/glfw)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 
     if (ATLAS_ENABLE_TRACY_DEBUG)
-        set(TRACY_ENABLE OFF CACHE BOOL "" FORCE)
+        set(TRACY_ENABLE ON CACHE BOOL "" FORCE)
         set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+
+        # Build the Tracy GUI server (profiler viewer) alongside the client
+        set(VCPKG_GUI_TOOLS ON CACHE BOOL "Build Tracy profiler GUI" FORCE)
 
         add_subdirectory(dependencies/tracy)
 
@@ -98,34 +99,9 @@ elseif (WIN32)
 
         target_compile_definitions(atlas_engine PUBLIC
                 "$<$<CONFIG:Debug>:ATLAS_PROFILE_CPU>"
+                "$<$<CONFIG:Debug>:ATLAS_PROFILE_GPU>"
         )
     endif ()
-
-    add_library(imgui OBJECT
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_draw.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_widgets.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_demo.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/imgui_tables.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_glfw.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends/imgui_impl_vulkan.cpp
-    )
-
-    set_target_properties(imgui PROPERTIES
-            POSITION_INDEPENDENT_CODE ON
-    )
-
-    target_link_libraries(imgui PRIVATE
-            glfw
-            Vulkan::Vulkan
-    )
-
-    target_include_directories(imgui PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui
-            ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends
-    )
-
-    target_sources(atlas_engine PRIVATE $<TARGET_OBJECTS:imgui>)
 
     target_link_libraries(atlas_engine
         PUBLIC
@@ -139,8 +115,6 @@ endif ()
 target_include_directories(atlas_engine PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/src/atlas
         ${CMAKE_CURRENT_SOURCE_DIR}/src/platform
-        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui
-        ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/imgui/backends
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/tinygltf
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/tinyobjloader
         ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/VulkanMemoryAllocator/include

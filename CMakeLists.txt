@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(ATLAS_BUILD_TRACY_PROFILER "Add the Tracy profiler GUI target to this CMake build" OFF)
+option(ATLAS_ENABLE_TRACY_DEBUG "Enable Tracy CPU and GPU profiling in Debug builds" ON)
 
 set(ATLAS_BIN_DIR "${CMAKE_BINARY_DIR}/bin")
 set(ATLAS_LIB_DIR "${CMAKE_BINARY_DIR}/lib")
@@ -58,45 +58,7 @@ add_subdirectory(engine)
 
 # Desktop umbrella
 if (WIN32 OR (UNIX AND NOT APPLE AND NOT ANDROID))
-    add_subdirectory(samples/office)
-    add_subdirectory(runtime)
+    add_subdirectory(desktop_runtime)
     add_subdirectory(editor)
-    add_subdirectory(tools/atlas_pack)
-
-    if (ATLAS_BUILD_TRACY_PROFILER)
-        include(ExternalProject)
-
-        set(ATLAS_TRACY_PROFILER_BUILD_DIR "${CMAKE_BINARY_DIR}/tracy-profiler")
-        set(ATLAS_TRACY_PROFILER_EXE "${ATLAS_TRACY_PROFILER_BUILD_DIR}/tracy-profiler.exe")
-
-        ExternalProject_Add(atlas_tracy_profiler_build
-                SOURCE_DIR "${CMAKE_SOURCE_DIR}/engine/dependencies/tracy/profiler"
-                BINARY_DIR "${ATLAS_TRACY_PROFILER_BUILD_DIR}"
-                CMAKE_ARGS
-                        "-DCMAKE_BUILD_TYPE=Release"
-                        "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
-                        "-DDOWNLOAD_LIBCURL=ON"
-                        "-DCMAKE_DISABLE_FIND_PACKAGE_Libssh2=ON"
-                BUILD_BYPRODUCTS "${ATLAS_TRACY_PROFILER_EXE}"
-                INSTALL_COMMAND
-                        ${CMAKE_COMMAND} -E make_directory "${ATLAS_BIN_DIR}"
-                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                                "${ATLAS_TRACY_PROFILER_EXE}"
-                                "${ATLAS_BIN_DIR}/tracy-profiler.exe"
-        )
-
-        add_custom_target(atlas_tracy_profiler
-                DEPENDS atlas_tracy_profiler_build
-                COMMENT "Building Tracy profiler GUI"
-                VERBATIM
-        )
-
-        add_executable(tracy-profiler IMPORTED GLOBAL)
-        set_target_properties(tracy-profiler PROPERTIES
-                IMPORTED_LOCATION "${ATLAS_BIN_DIR}/tracy-profiler.exe"
-        )
-        add_dependencies(tracy-profiler atlas_tracy_profiler)
-    endif ()
 endif ()
 
-add_subdirectory(tools/brdf_lut)

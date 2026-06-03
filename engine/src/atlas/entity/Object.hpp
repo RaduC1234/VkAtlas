@@ -8,6 +8,7 @@
 
 #include "asset/AssetHandle.hpp"
 #include "renderer/Camera.hpp"
+#include "renderer/Renderer.hpp"
 
 
 namespace Atlas {
@@ -92,8 +93,31 @@ namespace Atlas {
         AssetHandle<Mesh> meshHandle;
     };
 
+    NLOHMANN_JSON_SERIALIZE_ENUM(ViewMode, {
+                                 {ViewMode::LIT, "Lit"},
+                                 {ViewMode::UNLIT, "Unlit"},
+                                 {ViewMode::LIGHTING_ONLY, "LightingOnly"},
+                                 {ViewMode::PATH_TRACING, "PathTracing"},
+                                 })
+
+    enum class CameraProjection : uint32_t {
+        PERSPECTIVE = 0,
+        ORTHOGRAPHIC
+    };
+
+    NLOHMANN_JSON_SERIALIZE_ENUM(CameraProjection, {
+                                 {CameraProjection::PERSPECTIVE, "Perspective"},
+                                 {CameraProjection::ORTHOGRAPHIC, "Orthographic"},
+                                 })
+
     struct CameraComponent {
         Camera camera{};
+        CameraProjection projection{CameraProjection::PERSPECTIVE};
+        ViewMode renderMode{ViewMode::LIT};
+        float perspectiveFovY{0.872664626f};
+        float orthographicHalfHeight{1.398923f};
+        float nearPlane{0.1f};
+        float farPlane{100.0f};
     };
 
     struct EditorCameraComponent {
@@ -151,6 +175,10 @@ namespace Atlas {
         float contrast{1.0f};
         float saturation{1.0};
         glm::vec3 colorTint = {1.0f, 1.0f, 1.0f};
+        bool bloomEnabled{false};
+        bool vignetteEnabled{true};
+        float bloomStrength{3.0f};
+        float vignetteStrength{2.0f};
     };
 
     struct ScriptBinding {

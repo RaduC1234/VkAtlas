@@ -28,6 +28,7 @@ struct ObjectData {
     mat4  normalMatrix;
     uvec4 textureIndices;
     vec4  baseColor;
+    vec4  materialFactors;
     vec4  sheenColorStrength;
     uint  firstIndex;
     uint  indexCount;
@@ -261,12 +262,12 @@ void main() {
         : texture(textures[nonuniformEXT(obj.textureIndices.x)], uv);
     vec3 albedo       = albedoSample.rgb * obj.baseColor.rgb * vertexColor;
 
-    float metallic  = 0.0;
-    float roughness = 0.5;
+    float metallic  = obj.materialFactors.x;
+    float roughness = obj.materialFactors.y;
     if (obj.textureIndices.z != 0u) {
         vec4 mr   = texture(textures[nonuniformEXT(obj.textureIndices.z)], uv);
-        roughness = mr.g;
-        metallic  = mr.b;
+        roughness *= mr.g;
+        metallic  *= mr.b;
     }
     roughness = clamp(roughness, 0.04, 1.0);
 

@@ -1,9 +1,11 @@
 #include "scene/LevelScene.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "core/Profiler.hpp"
 #include "entity/Object.hpp"
 #include "scene/LevelSerializer.hpp"
 
@@ -24,22 +26,33 @@ namespace Atlas {
         ensureCamera();
         ensureSkybox();
         updateCameras();
-        renderSystem->build(registry);
+        renderSystem->build(registry, registry.get<CameraComponent>(activeCamera()).renderMode);
     }
 
     void LevelScene::onUpdate(float deltaTime) {
+        ATLAS_PROFILE_SCOPE("LevelScene::onUpdate");
         ensureCamera();
         ensureSkybox();
-        cameraSystem->update(registry, deltaTime, renderer.getAspectRatio());
-        updateCameras();
-        renderSystem->build(registry);
+        {
+            ATLAS_PROFILE_SCOPE("LevelScene::cameraSystemUpdate");
+            cameraSystem->update(registry, deltaTime, renderer.getAspectRatio());
+        }
+        {
+            ATLAS_PROFILE_SCOPE("LevelScene::updateCameras");
+            updateCameras();
+        }
+        {
+            ATLAS_PROFILE_SCOPE("LevelScene::renderSystemBuild");
+            renderSystem->build(registry, registry.get<CameraComponent>(activeCamera()).renderMode);
+        }
     }
 
     void LevelScene::onRender(FrameContext frameContext) {
+        ATLAS_PROFILE_SCOPE("LevelScene::onRender");
         const entt::entity entity = activeCamera();
         if (entity != entt::null) {
             const CameraComponent &camera = registry.get<CameraComponent>(entity);
-            renderSystem->render(frameContext, camera.camera.getData(), debugData());
+            renderSystem->render(frameContext, camera.camera.getData(), debugData(), camera.renderMode);
         }
     }
 
@@ -65,7 +78,8 @@ namespace Atlas {
         registry.emplace<SceneNodeComponent>(cameraEntity, std::move(node));
 
         auto &transform = registry.emplace<TransformComponent>(cameraEntity);
-        transform.translation = {0.0f, 0.0f, 3.0f};
+        transform.translation = {0.0f, 1.0f, 5.0f};
+        transform.rotation.y = glm::pi<float>();
 
         registry.emplace<CameraComponent>(cameraEntity);
     }
@@ -90,26 +104,17 @@ namespace Atlas {
     }
 
     entt::entity LevelScene::activeCamera() {
-        for (const entt::entity entity: registry.view<CameraComponent, EditorCameraComponent>()) {
-            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
-                continue;
-            }
-
+        // Prefer scene cameras (non-transient, non-editor)
+        for (const entt::entity entity: registry.view<CameraComponent>()) {
+            if (registry.all_of<TransientComponent>(entity)) continue;
+            if (registry.all_of<EditorCameraComponent>(entity)) continue;
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) continue;
             return entity;
         }
 
-        for (const entt::entity entity: registry.view<CameraComponent>()) {
-            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
-                continue;
-            }
-
-            if (registry.all_of<EditorCameraComponent>(entity)) {
-                continue;
-            }
-            if (registry.all_of<TransientComponent>(entity)) {
-                continue;
-            }
-
+        // Fall back to editor camera
+        for (const entt::entity entity: registry.view<CameraComponent, EditorCameraComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) continue;
             return entity;
         }
 
@@ -123,7 +128,21 @@ namespace Atlas {
                 if (transform) {
                     camera.camera.setViewYXZ(transform->translation, transform->rotation);
                 }
-                camera.camera.setPerspectiveProjection(glm::radians(50.0f), renderer.getAspectRatio(), 0.1f, 200.0f);
+                const float nearZ = std::max(camera.nearPlane, 0.001f);
+                const float farZ = std::max(camera.farPlane, nearZ + 0.01f);
+                const float aspect = renderer.getAspectRatio();
+                if (camera.projection == CameraProjection::ORTHOGRAPHIC) {
+                    const float halfHeight = std::max(camera.orthographicHalfHeight, 0.001f);
+                    camera.camera.setOrthographicProjection(
+                        -halfHeight * aspect,
+                        halfHeight * aspect,
+                        -halfHeight,
+                        halfHeight,
+                        nearZ,
+                        farZ);
+                } else {
+                    camera.camera.setPerspectiveProjection(camera.perspectiveFovY, aspect, nearZ, farZ);
+                }
             });
         }
     }

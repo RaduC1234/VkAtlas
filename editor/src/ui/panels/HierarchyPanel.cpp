@@ -2,13 +2,18 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <imgui.h>
 
 namespace Atlas::Editor {
-    HierarchyPanel::HierarchyPanel(ProjectLayer &projectLayer, entt::entity &selectedEntity, EditorHistory &history)
-        : projectLayer(projectLayer), selectedEntity(selectedEntity), history(history) {
+    HierarchyPanel::HierarchyPanel(
+        ProjectLayer &projectLayer,
+        entt::entity &selectedEntity,
+        std::vector<entt::entity> &selectedEntities,
+        EditorHistory &history)
+        : projectLayer(projectLayer), selectedEntity(selectedEntity), selectedEntities(selectedEntities), history(history) {
     }
 
     void HierarchyPanel::onImGuiRender() {
@@ -25,7 +30,14 @@ namespace Atlas::Editor {
         }
 
         auto &registry = scene->getRegistry();
+        pruneSelection(registry);
         auto view = registry.view<SceneNodeComponent>();
+
+        if (ImGui::Button("Add Entity", ImVec2(-1.0f, 0.0f))) {
+            selectedEntity = createEntity(registry);
+            selectedEntities = {selectedEntity};
+        }
+        ImGui::Separator();
 
         const float iconColumnWidth = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x;
         if (ImGui::BeginTable("HierarchyRows", 3, ImGuiTableFlags_SizingStretchProp, ImVec2(0.0f, 0.0f))) {
@@ -59,7 +71,7 @@ namespace Atlas::Editor {
     }
 
     void HierarchyPanel::deleteSelected() {
-        if (selectedEntity == entt::null) {
+        if (selectedEntities.empty() && selectedEntity == entt::null) {
             return;
         }
 
@@ -69,16 +81,54 @@ namespace Atlas::Editor {
         }
 
         auto &registry = scene->getRegistry();
-        if (registry.valid(selectedEntity) && registry.all_of<TransientComponent>(selectedEntity)) {
+        pruneSelection(registry);
+
+        if (selectedEntities.empty() && selectedEntity != entt::null && registry.valid(selectedEntity)) {
+            selectedEntities = {selectedEntity};
+        }
+
+        if (selectedEntities.empty()) {
             selectedEntity = entt::null;
             return;
         }
 
-        if (registry.valid(selectedEntity)) {
-            deleteEntity(registry, selectedEntity);
-        } else {
-            selectedEntity = entt::null;
+        const std::vector<entt::entity> deleteList = selectedEntities;
+        for (const entt::entity entity: deleteList) {
+            if (registry.valid(entity) && !registry.all_of<TransientComponent>(entity)) {
+                deleteEntity(registry, entity);
+            }
         }
+
+        selectedEntities.clear();
+        selectedEntity = entt::null;
+    }
+
+    entt::entity HierarchyPanel::createEntity(entt::registry &registry) {
+        const entt::entity entity = registry.create();
+
+        SceneNodeComponent node{};
+        node.name = nextEntityName(registry);
+        registry.emplace<SceneNodeComponent>(entity, std::move(node));
+        registry.emplace<TransformComponent>(entity);
+        registry.patch<TransformComponent>(entity);
+
+        return entity;
+    }
+
+    std::string HierarchyPanel::nextEntityName(entt::registry &registry) const {
+        int nextIndex = 1;
+        for (const entt::entity entity: registry.view<SceneNodeComponent>()) {
+            if (registry.all_of<TransientComponent>(entity)) {
+                continue;
+            }
+
+            const auto &node = registry.get<SceneNodeComponent>(entity);
+            if (!node.deleted) {
+                ++nextIndex;
+            }
+        }
+
+        return "Entity " + std::to_string(nextIndex);
     }
 
     void HierarchyPanel::drawEntityNode(entt::registry &registry, entt::entity entity) {
@@ -91,7 +141,7 @@ namespace Atlas::Editor {
         }
 
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
-        if (selectedEntity == entity) {
+        if (isSelected(entity)) {
             flags |= ImGuiTreeNodeFlags_Selected;
         }
         if (node.children.empty()) {
@@ -117,7 +167,7 @@ namespace Atlas::Editor {
         }
 
         if (ImGui::IsItemClicked()) {
-            selectedEntity = entity;
+            selectEntity(registry, entity);
         }
 
         ImGui::TableNextColumn();
@@ -137,6 +187,65 @@ namespace Atlas::Editor {
             }
 
             ImGui::TreePop();
+        }
+    }
+
+    void HierarchyPanel::selectEntity(entt::registry &registry, const entt::entity entity) {
+        if (!registry.valid(entity) || registry.all_of<TransientComponent>(entity)) {
+            return;
+        }
+
+        selectedEntity = entity;
+        const ImGuiIO &io = ImGui::GetIO();
+        if (io.KeyCtrl) {
+            const auto it = std::ranges::find(selectedEntities, entity);
+            if (it == selectedEntities.end()) {
+                selectedEntities.push_back(entity);
+            } else {
+                selectedEntities.erase(it);
+                if (selectedEntities.empty()) {
+                    selectedEntity = entt::null;
+                } else {
+                    selectedEntity = selectedEntities.back();
+                }
+            }
+            return;
+        }
+
+        selectedEntities = {entity};
+    }
+
+    bool HierarchyPanel::isSelected(const entt::entity entity) const {
+        return std::ranges::find(selectedEntities, entity) != selectedEntities.end();
+    }
+
+    void HierarchyPanel::pruneSelection(entt::registry &registry) {
+        selectedEntities.erase(
+            std::remove_if(selectedEntities.begin(), selectedEntities.end(), [&](const entt::entity entity) {
+                if (entity == entt::null || !registry.valid(entity) || registry.all_of<TransientComponent>(entity)) {
+                    return true;
+                }
+
+                const auto *node = registry.try_get<SceneNodeComponent>(entity);
+                return node && node->deleted;
+            }),
+            selectedEntities.end());
+
+        if (selectedEntity != entt::null) {
+            const bool primaryStillSelected = std::ranges::find(selectedEntities, selectedEntity) != selectedEntities.end();
+            if (!primaryStillSelected) {
+                if (!registry.valid(selectedEntity) || registry.all_of<TransientComponent>(selectedEntity)) {
+                    selectedEntity = entt::null;
+                } else if (const auto *node = registry.try_get<SceneNodeComponent>(selectedEntity); node && node->deleted) {
+                    selectedEntity = entt::null;
+                } else {
+                    selectedEntities = {selectedEntity};
+                }
+            }
+        }
+
+        if (selectedEntity == entt::null && !selectedEntities.empty()) {
+            selectedEntity = selectedEntities.back();
         }
     }
 

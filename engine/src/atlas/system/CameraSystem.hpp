@@ -2,8 +2,8 @@
 #include <entt/entity/registry.hpp>
 #include <glm/vec2.hpp>
 
-#include "core/Keyboard.hpp"
-#include "core/Mouse.hpp"
+#include "input/Keyboard.hpp"
+#include "input/Mouse.hpp"
 #include "core/Window.hpp"
 
 namespace Atlas {

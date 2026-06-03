@@ -52,10 +52,6 @@ namespace Atlas {
             SceneOutputTarget sceneOutputTarget = SceneOutputTarget::Swapchain;
         };
 
-        struct Settings {
-            ViewMode viewMode = ViewMode::LIT;
-        };
-
         Renderer(const CreateInfo &createInfo);
         ~Renderer();
 
@@ -66,8 +62,6 @@ namespace Atlas {
         Device &device() const { return *device_; }
         ResourceManager &resourceManager() { return *resourceManager_; }
         const ResourceManager &resourceManager() const { return *resourceManager_; }
-        Settings &settings() { return settings_; }
-        const Settings &settings() const { return settings_; }
 
         VkRenderPass getSwapChainRenderPass() const { return swapChain_->getRenderPass(); }
         VkRenderPass getOverlayRenderPass(OverlayLoadOp loadOp = OverlayLoadOp::Load) const {
@@ -88,6 +82,7 @@ namespace Atlas {
         void beginOverlayRenderPass(VkCommandBuffer commandBuffer, OverlayLoadOp loadOp = OverlayLoadOp::Load);
         void endOverlayRenderPass(VkCommandBuffer commandBuffer) const;
         void setSceneOutputImage(VkImage image, VkImageView imageView, VkImageLayout imageLayout, VkFormat format, VkExtent2D extent);
+        void clearSceneOutputImage();
         void setSceneViewportExtent(VkExtent2D extent) { sceneViewportExtent = extent; }
 
         CreateInfo createInfo;
@@ -112,7 +107,6 @@ namespace Atlas {
         std::shared_ptr<SwapChain> swapChain_;
         std::unique_ptr<ResourceManager> resourceManager_;
 
-        Settings settings_{};
         SceneOutputImage sceneOutputImage;
         VkExtent2D sceneViewportExtent{};
         std::vector<VkCommandBuffer> graphicsCommandBuffers_;

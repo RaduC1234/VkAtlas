@@ -4,7 +4,13 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <unordered_map>
 #include <utility>
+
+#include <nlohmann/json.hpp>
 
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
@@ -12,6 +18,68 @@
 #include "renderer/resources/GPUCubemap.hpp"
 
 namespace Atlas {
+    // ── paths.json mount overrides ────────────────────────────────────────────
+    // Format (place paths.json next to the executable / working directory):
+    //   {
+    //     "engine": "E:/Atlas/engine/assets",
+    //     "editor": "E:/Atlas/editor/assets"
+    //   }
+    // Each key is a ##mount name; the value is the full path to that mount's
+    // assets root.  Missing keys fall back to the normal directory-walk search.
+
+    namespace {
+        struct MountOverrides {
+            std::unordered_map<std::string, std::filesystem::path> table;
+            bool loaded = false;
+        };
+
+        MountOverrides &mountOverrides() {
+            static MountOverrides overrides;
+            return overrides;
+        }
+
+        void ensureMountOverridesLoaded() {
+            auto &mo = mountOverrides();
+            if (mo.loaded) return;
+            mo.loaded = true;
+
+            // Search from the working directory upward for paths.json
+            for (auto dir = std::filesystem::current_path(); !dir.empty(); dir = dir.parent_path()) {
+                const auto candidate = dir / "paths.json";
+                if (std::filesystem::exists(candidate)) {
+                    try {
+                        std::ifstream file(candidate);
+                        const auto json = nlohmann::json::parse(file);
+                        for (const auto &[key, value]: json.items()) {
+                            if (value.is_string()) {
+                                std::filesystem::path p(value.get<std::string>());
+                                // Relative paths are resolved against the paths.json location,
+                                // so the file works on any drive letter / mount point.
+                                if (p.is_relative()) {
+                                    p = (dir / p).lexically_normal();
+                                }
+                                mo.table[key] = p;
+                                AT_INFO("AssetManager: mount '##{}' -> '{}'", key, p.string());
+                            }
+                        }
+                    } catch (const std::exception &e) {
+                        AT_ERROR("AssetManager: failed to parse paths.json: {}", e.what());
+                    }
+                    return;
+                }
+                if (dir == dir.root_path()) break;
+            }
+        }
+
+        std::optional<std::filesystem::path> resolveMount(const std::string &mount, const std::filesystem::path &relativePath) {
+            ensureMountOverridesLoaded();
+            const auto &table = mountOverrides().table;
+            if (const auto it = table.find(mount); it != table.end()) {
+                return (it->second / relativePath).lexically_normal();
+            }
+            return std::nullopt;
+        }
+    }
     AssetManager::AssetManager(ResourceManager &resourceManager) : resourceManager_(resourceManager) {
     }
 
@@ -167,6 +235,12 @@ namespace Atlas {
                                                            ? std::filesystem::path{}
                                                            : std::filesystem::path(path.substr(separator + 1));
 
+            // Check paths.json override first
+            if (auto overridden = resolveMount(mount, relativePath)) {
+                return *overridden;
+            }
+
+            // Built-in mounts: search upward for <mount>/assets/
             std::filesystem::path assetDirectory;
             if (mount == "engine") {
                 assetDirectory = "engine";

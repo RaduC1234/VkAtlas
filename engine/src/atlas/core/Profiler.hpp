@@ -1,9 +1,12 @@
 #pragma once
 
-#include <cstddef>
-
 #if defined(ATLAS_PROFILE_CPU)
 #include <tracy/Tracy.hpp>
+#endif
+
+#if defined(ATLAS_PROFILE_GPU)
+#include <vulkan/vulkan.h>
+#include <tracy/TracyVulkan.hpp>
 #endif
 
 namespace Atlas {
@@ -28,4 +31,14 @@ namespace Atlas {
 #define ATLAS_PROFILE_FUNCTION() static_cast<void>(0)
 #define ATLAS_PROFILE_FRAME() static_cast<void>(0)
 #define ATLAS_PROFILE_THREAD(name) static_cast<void>(name)
+#endif
+
+#if defined(ATLAS_PROFILE_GPU)
+#define ATLAS_PROFILE_GPU_ZONE(ctx, cmd, name) TracyVkZone(ctx, cmd, name)
+#define ATLAS_PROFILE_GPU_ZONE_DYNAMIC(ctx, cmd, name) TracyVkZoneTransient(ctx, ATLAS_PROFILE_CONCAT(atlasProfileGpuZone, __LINE__), cmd, name, true)
+#define ATLAS_PROFILE_GPU_COLLECT(ctx, cmd)    TracyVkCollect(ctx, cmd)
+#else
+#define ATLAS_PROFILE_GPU_ZONE(ctx, cmd, name) static_cast<void>(0)
+#define ATLAS_PROFILE_GPU_ZONE_DYNAMIC(ctx, cmd, name) static_cast<void>(name)
+#define ATLAS_PROFILE_GPU_COLLECT(ctx, cmd)    static_cast<void>(0)
 #endif

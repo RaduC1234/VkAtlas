@@ -7,6 +7,7 @@ import com.google.androidgamesdk.GameActivity;
 public class MainActivity extends GameActivity {
     static {
         System.loadLibrary("atlas_engine");
+        System.loadLibrary("atlas_runtime");
     }
 
     @Override

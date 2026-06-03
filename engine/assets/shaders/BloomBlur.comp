@@ -1,0 +1,43 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(set = 1, binding = 0, rgba16f) uniform readonly  image2D srcImage;
+layout(set = 1, binding = 1, rgba16f) uniform writeonly image2D dstImage;
+
+layout(push_constant) uniform PC {
+    float threshold;
+    float strength;
+    int   radius;
+    int   horizontal;   // 1 = horizontal, 0 = vertical
+    float texelSizeX;
+    float texelSizeY;
+} pc;
+
+// Gaussian weights — precomputed for radius up to 8
+// w(x) = exp(-x*x / (2 * sigma^2)),  sigma = radius / 2.0
+float gaussWeight(int x, float sigma) {
+    return exp(-float(x * x) / (2.0 * sigma * sigma));
+}
+
+void main() {
+    const ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    const ivec2 size  = imageSize(dstImage);
+
+    if (coord.x >= size.x || coord.y >= size.y) return;
+
+    const float sigma  = float(pc.radius) * 0.5;
+    const ivec2 dir    = pc.horizontal == 1 ? ivec2(1, 0) : ivec2(0, 1);
+
+    vec3  colorSum  = vec3(0.0);
+    float weightSum = 0.0;
+
+    for (int i = -pc.radius; i <= pc.radius; ++i) {
+        ivec2 sampleCoord = clamp(coord + dir * i, ivec2(0), size - 1);
+        float w           = gaussWeight(i, sigma);
+        colorSum  += imageLoad(srcImage, sampleCoord).rgb * w;
+        weightSum += w;
+    }
+
+    imageStore(dstImage, coord, vec4(colorSum / weightSum, 1.0));
+}

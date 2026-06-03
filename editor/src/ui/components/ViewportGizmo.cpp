@@ -25,6 +25,11 @@ namespace Atlas::Editor {
         return (lo + hi) * 0.5f;
     }
 
+    glm::vec3 ViewportGizmo::safeDirection(const glm::vec3 &direction, const glm::vec3 &fallback) {
+        const float lengthSquared = glm::dot(direction, direction);
+        return lengthSquared > 1e-8f ? direction * glm::inversesqrt(lengthSquared) : fallback;
+    }
+
     glm::quat ViewportGizmo::rotationYXZ(const glm::vec3 &r) {
         return glm::angleAxis(r.y, glm::vec3{0, 1, 0})
                * glm::angleAxis(r.x, glm::vec3{1, 0, 0})
@@ -43,6 +48,33 @@ namespace Atlas::Editor {
             y = std::atan2(-m[0][2], m[0][0]);
         }
         return {x, glm::mod(y, glm::two_pi<float>()), z};
+    }
+
+    glm::vec3 ViewportGizmo::lightDirectionFromTransform(const TransformComponent &transform) {
+        const glm::vec3 forward{
+            std::cos(transform.rotation.x) * std::sin(transform.rotation.y),
+            -std::sin(transform.rotation.x),
+            std::cos(transform.rotation.x) * std::cos(transform.rotation.y)
+        };
+        return safeDirection(-forward);
+    }
+
+    glm::vec3 ViewportGizmo::lightRightFromTransform(const TransformComponent &transform) {
+        return safeDirection(rotationYXZ(transform.rotation) * glm::vec3{1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
+    }
+
+    glm::vec3 ViewportGizmo::lightUpFromTransform(const TransformComponent &transform) {
+        return safeDirection(rotationYXZ(transform.rotation) * glm::vec3{0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, 0.0f});
+    }
+
+    glm::vec3 ViewportGizmo::transformRotationFromLightDirection(const glm::vec3 &direction) {
+        const glm::vec3 normalized = safeDirection(direction);
+        const glm::vec3 forward = -normalized;
+        return {
+            std::asin(glm::clamp(-forward.y, -1.0f, 1.0f)),
+            glm::mod(std::atan2(forward.x, forward.z), glm::two_pi<float>()),
+            0.0f
+        };
     }
 
     // ── ImViewGuizmo bridge ───────────────────────────────────────────────
@@ -79,6 +111,15 @@ namespace Atlas::Editor {
     }
 
     // ── Projection ────────────────────────────────────────────────────────
+
+    bool ViewportGizmo::projectPoint(
+        const Camera::Data &cameraData,
+        const glm::vec3 &worldPosition,
+        const ImVec2 imageMin,
+        const ImVec2 imageSize,
+        ImVec2 &outScreen) {
+        return projectWorldToViewport(cameraData.viewProjection, worldPosition, imageMin, imageSize, outScreen);
+    }
 
     bool ViewportGizmo::projectWorldToViewport(
         const glm::mat4 &vp,
@@ -144,6 +185,39 @@ namespace Atlas::Editor {
         return projectWorldToViewport(cam.viewProjection, world, imageMin, imageSize, center);
     }
 
+    bool ViewportGizmo::projectRectLight(
+        const Camera::Data &cam,
+        const glm::vec3 &position,
+        const LightComponent &light,
+        const ImVec2 imageMin,
+        const ImVec2 imageSize,
+        std::array<ImVec2, 4> &corners,
+        ImVec2 &center,
+        ImVec2 &widthHandle,
+        ImVec2 &heightHandle) {
+        const glm::vec3 right = glm::normalize(light.rectRight);
+        const glm::vec3 up = glm::normalize(light.rectUp);
+        const float halfWidth = std::max(light.width, 0.01f) * 0.5f;
+        const float halfHeight = std::max(light.height, 0.01f) * 0.5f;
+
+        const std::array<glm::vec3, 4> worldCorners = {
+            position - right * halfWidth + up * halfHeight,
+            position + right * halfWidth + up * halfHeight,
+            position + right * halfWidth - up * halfHeight,
+            position - right * halfWidth - up * halfHeight,
+        };
+
+        for (int i = 0; i < 4; ++i) {
+            if (!projectCorner(cam.viewProjection, worldCorners[i], imageMin, imageSize, corners[i])) {
+                return false;
+            }
+        }
+
+        return projectWorldToViewport(cam.viewProjection, position, imageMin, imageSize, center)
+               && projectCorner(cam.viewProjection, position + right * (halfWidth + 0.18f), imageMin, imageSize, widthHandle)
+               && projectCorner(cam.viewProjection, position + up * (halfHeight + 0.18f), imageMin, imageSize, heightHandle);
+    }
+
     // ── Billboard drawing ─────────────────────────────────────────────────
 
     ImU32 ViewportGizmo::lightIconColor(const LightComponent &light) {
@@ -194,5 +268,30 @@ namespace Atlas::Editor {
             dl.AddCircleFilled(center, sz * 0.38f, (tint & IM_COL32(255, 255, 255, 0)) | IM_COL32(0, 0, 0, 180));
             dl.AddCircle(center, sz * 0.38f, tint, 24, selected ? 2.0f : 1.2f);
         }
+    }
+
+    void ViewportGizmo::drawRectLight(
+        ImDrawList &dl,
+        const std::array<ImVec2, 4> &corners,
+        const ImVec2 center,
+        const ImVec2 widthHandle,
+        const ImVec2 heightHandle,
+        const LightComponent &light,
+        const bool hoveredWidth,
+        const bool hoveredHeight) {
+        const ImU32 fill = IM_COL32(255, 220, 128, 32);
+        const ImU32 border = IM_COL32(255, 220, 128, 230);
+        const ImU32 axisWidth = hoveredWidth ? IM_COL32(90, 180, 255, 255) : IM_COL32(90, 180, 255, 210);
+        const ImU32 axisHeight = hoveredHeight ? IM_COL32(120, 245, 145, 255) : IM_COL32(120, 245, 145, 210);
+
+        dl.AddQuadFilled(corners[0], corners[1], corners[2], corners[3], fill);
+        dl.AddQuad(corners[0], corners[1], corners[2], corners[3], border, 2.0f);
+        dl.AddLine(center, widthHandle, axisWidth, hoveredWidth ? 3.0f : 2.0f);
+        dl.AddLine(center, heightHandle, axisHeight, hoveredHeight ? 3.0f : 2.0f);
+        dl.AddCircleFilled(widthHandle, hoveredWidth ? 6.5f : 5.0f, axisWidth);
+        dl.AddCircleFilled(heightHandle, hoveredHeight ? 6.5f : 5.0f, axisHeight);
+
+        const glm::vec3 c = glm::clamp(light.color, glm::vec3{0}, glm::vec3{1});
+        dl.AddCircleFilled(center, 4.0f, IM_COL32(static_cast<int>(c.r * 255), static_cast<int>(c.g * 255), static_cast<int>(c.b * 255), 230));
     }
 } // namespace Atlas::Editor

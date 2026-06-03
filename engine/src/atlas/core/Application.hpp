@@ -5,6 +5,7 @@
 #include "renderer/Renderer.hpp"
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -13,6 +14,7 @@ namespace Atlas {
     struct ApplicationCommandLineArgs {
         int count = 0;
         char **values = nullptr;
+        void *pNativeApp = nullptr;
     };
 
     struct ApplicationCreateInfo {
@@ -20,11 +22,12 @@ namespace Atlas {
         std::filesystem::path projectManifest;
         std::filesystem::path projectModule;
         Renderer::CreateInfo rendererCreateInfo;
+        std::function<void(Window &, float)> onFrame;
     };
 
     class Application {
     public:
-        Application(const ApplicationCreateInfo& specification);
+        Application(const ApplicationCreateInfo &specification);
         ~Application();
 
         Application(const Application &) = delete;

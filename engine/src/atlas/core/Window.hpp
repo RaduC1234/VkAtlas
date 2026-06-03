@@ -10,6 +10,8 @@
 #include "Core.hpp"
 
 namespace Atlas {
+    class IInputProvider;
+
     class Window {
     public:
         enum Properties : uint32_t {
@@ -17,7 +19,6 @@ namespace Atlas {
             Decorated = BIT(1),
             Resizeable = BIT(2),
             NonResizeable = BIT(3),
-            CustomTitlebar = BIT(4),
         };
 
         enum class CursorMode {
@@ -38,6 +39,7 @@ namespace Atlas {
             std::string title = "Atlas Window";
             std::string iconPath;
             uint32_t properties = Decorated | Resizeable;
+            IInputProvider *inputProvider = nullptr;
         };
 
         virtual ~Window() = default;
@@ -52,9 +54,12 @@ namespace Atlas {
         virtual void setCursorMode(CursorMode cursorMode) { assert(true && "Method not implemented"); }
 
         virtual void setWindowIcon(const std::string &iconPath) { assert(true && "Method not implemented"); }
+        virtual void setTitle(const std::string &title) { assert(true && "Method not implemented"); }
 
         virtual void setTheme(Theme theme) { assert(true && "Method not implemented"); }
         virtual Theme getTheme() const { assert(true && "Method not implemented"); return Theme::Dark; }
+
+        virtual void setDecorated(bool decorated) { assert(true && "Method not implemented"); }
 
         bool wasWindowResized() const { return framebufferResized; }
         void resetWindowResizedFlag() { this->framebufferResized = false; }

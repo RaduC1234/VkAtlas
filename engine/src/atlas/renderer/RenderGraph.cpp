@@ -60,8 +60,6 @@ namespace Atlas {
     }
 
     void RenderGraph::bakeResources() {
-        ATLAS_PROFILE_FUNCTION();
-
         for (auto &stage: stages_) {
             std::vector<RenderStage::Resource::Description> outputs;
             stage->getDeclaredOutputs(outputs);
@@ -144,10 +142,10 @@ namespace Atlas {
     }
 
     void RenderGraph::build(entt::registry &registry) {
-        ATLAS_PROFILE_FUNCTION();
-
+        ATLAS_PROFILE_SCOPE("RenderGraph::build");
         for (auto &stage: stages_) {
-            ATLAS_PROFILE_SCOPE("RenderStage::onUpdate");
+            const char *stageName = typeid(*stage).name();
+            ATLAS_PROFILE_SCOPE_DYNAMIC(stageName);
             stage->onUpdate(registry);
         }
     }
@@ -228,19 +226,22 @@ namespace Atlas {
     }
 
     void RenderGraph::render(const FrameContext frameContext, VkDescriptorSet globalSet) {
-        ATLAS_PROFILE_FUNCTION();
-
+        ATLAS_PROFILE_SCOPE("RenderGraph::render");
         for (auto &node: nodes_) {
-            const char *zoneName = node.outputs.empty() ? "RenderStage::record" : node.outputs.front().c_str();
-            ATLAS_PROFILE_SCOPE_DYNAMIC(zoneName);
-
             // Everything runs on the graphics command buffer.
             // The graphics queue family supports compute operations, so compute
             // stages record vkCmdDispatch into the same command buffer without
             // any queue ownership transfers.
             VkCommandBuffer cmd = frameContext.graphicsCommandBuffer;
+            const char *stageName = typeid(*node.stage).name();
+            ATLAS_PROFILE_SCOPE_DYNAMIC(stageName);
+            ATLAS_PROFILE_GPU_ZONE_DYNAMIC(device.gpuProfilerContext(), cmd, stageName);
 
-            emitBarriers(cmd, node);
+            {
+                ATLAS_PROFILE_SCOPE("RenderGraph::emitBarriers");
+                ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "RenderGraph::Barriers");
+                emitBarriers(cmd, node);
+            }
             node.stage->record(cmd, globalSet);
         }
     }

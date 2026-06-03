@@ -1,8 +1,45 @@
 #include "EditorHistory.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
 
+#include <glm/gtc/constants.hpp>
+
 namespace Atlas::Editor {
+    bool editorHistoryLightUsesDirection(const LightType type) {
+        return type == LightType::SPOT || type == LightType::DIRECTIONAL || type == LightType::RECT;
+    }
+
+    glm::vec3 editorHistorySafeDirection(const glm::vec3 &direction, const glm::vec3 &fallback = {0.0f, -1.0f, 0.0f}) {
+        const float lengthSquared = glm::dot(direction, direction);
+        return lengthSquared > 1e-8f ? direction * glm::inversesqrt(lengthSquared) : fallback;
+    }
+
+    glm::vec3 editorHistoryLightDirectionFromTransform(const TransformComponent &transform) {
+        const glm::vec3 forward{
+            std::cos(transform.rotation.x) * std::sin(transform.rotation.y),
+            -std::sin(transform.rotation.x),
+            std::cos(transform.rotation.x) * std::cos(transform.rotation.y)
+        };
+        return editorHistorySafeDirection(-forward);
+    }
+
+    glm::vec3 editorHistoryTransformAxis(const TransformComponent &transform, const int column, const glm::vec3 &fallback) {
+        const glm::mat4 matrix = transform.mat4();
+        return editorHistorySafeDirection(glm::vec3(matrix[column]), fallback);
+    }
+
+    glm::vec3 editorHistoryTransformRotationFromLightDirection(const glm::vec3 &direction) {
+        const glm::vec3 normalized = editorHistorySafeDirection(direction);
+        const glm::vec3 forward = -normalized;
+        return {
+            std::asin(std::clamp(-forward.y, -1.0f, 1.0f)),
+            glm::mod(std::atan2(forward.x, forward.z), glm::two_pi<float>()),
+            0.0f
+        };
+    }
+
     bool EditorHistory::canUndo() const {
         return !undoStack.empty();
     }
@@ -144,6 +181,7 @@ namespace Atlas::Editor {
                         transform = redo ? entry.afterTransform : entry.beforeTransform;
                     });
                     refreshCamera(registry, entry.entity);
+                    refreshLightFromTransform(registry, entry.entity);
                 }
                 break;
             case EntryType::Material:
@@ -169,6 +207,7 @@ namespace Atlas::Editor {
                     registry.patch<LightComponent>(entry.entity, [&](auto &light) {
                         light = redo ? entry.afterLight : entry.beforeLight;
                     });
+                    refreshTransformFromLight(registry, entry.entity);
                 }
                 break;
         }
@@ -182,6 +221,40 @@ namespace Atlas::Editor {
         const auto &transform = registry.get<TransformComponent>(entity);
         registry.patch<CameraComponent>(entity, [&](auto &camera) {
             camera.camera.setViewYXZ(transform.translation, transform.rotation);
+        });
+    }
+
+    void EditorHistory::refreshLightFromTransform(entt::registry &registry, const entt::entity entity) {
+        if (!registry.all_of<TransformComponent, LightComponent>(entity)) {
+            return;
+        }
+
+        const auto &transform = registry.get<TransformComponent>(entity);
+        registry.patch<LightComponent>(entity, [&](auto &light) {
+            if (!editorHistoryLightUsesDirection(light.type)) {
+                return;
+            }
+
+            light.direction = editorHistoryLightDirectionFromTransform(transform);
+            if (light.type == LightType::RECT) {
+                light.rectRight = editorHistoryTransformAxis(transform, 0, {1.0f, 0.0f, 0.0f});
+                light.rectUp = editorHistoryTransformAxis(transform, 1, {0.0f, 1.0f, 0.0f});
+            }
+        });
+    }
+
+    void EditorHistory::refreshTransformFromLight(entt::registry &registry, const entt::entity entity) {
+        if (!registry.all_of<TransformComponent, LightComponent>(entity)) {
+            return;
+        }
+
+        const auto &light = registry.get<LightComponent>(entity);
+        if (!editorHistoryLightUsesDirection(light.type)) {
+            return;
+        }
+
+        registry.patch<TransformComponent>(entity, [&](auto &transform) {
+            transform.rotation = editorHistoryTransformRotationFromLightDirection(light.direction);
         });
     }
 }
