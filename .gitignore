@@ -77,6 +77,7 @@ app/build/
 *.tar.gz
 *.rar
 *.spv
+**/.claude
 
 **/build/**
 **/bin/**
