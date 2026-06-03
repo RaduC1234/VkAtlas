@@ -17,7 +17,7 @@ namespace Atlas {
         static void save(const std::filesystem::path &levelPath, const entt::registry &registry);
 
     private:
-        using Json = class nlohmann::json;
+        using Json = nlohmann::json;
 
         static std::string readFile(const std::filesystem::path &path);
         static void writeFile(const std::filesystem::path &path, const std::string &contents);

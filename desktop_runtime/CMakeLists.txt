@@ -12,7 +12,7 @@ target_link_libraries(atlas_desktop_runtime_module PUBLIC
 )
 
 add_executable(atlas_desktop_runtime
-        src/core/DesktopRuntimeEntryPoint.cpp
+        src/DesktopRuntimeEntryPoint.cpp
 )
 atlas_set_output_dirs(atlas_desktop_runtime)
 

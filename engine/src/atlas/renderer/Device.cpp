@@ -93,12 +93,12 @@ namespace Atlas {
         }
     }
 
-    Device::Device(Window &window, bool enableRayTracing) : window_{window}, enableRayTracing{enableRayTracing} {
+    Device::Device(Window &window, CreateInfo createInfo) : window_{window} {
         createVkInstance();
         setupDebugMessenger();
         createSurface();
         pickPhysicalDevice();
-        createLogicalDevice();
+        createLogicalDevice(createInfo);
         createVmaAllocator();
         createCommandPools();
         createTransferCommandBuffer();
@@ -251,7 +251,7 @@ namespace Atlas {
         return best;
     }
 
-    void Device::createLogicalDevice() {
+    void Device::createLogicalDevice(CreateInfo deviceCreateInfo) {
         queueFamilyIndices_ = findQueueFamilies(physicalDevice_);
 
         const std::set<uint32_t> uniqueFamilies = {

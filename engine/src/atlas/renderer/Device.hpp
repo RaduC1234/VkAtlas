@@ -70,7 +70,11 @@ if (!name) throw std::runtime_error("Failed to load " #name);
 
     class Device {
     public:
-        Device(Window &window, bool enableRayTracing);
+        struct CreateInfo {
+            bool enableRayTracing = false;
+        };
+
+        Device(Window &window, CreateInfo createInfo);
         ~Device();
 
         Device(const Device &) = delete;
@@ -136,7 +140,7 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         void setupDebugMessenger();
         void createSurface();
         void pickPhysicalDevice();
-        void createLogicalDevice();
+        void createLogicalDevice(CreateInfo createInfo);
         void createVmaAllocator();
         void createCommandPools();
         void createTransferCommandBuffer();
@@ -155,7 +159,6 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         void outputRequiredInstanceExtensions(const std::vector<const char *> &required);
         SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device);
 
-        bool enableRayTracing = false;
 
         VkInstance vkInstance_ = VK_NULL_HANDLE;
         VkDebugUtilsMessengerEXT debugMessenger_ = VK_NULL_HANDLE;

@@ -5,13 +5,14 @@
 #include <cassert>
 #include <stdexcept>
 
+#include "Device.hpp"
 #include "core/Profiler.hpp"
 #include "entity/Object.hpp"
 
 namespace Atlas {
     Renderer::Renderer(const CreateInfo &createInfo) : createInfo(createInfo) {
         this->window_ = Window::create(createInfo.window);
-        this->device_ = std::make_unique<Device>(*window_, createInfo.enableRaytracing);
+        this->device_ = std::make_unique<Device>(*window_, Device::CreateInfo{createInfo.enableRaytracing});
         this->resourceManager_ = std::make_unique<ResourceManager>(*device_);
 
         recreateSwapChain();

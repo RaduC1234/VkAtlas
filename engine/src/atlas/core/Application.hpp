@@ -14,6 +14,7 @@ namespace Atlas {
     struct ApplicationCommandLineArgs {
         int count = 0;
         char **values = nullptr;
+        void *pNativeApp = nullptr;
     };
 
     struct ApplicationCreateInfo {
