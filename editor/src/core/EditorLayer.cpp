@@ -8,8 +8,10 @@
 
 #include <imgui.h>
 
+#include "asset/Texture.hpp"
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
+#include "renderer/resources/GPUTexture.hpp"
 #include "project/ProjectCreator.hpp"
 #include "project/ProjectResourceImporter.hpp"
 #include "utils/FileDialogs.hpp"
@@ -89,9 +91,28 @@ namespace Atlas::Editor {
     EditorLayer::EditorLayer(ProjectLayer &projectLayer) : Layer("EditorLayer"), projectLayer(projectLayer) {
     }
 
+    void EditorLayer::loadSplashTexture() {
+        auto &renderer = projectLayer.getRenderer();
+        try {
+            auto texture = Texture::fromFile(AssetManager::resolveFilePath("##editor/splash.png").string());
+            splashTexture = std::make_unique<GPUTexture>(renderer.device(), *texture);
+            VkCommandBuffer cmd = renderer.device().beginGraphicsCommands();
+            splashTexture->recordUpload(cmd);
+            renderer.device().endGraphicsCommands(cmd);
+            splashTexture->onUploadComplete();
+            splashDescriptor = ImGuiLayer::addTexture(
+                splashTexture->getSampler(),
+                splashTexture->getImageView(),
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        } catch (const std::exception &error) {
+            AT_WARN("EditorLayer: failed to load splash image: {}", error.what());
+        }
+    }
+
     void EditorLayer::onAttach() {
         ATLAS_PROFILE_SCOPE("EditorLayer::onAttach");
         auto &renderer = projectLayer.getRenderer();
+        loadSplashTexture();
         imguiLayer = std::make_unique<ImGuiLayer>(
             renderer.device(),
             renderer.window(),
@@ -118,11 +139,18 @@ namespace Atlas::Editor {
         if (viewportPanel) viewportPanel->onDetach();
         if (assetExplorerPanel) assetExplorerPanel->onDetach();
         iconRegistry.reset();
+        if (splashDescriptor != VK_NULL_HANDLE) {
+            ImGuiLayer::removeTexture(splashDescriptor);
+            splashDescriptor = VK_NULL_HANDLE;
+        }
+        splashTexture.reset();
         imguiLayer.reset();
     }
 
-    void EditorLayer::onUpdate(float) {
+    void EditorLayer::onUpdate(float deltaTime) {
         ATLAS_PROFILE_SCOPE("EditorLayer::onUpdate");
+        if (projectLoadPhase_ != ProjectLoadPhase::None)
+            loadingAnimTime_ += deltaTime;
         processPendingProjectLoad();
     }
 
@@ -151,6 +179,11 @@ namespace Atlas::Editor {
 
     void EditorLayer::onImGuiRender() {
         ATLAS_PROFILE_SCOPE("EditorLayer::onImGuiRender");
+
+        if (projectLoadPhase_ != ProjectLoadPhase::None) {
+            drawLoadingScreen();
+            return;
+        }
 
         if (projectLayer.project().rootPath().empty()) {
             drawStartupScreen();
@@ -503,17 +536,26 @@ namespace Atlas::Editor {
 
     void EditorLayer::loadProject(const std::filesystem::path &manifestPath) {
         pendingProjectManifestPath = manifestPath;
-        pendingProjectLoad = true;
+        projectLoadPhase_ = ProjectLoadPhase::ShowScreen;
+        projectLayer.getRenderer().window().setDecorated(false);
     }
 
     void EditorLayer::processPendingProjectLoad() {
-        if (!pendingProjectLoad) {
+        if (projectLoadPhase_ == ProjectLoadPhase::ShowScreen) {
+            projectLoadPhase_ = ProjectLoadPhase::Execute;
             return;
         }
 
+        if (projectLoadPhase_ != ProjectLoadPhase::Execute) {
+            return;
+        }
+
+        projectLoadPhase_ = ProjectLoadPhase::None;
+        loadingAnimTime_ = 0.0f;
+        projectLayer.getRenderer().window().setDecorated(true);
+
         const std::filesystem::path manifestPath = pendingProjectManifestPath;
         pendingProjectManifestPath.clear();
-        pendingProjectLoad = false;
 
         flushMaterialEditorEdit();
         if (viewportPanel) {
@@ -825,6 +867,41 @@ namespace Atlas::Editor {
         });
 
         return std::ranges::find(extensions, extension) != extensions.end();
+    }
+
+    void EditorLayer::drawLoadingScreen() {
+        const ImGuiIO &io = ImGui::GetIO();
+        const ImVec2 displaySize = io.DisplaySize;
+
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(displaySize);
+        ImGui::SetNextWindowBgAlpha(1.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::Begin("##loading_screen", nullptr,
+            ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoInputs |
+            ImGuiWindowFlags_NoScrollbar |
+            ImGuiWindowFlags_NoNav);
+
+        if (splashDescriptor != VK_NULL_HANDLE) {
+            ImGui::Image((ImTextureID)splashDescriptor, displaySize);
+        }
+
+        // "Loading..." overlay centered on screen
+        const char *loadingText = "Loading...";
+        const ImVec2 textSize = ImGui::CalcTextSize(loadingText);
+        const ImVec2 textPos{
+            (displaySize.x - textSize.x) * 0.5f,
+            (displaySize.y - textSize.y) * 0.5f
+        };
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        dl->AddText(textPos, IM_COL32(255, 255, 255, 220), loadingText);
+
+        ImGui::End();
+        ImGui::PopStyleVar(2);
     }
 
     void EditorLayer::drawStartupScreen() {

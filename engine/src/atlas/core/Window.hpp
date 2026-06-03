@@ -59,6 +59,8 @@ namespace Atlas {
         virtual void setTheme(Theme theme) { assert(true && "Method not implemented"); }
         virtual Theme getTheme() const { assert(true && "Method not implemented"); return Theme::Dark; }
 
+        virtual void setDecorated(bool decorated) { assert(true && "Method not implemented"); }
+
         bool wasWindowResized() const { return framebufferResized; }
         void resetWindowResizedFlag() { this->framebufferResized = false; }
 

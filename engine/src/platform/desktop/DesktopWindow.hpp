@@ -24,6 +24,7 @@ namespace Atlas {
         void setWindowIcon(const std::string &iconPath) override;
         void setTitle(const std::string &title) override;
         void setTheme(Theme theme) override;
+        void setDecorated(bool decorated) override;
         Theme getTheme() const override { return theme; }
         void *getNativeHandle() const override;
 

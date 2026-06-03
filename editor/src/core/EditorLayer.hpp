@@ -10,6 +10,8 @@
 #include "EditorHistory.hpp"
 #include "IconRegistry.hpp"
 #include "ImGuiLayer.hpp"
+
+#include "renderer/resources/GPUTexture.hpp"
 #include "ui/panels/AssetExplorerPanel.hpp"
 #include "ui/panels/HierarchyPanel.hpp"
 #include "ui/panels/InspectorPanel.hpp"
@@ -30,6 +32,8 @@ namespace Atlas::Editor {
         void handleShortcuts();
         void drawMenuBar();
         void drawStartupScreen();
+        void drawLoadingScreen();
+        void loadSplashTexture();
         void createNewProject();
         void openProject();
         void loadProject(const std::filesystem::path &manifestPath);
@@ -81,8 +85,13 @@ namespace Atlas::Editor {
         entt::entity materialEditorOwner = entt::null;
         AssetHandle<Material> materialEditorHandle;
         MaterialEditState materialEditState;
-        bool pendingProjectLoad = false;
+        enum class ProjectLoadPhase { None, ShowScreen, Execute };
+        ProjectLoadPhase projectLoadPhase_ = ProjectLoadPhase::None;
+        float loadingAnimTime_ = 0.0f;
         std::filesystem::path pendingProjectManifestPath;
+
+        std::unique_ptr<GPUTexture> splashTexture;
+        VkDescriptorSet splashDescriptor = VK_NULL_HANDLE;
 
         std::unique_ptr<ImGuiLayer> imguiLayer;
         std::unique_ptr<IconRegistry> iconRegistry;

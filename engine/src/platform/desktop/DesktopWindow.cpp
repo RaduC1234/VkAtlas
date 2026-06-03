@@ -123,6 +123,10 @@ namespace Atlas {
         glfwSetWindowTitle(glfwWindow, title.c_str());
     }
 
+    void DesktopWindow::setDecorated(bool decorated) {
+        glfwSetWindowAttrib(glfwWindow, GLFW_DECORATED, decorated ? GLFW_TRUE : GLFW_FALSE);
+    }
+
     void DesktopWindow::setTheme(Theme newTheme) {
         theme = newTheme;
 
