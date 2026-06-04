@@ -213,6 +213,8 @@ namespace Atlas::Editor {
 
         char buf[256]{};
         std::strncpy(buf, node.name.c_str(), sizeof(buf) - 1);
+
+        ImGui::PushID(static_cast<int>(static_cast<uint32_t>(selectedEntity)));
         ImGui::SetNextItemWidth(-1);
         if (ImGui::InputText("##entityname", buf, sizeof(buf))) {
             if (!nameEditActive) {
@@ -222,10 +224,16 @@ namespace Atlas::Editor {
             node.name = buf;
         }
 
-        if (nameEditActive && ImGui::IsItemDeactivatedAfterEdit()) {
-            history.recordName(selectedEntity, nameEditBefore, node.name);
-            nameEditActive = false;
+        if (nameEditActive) {
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                history.recordName(selectedEntity, nameEditBefore, node.name);
+                nameEditActive = false;
+            } else if (!ImGui::IsItemActive()) {
+                nameEditActive = false;
+            }
         }
+
+        ImGui::PopID();
     }
 
     void InspectorPanel::drawAddComponentMenu(entt::registry &registry) {

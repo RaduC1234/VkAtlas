@@ -7,12 +7,7 @@
 #include "core/Log.hpp"
 #include "renderer/Renderer.hpp"
 #include "scene/LevelScene.hpp"
-
-#if defined(ATLAS_PLATFORM_WINDOWS)
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
+#include "utils/DynamicLibrary.hpp"
 
 namespace Atlas {
     std::filesystem::path ProjectInstance::absolutePath(const std::filesystem::path &path) {
@@ -32,57 +27,15 @@ namespace Atlas {
     }
 
     void *ProjectInstance::openLibrary(const std::filesystem::path &path) {
-        if (!std::filesystem::exists(path)) {
-            throw std::runtime_error("Project module does not exist: " + path.string());
-        }
-
-#if defined(ATLAS_PLATFORM_WINDOWS)
-        HMODULE library = LoadLibraryExW(path.wstring().c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-        if (!library) {
-            throw std::runtime_error("Failed to load project module: " + path.string() + " (Win32 error " + std::to_string(GetLastError()) + "; the module exists, but a dependent DLL may be missing)");
-        }
-
-        return library;
-#else
-        void *library = dlopen(path.string().c_str(), RTLD_NOW);
-        if (!library) {
-            throw std::runtime_error("Failed to load project module: " + path.string() + " (" + dlerror() + ")");
-        }
-
-        return library;
-#endif
+        return DynamicLibrary::open(path);
     }
 
     void ProjectInstance::closeLibrary(void *library) {
-        if (!library) {
-            return;
-        }
-
-#if defined(ATLAS_PLATFORM_WINDOWS)
-        FreeLibrary(static_cast<HMODULE>(library));
-#else
-        dlclose(library);
-#endif
+        DynamicLibrary::close(library);
     }
 
     void *ProjectInstance::loadSymbol(void *library, const char *symbolName, const std::filesystem::path &libraryPath) {
-#if defined(_WIN32)
-        void *symbol = reinterpret_cast<void *>(GetProcAddress(static_cast<HMODULE>(library), symbolName));
-        if (!symbol) {
-            throw std::runtime_error("Failed to load symbol '" + std::string(symbolName) + "' from " + libraryPath.string() + " (Win32 error " + std::to_string(GetLastError()) + ")");
-        }
-
-        return symbol;
-#else
-        dlerror();
-        void *symbol = dlsym(library, symbolName);
-        const char *error = dlerror();
-        if (error) {
-            throw std::runtime_error("Failed to load symbol '" + std::string(symbolName) + "' from " + libraryPath.string() + " (" + error + ")");
-        }
-
-        return symbol;
-#endif
+        return DynamicLibrary::loadSymbol(library, symbolName, libraryPath);
     }
 
     ProjectInstance::~ProjectInstance() {

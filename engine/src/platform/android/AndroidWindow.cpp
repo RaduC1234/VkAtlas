@@ -2,6 +2,7 @@
 
 #ifdef ATLAS_PLATFORM_ANDROID
 
+#include "AndroidInputProvider.hpp"
 #include "core/Log.hpp"
 #include <vulkan/vulkan_android.h>
 
@@ -69,13 +70,14 @@ namespace Atlas {
         int events;
         android_poll_source *source;
 
-        // Poll with timeout 0 for non-blocking event loop
         while (ALooper_pollOnce(0, nullptr, &events, reinterpret_cast<void **>(&source)) >= 0) {
             if (source) {
                 source->process(app, source);
             }
             if (shouldClose()) break;
         }
+
+        AndroidInputProvider::instance().processEvents(app);
     }
 
     void AndroidWindow::waitEvents() {

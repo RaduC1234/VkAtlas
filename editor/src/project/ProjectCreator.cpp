@@ -1,5 +1,7 @@
 #include "ProjectCreator.hpp"
 
+#include "utils/DynamicLibrary.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -21,13 +23,7 @@ namespace Atlas::Editor::ProjectTemplate {
     constexpr const char *startupLevel = "MainLevel";
     constexpr std::string_view templateSuffix = ".template";
 
-#if defined(ATLAS_PLATFORM_WINDOWS)
-    constexpr const char *moduleExtension = ".dll";
-#elif defined(ATLAS_PLATFORM_MACOS)
-    constexpr const char *moduleExtension = ".dylib";
-#else
-    constexpr const char *moduleExtension = ".so";
-#endif
+    constexpr const char *moduleExtension = Atlas::DynamicLibrary::extension();
 
     std::filesystem::path absoluteNormalizedPath(const std::filesystem::path &path) {
         if (path.is_absolute()) {
