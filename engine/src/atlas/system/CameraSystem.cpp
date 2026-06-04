@@ -104,7 +104,7 @@ namespace Atlas {
                 camComp.camera.setViewYXZ(tf.translation, tf.rotation);
                 const float nearZ = std::max(camComp.nearPlane, 0.001f);
                 const float farZ = std::max(camComp.farPlane, nearZ + 0.01f);
-                if (camComp.projection == CameraProjection::ORTHOGRAPHIC) {
+                if (camComp.projection == Camera::Projection::ORTHOGRAPHIC) {
                     const float halfHeight = std::max(camComp.orthographicHalfHeight, 0.001f);
                     camComp.camera.setOrthographicProjection(
                         -halfHeight * screenAspect,

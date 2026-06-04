@@ -14,10 +14,8 @@ namespace Atlas {
     }
 
     void CullingStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
-        out.push_back(Resource::Description::hostVisibleStorageBuffer(
-            "scene_objects", sizeof(GPUObjectData) * MAX_OBJECTS));
-        out.push_back(Resource::Description::hostVisibleStorageBuffer(
-            "scene_lights", sizeof(LightBufferLayout)));
+        out.push_back(Resource::Description::hostVisibleStorageBuffer("scene_objects", sizeof(GPUObjectData) * MAX_OBJECTS));
+        out.push_back(Resource::Description::hostVisibleStorageBuffer("scene_lights", sizeof(LightBufferLayout)));
         out.push_back(Resource::Description::cpuBuffer<RasterDrawData>("scene_draws"));
     }
 

@@ -9,8 +9,11 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <imgui.h>
 
+#include "asset/Cubemap.hpp"
+#include "core/Log.hpp"
 #include "ui/components/ViewportGizmo.hpp"
 #include "ui/widgets/MaterialEditor.hpp"
+#include "utils/FileDialogs.hpp"
 
 namespace Atlas::Editor {
     float matchedInspectorOrthographicHalfHeight(
@@ -672,8 +675,8 @@ namespace Atlas::Editor {
         };
 
         if (ImGui::Combo("Projection", &projection, projectionModes, IM_ARRAYSIZE(projectionModes))) {
-            const CameraProjection nextProjection = static_cast<CameraProjection>(projection);
-            if (cam.projection != nextProjection && nextProjection == CameraProjection::ORTHOGRAPHIC) {
+            const Camera::Projection nextProjection = static_cast<Camera::Projection>(projection);
+            if (cam.projection != nextProjection && nextProjection == Camera::Projection::ORTHOGRAPHIC) {
                 cam.orthographicHalfHeight = matchedInspectorOrthographicHalfHeight(registry, selectedEntity, cam);
             }
             cam.projection = nextProjection;
@@ -695,7 +698,7 @@ namespace Atlas::Editor {
 
         bool camDirty = false;
 
-        if (cam.projection == CameraProjection::PERSPECTIVE) {
+        if (cam.projection == Camera::Projection::PERSPECTIVE) {
             float fovDeg = glm::degrees(cam.perspectiveFovY);
             if (ImGui::DragFloat("FOV", &fovDeg, 0.5f, 1.0f, 170.0f, "%.1f°")) {
                 cam.perspectiveFovY = glm::radians(glm::clamp(fovDeg, 1.0f, 170.0f));
@@ -728,9 +731,7 @@ namespace Atlas::Editor {
         bool removeRequested = false;
         const bool open = beginComponent("Skybox", &removeRequested);
         if (removeRequested) {
-            if (open) {
-                endComponent();
-            }
+            if (open) endComponent();
             registry.remove<SkyboxComponent>(selectedEntity);
             return;
         }
@@ -740,21 +741,58 @@ namespace Atlas::Editor {
             bool enabled = node->visible;
             if (ImGui::Checkbox("Enabled", &enabled)) {
                 const bool before = node->visible;
-                registry.patch<SceneNodeComponent>(selectedEntity, [&](auto &sceneNode) {
-                    sceneNode.visible = enabled;
-                });
+                registry.patch<SceneNodeComponent>(selectedEntity, [&](auto &sceneNode) { sceneNode.visible = enabled; });
                 history.recordVisibility(selectedEntity, before, enabled);
             }
         }
 
-        const auto &skybox = registry.get<SkyboxComponent>(selectedEntity);
-        const auto status = [](const auto &handle) {
-            if (!handle.valid()) return "None";
-            return handle.isReady() ? "Ready" : "Loading";
+        auto &skybox = registry.get<SkyboxComponent>(selectedEntity);
+
+        const auto cubemapStatus = [](const AssetHandle<Cubemap> &h) -> const char * {
+            if (!h.valid()) return "None";
+            return h.isReady() ? "Ready" : "Loading...";
         };
-        ImGui::LabelText("Skybox", "%s", status(skybox.skyboxHandle));
-        ImGui::LabelText("Irradiance", "%s", status(skybox.irradianceHandle));
-        ImGui::LabelText("Prefilter", "%s", status(skybox.prefilterHandle));
+
+        static const char *cubemapFilter =
+            "Cubemap / HDR (*.ktx2;*.ktx;*.hdr)\0*.ktx2;*.ktx;*.hdr\0"
+            "KTX2 (*.ktx2)\0*.ktx2\0"
+            "HDR (*.hdr)\0*.hdr\0"
+            "All Files (*.*)\0*.*\0\0";
+
+        const auto pickCubemap = [&](const char *label, AssetHandle<Cubemap> &handle) {
+            const float btnW = ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(label).x - ImGui::GetStyle().ItemSpacing.x * 2.0f - 60.0f;
+            ImGui::Text("%s", label);
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(btnW > 40.0f ? btnW : 40.0f);
+            ImGui::TextDisabled("%s", cubemapStatus(handle));
+            ImGui::SameLine();
+            ImGui::PushID(label);
+            if (ImGui::Button("Browse")) {
+                const std::string path = FileDialogs::openFile(cubemapFilter);
+                if (!path.empty()) {
+                    try {
+                        auto cubemap = Cubemap::fromFile(path);
+                        auto newHandle = projectLayer.assetManager().store<Cubemap>(std::move(cubemap), path);
+                        registry.patch<SkyboxComponent>(selectedEntity, [&](SkyboxComponent &) { handle = newHandle; });
+                    } catch (const std::exception &e) {
+                        AT_ERROR("InspectorPanel: failed to load cubemap '{}': {}", path, e.what());
+                    }
+                }
+            }
+            if (handle.valid()) {
+                ImGui::SameLine();
+                if (ImGui::Button("Clear")) {
+                    registry.patch<SkyboxComponent>(selectedEntity, [&](SkyboxComponent &) {
+                        handle = {};
+                    });
+                }
+            }
+            ImGui::PopID();
+        };
+
+        pickCubemap("Skybox",     skybox.skyboxHandle);
+        pickCubemap("Irradiance", skybox.irradianceHandle);
+        pickCubemap("Prefilter",  skybox.prefilterHandle);
 
         endComponent();
     }

@@ -17,6 +17,11 @@ namespace Atlas {
             glm::vec3 direction;
             float farPlane;
         };
+
+        enum class Projection : uint32_t {
+            PERSPECTIVE = 0,
+            ORTHOGRAPHIC
+        };
         
         void setOrthographicProjection(float left, float right, float top, float bottom, float near, float far);
         void setPerspectiveProjection(float fovY, float aspect, float near, float far);
@@ -25,15 +30,17 @@ namespace Atlas {
         void setViewTarget(glm::vec3 position, glm::vec3 direction, glm::vec3 up = {0.0f, -1.0f, 0.0f});
         void setViewYXZ(glm::vec3 position, glm::vec3 rotation);
 
-        const glm::mat4& getProjection() const { return projectionMatrix; }
-        const glm::mat4& getView() const { return viewMatrix; }
+        const glm::mat4& getProjectionMatrix() const { return projectionMatrix; }
+        const glm::mat4& getViewMatrix() const { return viewMatrix; }
 
         Data getData() const;
+        Projection getTypeProjection() const { return projection; }
 
     private:
         glm::mat4 projectionMatrix{1.0f};
         glm::mat4 viewMatrix{1.0f};
         float nearPlane{0.1f};
         float farPlane{100.0f};
+        Projection projection{Projection::PERSPECTIVE};
     };
 }
