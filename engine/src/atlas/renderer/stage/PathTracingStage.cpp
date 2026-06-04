@@ -15,19 +15,6 @@
 #include "entity/Object.hpp"
 
 namespace Atlas {
-    struct PTObjectData {
-        glm::mat4 modelMatrix;
-        glm::mat4 normalMatrix;
-        glm::uvec4 textureIndices;
-        glm::vec4 baseColor;
-        glm::vec4 materialFactors;
-        glm::vec4 sheenColorStrength;
-        uint32_t firstIndex;
-        uint32_t indexCount;
-        uint32_t firstVertex;
-        uint32_t flags;
-    };
-
     struct PTLight {
         uint32_t type;
         float intensity;
@@ -217,18 +204,10 @@ namespace Atlas {
                     .flags = flags,
                 });
             } else {
-                cpuObjects.push_back({
-                    .modelMatrix = m,
-                    .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
-                    .textureIndices = glm::uvec4(0),
-                    .baseColor = {},
-                    .materialFactors = {},
-                    .sheenColorStrength = {},
-                    .firstIndex = 0,
-                    .indexCount = 0,
-                    .firstVertex = 0,
-                    .flags = 0,
-                });
+                PTObjectData obj = cachedObjects_.size() > objectIndex ? cachedObjects_[objectIndex] : PTObjectData{};
+                obj.modelMatrix = m;
+                obj.normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(m)));
+                cpuObjects.push_back(obj);
             }
         }
 
@@ -286,6 +265,7 @@ namespace Atlas {
             if (!cpuObjects.empty()) objectBuffer->uploadData(cpuObjects.data(), cpuObjects.size() * sizeof(PTObjectData));
             if (!cpuLights.empty()) lightBuffer->uploadData(cpuLights.data(), cpuLights.size() * sizeof(PTLight));
 
+            cachedObjects_ = cpuObjects;
             updateDescriptorSet();
             geometryBuilt = true;
             lastGeometrySignature = geoSig;

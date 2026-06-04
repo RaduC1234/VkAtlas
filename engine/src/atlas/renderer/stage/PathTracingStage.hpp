@@ -1,5 +1,10 @@
 #pragma once
 #include <cstdint>
+#include <vector>
+
+#define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
 
 #include <entt/signal/sigh.hpp>
 
@@ -10,6 +15,19 @@
 #include "renderer/abstraction/Pipeline.hpp"
 
 namespace Atlas {
+    struct PTObjectData {
+        glm::mat4 modelMatrix;
+        glm::mat4 normalMatrix;
+        glm::uvec4 textureIndices;
+        glm::vec4 baseColor;
+        glm::vec4 materialFactors;
+        glm::vec4 sheenColorStrength;
+        uint32_t firstIndex;
+        uint32_t indexCount;
+        uint32_t firstVertex;
+        uint32_t flags;
+    };
+
     class PathTracingStage : public RenderStage {
     public:
         PathTracingStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout);
@@ -96,5 +114,7 @@ namespace Atlas {
 
         std::unordered_map<AssetHandle<Texture>, uint32_t> handleToSlot;
         uint32_t nextTextureSlot = 1;
+
+        std::vector<PTObjectData> cachedObjects_;
     };
 }
