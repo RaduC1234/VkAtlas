@@ -250,7 +250,7 @@ namespace Atlas::Editor {
                         if (camEntity != entt::null) {
                             auto *cam = registry.try_get<CameraComponent>(camEntity);
                             if (cam) {
-                                if (cam->projection == CameraProjection::ORTHOGRAPHIC) {
+                                if (cam->projection == Camera::Projection::ORTHOGRAPHIC) {
                                     constexpr float zoomSensitivity = 0.1f;
                                     cam->orthographicHalfHeight *= std::pow(1.0f - zoomSensitivity, scrollY);
                                     cam->orthographicHalfHeight = std::max(cam->orthographicHalfHeight, 0.001f);
@@ -521,7 +521,65 @@ namespace Atlas::Editor {
                         objectGizmoSpace = ObjectGizmoSpace::World;
                 });
 
-        const ImVec2 projectionAnchor(spaceIsland.max().x + ToolbarStyle::defaults().islandMargin, imageMin.y);
+        // Gizmo settings popup — small "⚙" button right of the space island
+        {
+            const ToolbarStyle ts = ToolbarStyle::defaults();
+            const float margin = ts.islandMargin;
+            const ImVec2 btnMin{spaceIsland.max().x + margin, imageMin.y + margin};
+            const ImVec2 btnMax{btnMin.x + ts.btnW, btnMin.y + ts.btnH};
+
+            ImGui::SetCursorScreenPos(btnMin);
+            ImGui::InvisibleButton("##gizmo_settings_btn", {ts.btnW, ts.btnH});
+            const bool settingsHovered = ImGui::IsItemHovered();
+            const bool settingsClicked = ImGui::IsItemClicked();
+            if (settingsClicked)
+                ImGui::OpenPopup("##gizmo_settings_popup");
+
+            ImDrawList *dl = ImGui::GetWindowDrawList();
+            if (settingsHovered)
+                dl->AddRectFilled(btnMin, btnMax, ts.colHover, 7.0f);
+            dl->AddRectFilled(btnMin, btnMax, settingsHovered ? ts.colHover : IM_COL32(30, 32, 38, 180), 7.0f);
+
+            const char *icon = "\xe2\x9a\x99";
+            const ImVec2 iconSize = ImGui::CalcTextSize(icon);
+            dl->AddText({btnMin.x + (ts.btnW - iconSize.x) * 0.5f, btnMin.y + (ts.btnH - iconSize.y) * 0.5f},
+                        IM_COL32(210, 215, 225, 220), icon);
+
+            ImGui::SetNextWindowPos({btnMin.x, btnMax.y + 4.0f});
+            ImGui::SetNextWindowSize({220.0f, 0.0f});
+            if (ImGui::BeginPopup("##gizmo_settings_popup")) {
+                auto &gs = ImViewGuizmo::GetStyle();
+
+                ImGui::TextDisabled("Transform Gizmo");
+                ImGui::Separator();
+
+                ImGui::SetNextItemWidth(-1);
+                ImGui::DragFloat("##move_scale",  &gs.transformMoveScale,  0.01f, 0.01f, 100.0f, "Move Scale: %.2f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Multiplier on translate drag distance");
+
+                ImGui::SetNextItemWidth(-1);
+                ImGui::DragFloat("##scale_speed", &gs.transformScaleSpeed, 0.001f, 0.001f, 1.0f, "Scale Speed: %.3f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Multiplier on scale drag distance");
+
+                ImGui::SetNextItemWidth(-1);
+                ImGui::DragFloat("##fade_px", &gs.transformAxisFadePixels, 0.5f, 0.0f, 40.0f, "Axis Fade: %.1f px");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hide axis when its screen projection is shorter than this");
+
+                ImGui::Checkbox("Show Delta Label", &gs.transformShowDelta);
+
+                ImGui::Spacing();
+                if (ImGui::SmallButton("Reset")) {
+                    gs.transformMoveScale     = 1.0f;
+                    gs.transformScaleSpeed    = 0.01f;
+                    gs.transformAxisFadePixels = 6.0f;
+                    gs.transformShowDelta     = true;
+                }
+
+                ImGui::EndPopup();
+            }
+        }
+
+        const ImVec2 projectionAnchor(spaceIsland.max().x + ToolbarStyle::defaults().islandMargin * 2.0f + ToolbarStyle::defaults().btnW + ToolbarStyle::defaults().islandMargin, imageMin.y);
         ToolbarIsland projectionIsland(projectionAnchor, imageSize);
         projectionIsland
                 .anchor(ToolbarIsland::Anchor::TopLeft, {0, ToolbarStyle::defaults().islandMargin})
@@ -536,21 +594,21 @@ namespace Atlas::Editor {
                     const bool clicked = ImGui::IsItemClicked();
 
                     if (hovered) {
-                        ImGui::SetTooltip("%s", cameraComponent && cameraComponent->projection == CameraProjection::ORTHOGRAPHIC
+                        ImGui::SetTooltip("%s", cameraComponent && cameraComponent->projection == Camera::Projection::ORTHOGRAPHIC
                                                    ? "Orthographic camera"
                                                    : "Perspective camera");
                     }
 
                     if (clicked && cameraComponent && registry && cameraEntity != entt::null) {
-                        if (cameraComponent->projection == CameraProjection::ORTHOGRAPHIC) {
-                            cameraComponent->projection = CameraProjection::PERSPECTIVE;
+                        if (cameraComponent->projection == Camera::Projection::ORTHOGRAPHIC) {
+                            cameraComponent->projection = Camera::Projection::PERSPECTIVE;
                         } else {
                             cameraComponent->orthographicHalfHeight = matchedOrthographicHalfHeight(
                                 *registry,
                                 cameraEntity,
                                 selectedEntity,
                                 *cameraComponent);
-                            cameraComponent->projection = CameraProjection::ORTHOGRAPHIC;
+                            cameraComponent->projection = Camera::Projection::ORTHOGRAPHIC;
                         }
                         registry->patch<CameraComponent>(cameraEntity);
                     }
@@ -560,7 +618,7 @@ namespace Atlas::Editor {
                         drawList->AddRectFilled(buttonMin, buttonMax, style.colHover, 7.0f);
                     }
 
-                    const char *label = cameraComponent && cameraComponent->projection == CameraProjection::ORTHOGRAPHIC ? "ORT" : "PER";
+                    const char *label = cameraComponent && cameraComponent->projection == Camera::Projection::ORTHOGRAPHIC ? "ORT" : "PER";
                     const ImVec2 textSize = ImGui::CalcTextSize(label);
                     drawList->AddText(
                         {buttonMin.x + (style.btnW - textSize.x) * 0.5f, buttonMin.y + (style.btnH - textSize.y) * 0.5f},

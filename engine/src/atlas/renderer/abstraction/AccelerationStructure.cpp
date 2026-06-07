@@ -141,9 +141,7 @@ namespace Atlas {
             VMA_ALLOCATION_CREATE_MAPPED_BIT);
 
         instanceStaging.map();
-        memcpy(instanceStaging.getMapped(),
-               instances.data(),
-               sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
+        std::memcpy(instanceStaging.getMapped(),instances.data(),sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
         instanceStaging.flush(sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
         instanceStaging.unmap();
 
@@ -155,9 +153,7 @@ namespace Atlas {
                 .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
                 .build();
 
-        GPUBuffer::copy(device,
-                        instanceStaging.get(), instanceBuffer.get(),
-                        sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
+        GPUBuffer::copy(device,instanceStaging.get(), instanceBuffer.get(), sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
 
         VkBufferDeviceAddressInfo instAddrInfo{};
         instAddrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -179,6 +175,7 @@ namespace Atlas {
         buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
         buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
         buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+        buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
         buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
         buildInfo.geometryCount = 1;
         buildInfo.pGeometries = &geometry;
@@ -220,6 +217,46 @@ namespace Atlas {
     // -------------------------------------------------------------------------
     // buildSync — synchronous build, used by TLAS only
     // -------------------------------------------------------------------------
+
+    void AccelerationStructure::updateTLAS(Device &device, const std::vector<VkAccelerationStructureInstanceKHR> &instances, AccelerationStructure &tlas) {
+        const auto instanceCount = static_cast<uint32_t>(instances.size());
+        const VkDeviceSize instanceDataSize = sizeof(VkAccelerationStructureInstanceKHR) * instanceCount;
+
+        GPUBuffer instanceStaging(device, instanceDataSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
+        instanceStaging.map();
+        memcpy(instanceStaging.getMapped(), instances.data(), instanceDataSize);
+        instanceStaging.flush(instanceDataSize);
+        instanceStaging.unmap();
+
+        auto instanceBuffer = GPUBuffer::simple(device)
+                .setSize(instanceDataSize)
+                .setUsage(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+                .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
+                .build();
+        GPUBuffer::copy(device, instanceStaging.get(), instanceBuffer.get(), instanceDataSize);
+
+        VkBufferDeviceAddressInfo instAddrInfo{.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO, .buffer = instanceBuffer.get()};
+        const VkDeviceAddress instanceBufferAddress = vkGetBufferDeviceAddress(device.device(), &instAddrInfo);
+
+        VkAccelerationStructureGeometryInstancesDataKHR instancesData{.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR, .arrayOfPointers = VK_FALSE, .data = {.deviceAddress = instanceBufferAddress}};
+        VkAccelerationStructureGeometryKHR geometry{.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR, .geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR, .geometry = {.instances = instancesData}};
+
+        VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
+        buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+        buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+        buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+        buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+        buildInfo.srcAccelerationStructure = tlas.handle_;
+        buildInfo.dstAccelerationStructure = tlas.handle_;
+        buildInfo.geometryCount = 1;
+        buildInfo.pGeometries = &geometry;
+
+        VkAccelerationStructureBuildSizesInfoKHR sizeInfo{.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
+        vkGetAccelerationStructureBuildSizesKHR(device.device(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &instanceCount, &sizeInfo);
+
+        VkAccelerationStructureBuildRangeInfoKHR rangeInfo{.primitiveCount = instanceCount};
+        buildSync(device, buildInfo, rangeInfo, sizeInfo.updateScratchSize);
+    }
 
     void AccelerationStructure::buildSync(
         Device &device,

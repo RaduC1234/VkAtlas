@@ -29,15 +29,14 @@ namespace Atlas {
 
         for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroyFence(device_->device(), computeInFlightFences[i], nullptr);
-            vkDestroySemaphore(device_->device(), computeFinishedSemaphores[i], nullptr); // missing
+            vkDestroySemaphore(device_->device(), computeFinishedSemaphores[i], nullptr);
         }
 
         freeCommandBuffers();
     }
 
     float Renderer::getAspectRatio() const {
-        if (sceneViewportExtent.width > 0 &&
-            sceneViewportExtent.height > 0) {
+        if (sceneViewportExtent.width > 0 && sceneViewportExtent.height > 0) {
             return static_cast<float>(sceneViewportExtent.width) / static_cast<float>(sceneViewportExtent.height);
         }
 
