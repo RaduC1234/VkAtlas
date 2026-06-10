@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Panel.hpp"
+#include "core/IconRegistry.hpp"
 
 #include <Atlas.hpp>
 #include <imgui.h>
@@ -17,7 +18,7 @@
 namespace Atlas::Editor {
     class AssetExplorerPanel final : public Panel {
     public:
-        explicit AssetExplorerPanel(ProjectLayer &projectLayer);
+        AssetExplorerPanel(ProjectLayer &projectLayer, IconRegistry &iconRegistry);
         ~AssetExplorerPanel() override;
 
         void onDetach() override;
@@ -81,6 +82,7 @@ namespace Atlas::Editor {
         };
 
         ProjectLayer &projectLayer;
+        IconRegistry &iconRegistry;
         std::filesystem::path cachedAssetRoot;
         std::filesystem::path currentDirectory;
         std::filesystem::path selectedPath;

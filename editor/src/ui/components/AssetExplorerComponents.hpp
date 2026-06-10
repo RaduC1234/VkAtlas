@@ -37,6 +37,7 @@ namespace Atlas::Editor {
         static float rowRounding();
 
         static bool toolbarButton(const char *label, const char *tooltip, bool active, ImVec2 size);
+        static bool toolbarIconButton(const char *id, ImTextureID tex, ImVec2 iconSize, const char *tooltip, bool active, ImVec2 btnSize);
         static bool breadcrumbButton(const char *label, bool current);
 
         static void separatorLine(ImDrawList *drawList, ImVec2 start, ImVec2 end);

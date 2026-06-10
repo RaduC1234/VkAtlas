@@ -90,6 +90,29 @@ namespace Atlas::Editor {
         return clicked;
     }
 
+    bool AssetExplorerComponents::toolbarIconButton(const char *id, const ImTextureID tex, const ImVec2 iconSize,
+                                                     const char *tooltip, const bool active, const ImVec2 btnSize) {
+        const float padX = btnSize.x > 0 ? (btnSize.x - iconSize.x) * 0.5f : 5.0f;
+        const float padY = btnSize.y > 0 ? (btnSize.y - iconSize.y) * 0.5f : 3.0f;
+        int pushed = 0;
+        if (active) {
+            ImGui::PushStyleColor(ImGuiCol_Button, EditorTheme::color(EditorTheme::Color::Accent));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorTheme::color(EditorTheme::Color::AccentHover));
+            pushed = 2;
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            pushed = 1;
+        }
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padX, padY));
+        const bool clicked = ImGui::ImageButton(id, tex, iconSize);
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(pushed);
+
+        if (tooltip != nullptr && ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", tooltip);
+        return clicked;
+    }
+
     bool AssetExplorerComponents::breadcrumbButton(const char *label, const bool current) {
         int pushed = 0;
         if (current) {

@@ -11,6 +11,7 @@
 
 #include <imgui.h>
 
+#include "core/IconRegistry.hpp"
 #include "core/ImGuiLayer.hpp"
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
@@ -22,7 +23,8 @@ namespace Atlas::Editor {
 
     // ── lifecycle ────────────────────────────────────────────────────────────
 
-    AssetExplorerPanel::AssetExplorerPanel(ProjectLayer &projectLayer) : projectLayer(projectLayer) {
+    AssetExplorerPanel::AssetExplorerPanel(ProjectLayer &projectLayer, IconRegistry &iconRegistry)
+        : projectLayer(projectLayer), iconRegistry(iconRegistry) {
     }
 
     AssetExplorerPanel::~AssetExplorerPanel() {
@@ -267,7 +269,12 @@ namespace Atlas::Editor {
 
         // Sort button
         const bool sortActive = (sortKey != SortKey::Name || sortDir != 1);
-        if (AEC::toolbarButton("≡##sort", "Sort", sortActive, ImVec2(btnW, 0))) sortMenuOpen = !sortMenuOpen;
+        {
+            const auto &ic = iconRegistry.get("sort", 16);
+            if (ic.valid() ? AEC::toolbarIconButton("##ae_sort", ic.textureId(), ic.size(), "Sort", sortActive, ImVec2(btnW, 0))
+                           : AEC::toolbarButton("S##ae_sort", "Sort", sortActive, ImVec2(btnW, 0)))
+                sortMenuOpen = !sortMenuOpen;
+        }
 
         // Sort popup
         if (sortMenuOpen) {
@@ -306,7 +313,12 @@ namespace Atlas::Editor {
 
         // Filter button
         const bool filterActive = (filterKind != FilterKind::All);
-        if (AEC::toolbarButton("⊟##filter", "Filter by type", filterActive, ImVec2(btnW, 0))) filterMenuOpen = !filterMenuOpen;
+        {
+            const auto &ic = iconRegistry.get("filter", 16);
+            if (ic.valid() ? AEC::toolbarIconButton("##ae_filter", ic.textureId(), ic.size(), "Filter by type", filterActive, ImVec2(btnW, 0))
+                           : AEC::toolbarButton("F##ae_filter", "Filter by type", filterActive, ImVec2(btnW, 0)))
+                filterMenuOpen = !filterMenuOpen;
+        }
 
         if (filterMenuOpen) {
             const ImVec2 itemMin = ImGui::GetItemRectMin();
@@ -343,13 +355,17 @@ namespace Atlas::Editor {
         // View mode buttons
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 4));
 
-        const char *viewIcons[] = {"⊞", "≡", "▤"};
-        const char *viewTips[] = {"Grid view", "List view", "Detail view"};
+        const char *viewIconNames[] = {"layout-grid", "list", "layout-detail"};
+        const char *viewIds[]       = {"##ae_vm0", "##ae_vm1", "##ae_vm2"};
+        const char *viewTips[]      = {"Grid view", "List view", "Detail view"};
         for (int i = 0; i < 3; i++) {
             const ViewMode vm = static_cast<ViewMode>(i);
             const bool active = (viewMode == vm);
-            if (AEC::toolbarButton(viewIcons[i], viewTips[i], active, ImVec2(btnW, 0)))
-                viewMode = vm;
+            const auto &ic = iconRegistry.get(viewIconNames[i], 16);
+            bool clicked = ic.valid()
+                ? AEC::toolbarIconButton(viewIds[i], ic.textureId(), ic.size(), viewTips[i], active, ImVec2(btnW, 0))
+                : AEC::toolbarButton(viewIds[i], viewTips[i], active, ImVec2(btnW, 0));
+            if (clicked) viewMode = vm;
             if (i < 2) ImGui::SameLine(0, 2);
         }
 

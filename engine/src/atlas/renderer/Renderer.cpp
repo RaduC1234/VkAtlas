@@ -259,7 +259,7 @@ namespace Atlas {
         auto extent = window_->getExtent();
         while (extent.width == 0 || extent.height == 0) {
             extent = window_->getExtent();
-            //window_->waitEvents();
+            window_->waitEvents();
         }
         vkDeviceWaitIdle(device_->device());
 
