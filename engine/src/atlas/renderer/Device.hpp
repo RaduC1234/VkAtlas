@@ -191,6 +191,7 @@ if (!name) throw std::runtime_error("Failed to load " #name);
         TracyVkCtx gpuProfilerContext_ = nullptr;
 #endif
 
+        CreateInfo createInfo_;
         Window &window_;
         std::unique_ptr<ExecutorService> executor_;
 

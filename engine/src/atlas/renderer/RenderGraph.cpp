@@ -1,12 +1,12 @@
 #include "RenderGraph.hpp"
 
-#include <typeinfo>
-
 #include "core/Profiler.hpp"
 #include "Renderer.hpp"
 
 namespace Atlas {
     RenderGraph RenderGraph::Builder::build(Mode mode) {
+        ATLAS_PROFILE_FUNCTION();
+
         assert(width_ > 0 && height_ > 0);
         assert(!stages_.empty());
 
@@ -20,6 +20,8 @@ namespace Atlas {
     }
 
     void RenderGraph::bake() {
+        ATLAS_PROFILE_FUNCTION();
+
         nodes_.clear();
         nodes_.reserve(stages_.size());
 
@@ -149,6 +151,8 @@ namespace Atlas {
     }
 
     void RenderGraph::bakeBarriers() {
+        ATLAS_PROFILE_FUNCTION();
+
         std::unordered_map<std::string, VkImageLayout> currentLayouts;
         std::unordered_map<std::string, RenderStage::Queue> lastWrittenBy;
 
@@ -243,6 +247,8 @@ namespace Atlas {
     }
 
     void RenderGraph::emitBarriers(VkCommandBuffer cmd, const Node &node) const {
+        ATLAS_PROFILE_FUNCTION();
+
         std::vector<VkImageMemoryBarrier> imageBarriers;
         std::vector<VkBufferMemoryBarrier> bufferBarriers;
         VkPipelineStageFlags srcStages = 0;

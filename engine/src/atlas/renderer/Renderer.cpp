@@ -11,6 +11,8 @@
 
 namespace Atlas {
     Renderer::Renderer(const CreateInfo &createInfo) : createInfo(createInfo) {
+        ATLAS_PROFILE_FUNCTION();
+
         this->window_ = Window::create(createInfo.window);
         this->device_ = std::make_unique<Device>(*window_, Device::CreateInfo{createInfo.enableRaytracing});
         this->resourceManager_ = std::make_unique<ResourceManager>(*device_);
@@ -21,19 +23,20 @@ namespace Atlas {
     }
 
     Renderer::~Renderer() {
+        ATLAS_PROFILE_FUNCTION();
+
         vkDeviceWaitIdle(device_->device());
 
         for (size_t i = 0; i < SwapChain::MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroyFence(device_->device(), computeInFlightFences[i], nullptr);
-            vkDestroySemaphore(device_->device(), computeFinishedSemaphores[i], nullptr); // missing
+            vkDestroySemaphore(device_->device(), computeFinishedSemaphores[i], nullptr);
         }
 
         freeCommandBuffers();
     }
 
     float Renderer::getAspectRatio() const {
-        if (sceneViewportExtent.width > 0 &&
-            sceneViewportExtent.height > 0) {
+        if (sceneViewportExtent.width > 0 && sceneViewportExtent.height > 0) {
             return static_cast<float>(sceneViewportExtent.width) / static_cast<float>(sceneViewportExtent.height);
         }
 
@@ -207,6 +210,8 @@ namespace Atlas {
     }
 
     void Renderer::createCommandBuffers() {
+        ATLAS_PROFILE_FUNCTION();
+
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 
@@ -230,6 +235,8 @@ namespace Atlas {
     }
 
     void Renderer::freeCommandBuffers() {
+        ATLAS_PROFILE_FUNCTION();
+
         vkFreeCommandBuffers(
             device_->device(),
             device_->getGraphicsCommandPool(),
@@ -252,7 +259,7 @@ namespace Atlas {
         auto extent = window_->getExtent();
         while (extent.width == 0 || extent.height == 0) {
             extent = window_->getExtent();
-            //window_->waitEvents();
+            window_->waitEvents();
         }
         vkDeviceWaitIdle(device_->device());
 
@@ -269,6 +276,8 @@ namespace Atlas {
     }
 
     void Renderer::createComputeSyncObjects() {
+        ATLAS_PROFILE_FUNCTION();
+
         computeInFlightFences.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
         computeFinishedSemaphores.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
 

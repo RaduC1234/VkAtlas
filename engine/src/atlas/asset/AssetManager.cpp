@@ -13,6 +13,7 @@
 #include <nlohmann/json.hpp>
 
 #include "core/Log.hpp"
+#include "core/Profiler.hpp"
 #include "renderer/ResourceManager.hpp"
 #include "renderer/resources/GPUCubemap.hpp"
 
@@ -95,6 +96,8 @@ namespace Atlas {
     }
 
     void AssetManager::update() {
+        ATLAS_PROFILE_FUNCTION();
+
         constexpr size_t maxGpuCreatesPerFrame = 1;
 
         std::vector<WeakState<Texture> > textures;
@@ -102,6 +105,7 @@ namespace Atlas {
         std::vector<WeakState<Cubemap> > cubemaps;
 
         {
+            ATLAS_PROFILE_SCOPE("AssetManager::collectPending");
             std::lock_guard lock(pendingMutex_);
             size_t remaining = maxGpuCreatesPerFrame;
 
@@ -119,6 +123,7 @@ namespace Atlas {
         }
 
         for (auto &weak: meshes) {
+            ATLAS_PROFILE_SCOPE("AssetManager::createMeshGpuResource");
             auto state = weak.lock();
             if (!state || !state->asset) continue;
             auto gpu = resourceManager_.add(state->asset);
@@ -126,6 +131,7 @@ namespace Atlas {
         }
 
         for (auto &weak: textures) {
+            ATLAS_PROFILE_SCOPE("AssetManager::createTextureGpuResource");
             auto state = weak.lock();
             if (!state || !state->asset) continue; // all handles dropped before upload - skip
             auto gpu = resourceManager_.add(state->asset);
@@ -136,6 +142,7 @@ namespace Atlas {
         }
 
         for (auto &weak: cubemaps) {
+            ATLAS_PROFILE_SCOPE("AssetManager::createCubemapGpuResource");
             auto state = weak.lock();
             if (!state || !state->asset) continue;
             auto gpu = resourceManager_.add(state->asset);
@@ -148,6 +155,7 @@ namespace Atlas {
         resourceManager_.update();
 
         {
+            ATLAS_PROFILE_SCOPE("AssetManager::pruneCaches");
             std::lock_guard lock(pendingMutex_);
 
             // Prune expired weak_ptrs from dedup caches. These maps are also

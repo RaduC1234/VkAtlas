@@ -661,7 +661,7 @@ namespace Atlas {
             if (const auto *component = componentData(*components, "Camera")) {
                 CameraComponent camera{};
                 if (const auto projection = component->find("projection"); projection != component->end() && !projection->is_null()) {
-                    camera.projection = projection->get<CameraProjection>();
+                    camera.projection = projection->get<Camera::Projection>();
                 }
                 if (const auto renderMode = component->find("renderMode"); renderMode != component->end() && !renderMode->is_null()) {
                     camera.renderMode = renderMode->get<ViewMode>();

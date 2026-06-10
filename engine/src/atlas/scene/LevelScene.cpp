@@ -131,7 +131,7 @@ namespace Atlas {
                 const float nearZ = std::max(camera.nearPlane, 0.001f);
                 const float farZ = std::max(camera.farPlane, nearZ + 0.01f);
                 const float aspect = renderer.getAspectRatio();
-                if (camera.projection == CameraProjection::ORTHOGRAPHIC) {
+                if (camera.projection == Camera::Projection::ORTHOGRAPHIC) {
                     const float halfHeight = std::max(camera.orthographicHalfHeight, 0.001f);
                     camera.camera.setOrthographicProjection(
                         -halfHeight * aspect,

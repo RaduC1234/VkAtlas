@@ -34,3 +34,7 @@
 [submodule "editor/dependencies/lunasvg"]
 	path = editor/dependencies/lunasvg
 	url = https://github.com/sammycage/lunasvg
+[submodule "editor/dependencies/ImViewGuizmo"]
+	path = editor/dependencies/ImViewGuizmo
+	url = https://github.com/RaduC1234/ImViewGuizmo
+	branch = rotation-and-scale

@@ -36,6 +36,7 @@ namespace Atlas {
         void onBuildComplete();
 
         static AccelerationStructure buildTLAS(Device &device, const std::vector<VkAccelerationStructureInstanceKHR> &instances);
+        static void updateTLAS(Device &device, const std::vector<VkAccelerationStructureInstanceKHR> &instances, AccelerationStructure &tlas);
 
         VkAccelerationStructureKHR handle() const { return handle_; }
         VkDeviceAddress deviceAddress() const { return deviceAddress_; }

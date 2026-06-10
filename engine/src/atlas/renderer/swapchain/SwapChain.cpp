@@ -479,19 +479,19 @@ namespace Atlas {
     VkPresentModeKHR SwapChain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes) {
         /*for (const auto &availablePresentMode: availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                //std::cout << "Present mode: Mailbox" << std::endl;
+                AT_INFO("Swapchain present mode: Mailbox");
                 return availablePresentMode;
             }
         }*/
 
         for (const auto &availablePresentMode: availablePresentModes) {
             if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
-                //std::cout << "Present mode: Immediate" << std::endl;
+                AT_INFO("Swapchain present mode: Immediate");
                 return availablePresentMode;
             }
         }
 
-        // std::cout << "Present mode: V-Sync" << std::endl;
+        AT_INFO("Swapchain present mode: FIFO");
         return VK_PRESENT_MODE_FIFO_KHR;
     }
 
