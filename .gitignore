@@ -105,8 +105,4 @@ npm-debug.log*
 imgui.ini
 
 /assets/**
-!/engine/assets/shaders/
-!/engine/assets/shaders/**
-/assets/shaders/**/*.spv
-!/assets/engine
-!/assets/engine**
+!/engine/assets/**.bin

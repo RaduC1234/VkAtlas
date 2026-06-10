@@ -58,7 +58,7 @@ add_subdirectory(engine)
 
 # Desktop umbrella
 if (WIN32 OR (UNIX AND NOT APPLE AND NOT ANDROID))
-    add_subdirectory(desktop_runtime)
+    add_subdirectory(desktop)
     add_subdirectory(editor)
 endif ()
 
