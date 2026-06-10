@@ -1,12 +1,15 @@
 #include "core/Application.hpp"
+
 #include "core/Profiler.hpp"
 
 namespace Atlas {
     Application::Application(const ApplicationCreateInfo& specification) : specification_(std::move(specification)), renderer_(specification_.rendererCreateInfo), assetManager_(renderer_.resourceManager()) {
+        ATLAS_PROFILE_FUNCTION();
         renderer_.window().setTheme(Window::Theme::Dark);
     }
 
     Application::~Application() {
+        ATLAS_PROFILE_FUNCTION();
         layers_.clear();
     }
 
@@ -36,7 +39,11 @@ namespace Atlas {
                 assetManager_.update();
             }
 
-            FrameContext frame = renderer_.beginFrame();
+            FrameContext frame{};
+            {
+                ATLAS_PROFILE_SCOPE("Renderer::beginFrame");
+                frame = renderer_.beginFrame();
+            }
             if (frame.graphicsCommandBuffer == VK_NULL_HANDLE) {
                 continue;
             }

@@ -47,8 +47,7 @@ namespace Atlas {
 
         // Called by render stages to register the bindless slot.
         // ResourceManager::update() will update it when READY.
-        void registerBindlessSlot(VkDevice device, VkDescriptorSet set,
-                                  uint32_t binding, uint32_t arrayElement);
+        void registerBindlessSlot(VkDevice device, VkDescriptorSet set, uint32_t binding, uint32_t arrayElement);
 
         static std::unique_ptr<GPUTexture> createDefault(Device &device);
 
@@ -58,9 +57,7 @@ namespace Atlas {
         void createSampler(VkSamplerAddressMode addressMode);
         void fillStagingBuffer(const void *pixels, VkDeviceSize size);
 
-        void recordTransition(VkCommandBuffer cmd,
-                              VkImageLayout oldLayout,
-                              VkImageLayout newLayout);
+        void recordTransition(VkCommandBuffer cmd, VkImageLayout oldLayout, VkImageLayout newLayout);
         void recordCopyBufferToImage(VkCommandBuffer cmd);
         void recordGenerateMipmaps(VkCommandBuffer cmd);
 

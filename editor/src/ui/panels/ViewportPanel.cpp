@@ -1,20 +1,12 @@
 #include <imgui.h>
 #define IMVIEWGUIZMO_IMPLEMENTATION
-#include <ImViewGuizmo.h>
-
 #include "ViewportPanel.hpp"
-
-#include "core/IconRegistry.hpp"
-#include "core/ImGuiLayer.hpp"
-#include "ui/components/ToolbarIsland.hpp"
-#include "ui/components/ViewportGizmo.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <cstdio>
+#include <ImViewGuizmo.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,7 +15,10 @@
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include <ImViewGuizmo.h>
+#include "core/IconRegistry.hpp"
+#include "core/ImGuiLayer.hpp"
+#include "ui/components/ToolbarIsland.hpp"
+#include "ui/components/ViewportGizmo.hpp"
 
 namespace Atlas::Editor {
     float matchedOrthographicHalfHeight(
@@ -540,10 +535,12 @@ namespace Atlas::Editor {
                 dl->AddRectFilled(btnMin, btnMax, ts.colHover, 7.0f);
             dl->AddRectFilled(btnMin, btnMax, settingsHovered ? ts.colHover : IM_COL32(30, 32, 38, 180), 7.0f);
 
-            const char *icon = "\xe2\x9a\x99";
-            const ImVec2 iconSize = ImGui::CalcTextSize(icon);
-            dl->AddText({btnMin.x + (ts.btnW - iconSize.x) * 0.5f, btnMin.y + (ts.btnH - iconSize.y) * 0.5f},
-                        IM_COL32(210, 215, 225, 220), icon);
+            const auto &settingsIcon = iconRegistry.get("settings", static_cast<uint32_t>(ts.iconSize));
+            if (settingsIcon.valid()) {
+                const ImVec2 sz = settingsIcon.size();
+                const ImVec2 p{btnMin.x + (ts.btnW - sz.x) * 0.5f, btnMin.y + (ts.btnH - sz.y) * 0.5f};
+                dl->AddImage(settingsIcon.textureId(), p, {p.x + sz.x, p.y + sz.y});
+            }
 
             ImGui::SetNextWindowPos({btnMin.x, btnMax.y + 4.0f});
             ImGui::SetNextWindowSize({220.0f, 0.0f});

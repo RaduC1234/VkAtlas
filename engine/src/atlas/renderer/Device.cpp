@@ -93,7 +93,7 @@ namespace Atlas {
         }
     }
 
-    Device::Device(Window &window, CreateInfo createInfo) : window_{window} {
+    Device::Device(Window &window, CreateInfo createInfo) : window_{window}, createInfo_{createInfo} {
         createVkInstance();
         setupDebugMessenger();
         createSurface();
@@ -498,6 +498,7 @@ namespace Atlas {
         std::vector<const char *> deviceExtensions;
         deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         deviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
+
         deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);

@@ -129,7 +129,7 @@ namespace Atlas::Editor {
             }
         );
         viewportPanel = std::make_shared<ViewportPanel>(projectLayer, selectedEntity, selectedEntities, history, *iconRegistry);
-        assetExplorerPanel = std::make_shared<AssetExplorerPanel>(projectLayer);
+        assetExplorerPanel = std::make_shared<AssetExplorerPanel>(projectLayer, *iconRegistry);
     }
 
     void EditorLayer::onDetach() {
