@@ -592,7 +592,7 @@ namespace Atlas {
 
     uint64_t PathTracingStage::transformSignature(entt::registry &registry) const {
         auto combine = [](uint64_t &s, uint64_t v) { s ^= v + 0x9e3779b97f4a7c15ull + (s << 6) + (s >> 2); };
-        auto hf = [&](uint64_t &s, float v) { combine(s, static_cast<uint64_t>(std::hash<float>{}(v))); };
+        auto hf = [&](uint64_t &s, float v) { combine(s, std::hash<float>{}(v)); };
         auto h = [&]<typename T>(uint64_t &s, const T &v) { combine(s, static_cast<uint64_t>(std::hash<T>{}(v))); };
 
         uint64_t seed = 0;
@@ -618,6 +618,7 @@ namespace Atlas {
             hf(seed, t.translation.x);
             hf(seed, t.translation.y);
             hf(seed, t.translation.z);
+            h(seed, static_cast<uint32_t>(l.type));
             hf(seed, l.intensity);
             hf(seed, l.color.r);
             hf(seed, l.color.g);
@@ -626,6 +627,10 @@ namespace Atlas {
             hf(seed, l.direction.y);
             hf(seed, l.direction.z);
             hf(seed, l.range);
+            hf(seed, l.innerConeAngle);
+            hf(seed, l.outerConeAngle);
+            hf(seed, l.width);
+            hf(seed, l.height);
         }
         return seed;
     }
