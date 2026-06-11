@@ -45,6 +45,7 @@ const uint VIEWMODE_PATH_TRACING = 3u;
 
 const uint FLAG_VIGNETTE = 1u << 0u;
 const uint FLAG_BLOOM    = 1u << 1u;
+const uint FLAG_ACES     = 1u << 2u;
 
 // ---- Tone mapping ----
 
@@ -84,7 +85,9 @@ void main() {
     vec3 color = max(hdr, vec3(0.0)) * pc.exposure;
 
     // Tonemap
-    color = ACESFitted(color);
+    if ((pc.flags & FLAG_ACES) != 0u) {
+        color = ACESFitted(color);
+    }
     color *= pc.colorTint.rgb;
     color = mix(vec3(0.5), color, pc.contrast);
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));

@@ -30,7 +30,7 @@ namespace Atlas {
         return path.filename().string().ends_with(".atlas.json");
     }
 
-    Application *CreateApplication(ApplicationCommandLineArgs args) {
+    Application *CreateApplication(const ApplicationCommandLineArgs &args) {
         std::filesystem::path manifestPath = ATLAS_DEFAULT_PROJECT_MANIFEST;
         std::filesystem::path startupLevelOverride;
 

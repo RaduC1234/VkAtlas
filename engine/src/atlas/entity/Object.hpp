@@ -165,13 +165,24 @@ namespace Atlas {
         glm::vec3 rectUp{0.0f, 1.0f, 0.0f};
     };
 
+    enum class TonemappingMode : uint32_t {
+        NONE = 0,
+        ACES,
+    };
+
+    NLOHMANN_JSON_SERIALIZE_ENUM(TonemappingMode, {
+        {TonemappingMode::NONE, "None"},
+        {TonemappingMode::ACES, "ACES"},
+    })
+
     struct PostProcessingVolumeComponent {
+        TonemappingMode tonemapping{TonemappingMode::NONE};
         float exposure{1.0f};
         float contrast{1.0f};
         float saturation{1.0};
         glm::vec3 colorTint = {1.0f, 1.0f, 1.0f};
         bool bloomEnabled{false};
-        bool vignetteEnabled{true};
+        bool vignetteEnabled{false};
         float bloomStrength{3.0f};
         float vignetteStrength{2.0f};
     };

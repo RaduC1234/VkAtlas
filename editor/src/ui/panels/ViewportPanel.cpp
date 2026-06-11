@@ -267,6 +267,8 @@ namespace Atlas::Editor {
 
             ImViewGuizmo::BeginFrame();
             renderLightBillboards(imageMin, size);
+            renderSkyboxBillboards(imageMin, size);
+            renderPostProcessingBillboards(imageMin, size);
             renderRectLightControls(imageMin, size);
             renderObjectGizmo(imageMin, size, viewportHovered);
             renderLightDirectionControls(imageMin, size);
@@ -801,6 +803,138 @@ namespace Atlas::Editor {
                 ImGui::SetTooltip("%s", (node && !node->name.empty())
                                             ? node->name.c_str()
                                             : ViewportGizmo::lightTypeName(light.type));
+            }
+        }
+
+        ImGui::SetCursorScreenPos(restoreCursor);
+        ImGui::Dummy({0, 0});
+    }
+
+    void ViewportPanel::renderSkyboxBillboards(const ImVec2 imageMin, const ImVec2 imageSize) {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) return;
+
+        auto &registry = scene->getRegistry();
+        const entt::entity cameraEntity = activeCamera(registry);
+        if (cameraEntity == entt::null) return;
+
+        const auto cameraData = registry.get<CameraComponent>(cameraEntity).camera.getData();
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
+
+        for (const entt::entity entity: registry.view<SkyboxComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity);
+                node && (node->deleted || !node->visible))
+                continue;
+
+            const auto *transform = registry.try_get<TransformComponent>(entity);
+            const glm::vec3 position = transform ? transform->translation : glm::vec3(0.0f);
+
+            std::array<ImVec2, 4> corners{};
+            ImVec2 screenPos{};
+            const float size = (selectedEntity == entity) ? 0.42f : 0.32f;
+
+            if (!ViewportGizmo::projectLightBillboard(
+                cameraData, position, imageMin, imageSize, size, corners, screenPos))
+                continue;
+
+            ImVec2 hitMin = corners[0], hitMax = corners[0];
+            for (const ImVec2 &c: corners) {
+                hitMin.x = std::min(hitMin.x, c.x);
+                hitMin.y = std::min(hitMin.y, c.y);
+                hitMax.x = std::max(hitMax.x, c.x);
+                hitMax.y = std::max(hitMax.y, c.y);
+            }
+            constexpr float minHit = 14.0f;
+            auto expand = [](float &lo, float &hi, float min) {
+                if (hi - lo < min) { float e = (min - (hi - lo)) * 0.5f; lo -= e; hi += e; }
+            };
+            expand(hitMin.x, hitMax.x, minHit);
+            expand(hitMin.y, hitMax.y, minHit);
+
+            ImGui::SetCursorScreenPos(hitMin);
+            ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
+            const bool clicked = ImGui::InvisibleButton("##billboard", {hitMax.x - hitMin.x, hitMax.y - hitMin.y});
+            const bool hovered = ImGui::IsItemHovered();
+            ImGui::PopID();
+
+            if (clicked) {
+                selectedEntity = entity;
+                selectedEntities = {entity};
+            }
+
+            ViewportGizmo::drawGenericBillboard(*dl, corners, screenPos,
+                IM_COL32(120, 190, 255, 255), "skybox", selectedEntity == entity, iconRegistry);
+
+            if (hovered) {
+                const auto *node = registry.try_get<SceneNodeComponent>(entity);
+                ImGui::SetTooltip("%s", (node && !node->name.empty()) ? node->name.c_str() : "Skybox");
+            }
+        }
+
+        ImGui::SetCursorScreenPos(restoreCursor);
+        ImGui::Dummy({0, 0});
+    }
+
+    void ViewportPanel::renderPostProcessingBillboards(const ImVec2 imageMin, const ImVec2 imageSize) {
+        auto *scene = projectLayer.project().scene();
+        if (!scene) return;
+
+        auto &registry = scene->getRegistry();
+        const entt::entity cameraEntity = activeCamera(registry);
+        if (cameraEntity == entt::null) return;
+
+        const auto cameraData = registry.get<CameraComponent>(cameraEntity).camera.getData();
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
+
+        for (const entt::entity entity: registry.view<PostProcessingVolumeComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity);
+                node && (node->deleted || !node->visible))
+                continue;
+
+            const auto *transform = registry.try_get<TransformComponent>(entity);
+            const glm::vec3 position = transform ? transform->translation : glm::vec3(0.0f);
+
+            std::array<ImVec2, 4> corners{};
+            ImVec2 screenPos{};
+            const float size = (selectedEntity == entity) ? 0.42f : 0.32f;
+
+            if (!ViewportGizmo::projectLightBillboard(
+                cameraData, position, imageMin, imageSize, size, corners, screenPos))
+                continue;
+
+            ImVec2 hitMin = corners[0], hitMax = corners[0];
+            for (const ImVec2 &c: corners) {
+                hitMin.x = std::min(hitMin.x, c.x);
+                hitMin.y = std::min(hitMin.y, c.y);
+                hitMax.x = std::max(hitMax.x, c.x);
+                hitMax.y = std::max(hitMax.y, c.y);
+            }
+            constexpr float minHit = 14.0f;
+            auto expand = [](float &lo, float &hi, float min) {
+                if (hi - lo < min) { float e = (min - (hi - lo)) * 0.5f; lo -= e; hi += e; }
+            };
+            expand(hitMin.x, hitMax.x, minHit);
+            expand(hitMin.y, hitMax.y, minHit);
+
+            ImGui::SetCursorScreenPos(hitMin);
+            ImGui::PushID(static_cast<int>(entt::to_integral(entity)));
+            const bool clicked = ImGui::InvisibleButton("##billboard", {hitMax.x - hitMin.x, hitMax.y - hitMin.y});
+            const bool hovered = ImGui::IsItemHovered();
+            ImGui::PopID();
+
+            if (clicked) {
+                selectedEntity = entity;
+                selectedEntities = {entity};
+            }
+
+            ViewportGizmo::drawGenericBillboard(*dl, corners, screenPos,
+                IM_COL32(200, 160, 255, 255), "postprocessing", selectedEntity == entity, iconRegistry);
+
+            if (hovered) {
+                const auto *node = registry.try_get<SceneNodeComponent>(entity);
+                ImGui::SetTooltip("%s", (node && !node->name.empty()) ? node->name.c_str() : "Post Processing Volume");
             }
         }
 

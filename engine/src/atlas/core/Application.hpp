@@ -58,5 +58,5 @@ namespace Atlas {
         LayerStack layers_;
     };
 
-    extern Application *CreateApplication(ApplicationCommandLineArgs args);
+    extern Application *CreateApplication(const ApplicationCommandLineArgs &args);
 }

@@ -49,6 +49,10 @@ namespace Atlas {
         registry.on_destroy<LightComponent>().connect<&CullingStage::markDirty>(this);
         registry.on_update<LightComponent>().connect<&CullingStage::markDirty>(this);
 
+        registry.on_construct<CameraComponent>().connect<&CullingStage::markDirty>(this);
+        registry.on_destroy<CameraComponent>().connect<&CullingStage::markDirty>(this);
+        registry.on_update<CameraComponent>().connect<&CullingStage::markDirty>(this);
+
         registry.on_update<SceneNodeComponent>().connect<&CullingStage::markDirty>(this);
         registry.on_update<TransformComponent>().connect<&CullingStage::markDirty>(this);
         registry.on_construct<MaterialComponent>().connect<&CullingStage::markDirty>(this);
@@ -64,6 +68,15 @@ namespace Atlas {
         lightCount_ = 0;
         bool anyUnready = false;
 
+        // Build frustum from the active camera.
+        std::array<glm::vec4, 6> frustumPlanes{};
+        bool hasFrustum = false;
+        if (const entt::entity cam = activeCamera(registry); cam != entt::null) {
+            const Camera::Data cameraData = registry.get<CameraComponent>(cam).camera.getData();
+            for (int i = 0; i < 6; ++i) frustumPlanes[i] = cameraData.frustumPlanes[i];
+            hasFrustum = true;
+        }
+
         for (auto entity: registry.view<TransformComponent, MaterialComponent, ModelComponent>()) {
             if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) {
                 continue;
@@ -78,6 +91,18 @@ namespace Atlas {
                 continue;
             }
 
+            const glm::mat4 m = transform.mat4();
+
+            // Frustum cull: skip objects whose bounding sphere is entirely outside the frustum.
+            if (hasFrustum) {
+                const auto [localCenter, localRadius] = meshBounds(model.meshHandle);
+                const glm::vec3 worldCenter = glm::vec3(m * glm::vec4(localCenter, 1.0f));
+                const float maxScale = glm::max(glm::length(glm::vec3(m[0])),
+                                                glm::max(glm::length(glm::vec3(m[1])),
+                                                         glm::length(glm::vec3(m[2]))));
+                if (!sphereInFrustum(frustumPlanes, worldCenter, localRadius * maxScale)) continue;
+            }
+
             const Material fallbackMaterial{};
             const Material *material = materialComponent.materialHandle.get();
             if (!material) {
@@ -89,7 +114,6 @@ namespace Atlas {
             const uint32_t mrIdx     = registerTexture(material->metallicRoughnessTexture);
             const uint32_t aoIdx     = registerTexture(material->occlusionTexture);
 
-            const glm::mat4 m = transform.mat4();
             const GPUObjectData data{
                 .modelMatrix    = m,
                 .normalMatrix   = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
@@ -174,5 +198,58 @@ namespace Atlas {
         it->second = slot;
 
         return slot;
+    }
+
+    entt::entity CullingStage::activeCamera(entt::registry &registry) {
+        // Prefer the editor camera.
+        for (const entt::entity entity: registry.view<CameraComponent, EditorCameraComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) continue;
+            return entity;
+        }
+
+        for (const entt::entity entity: registry.view<CameraComponent>()) {
+            if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) continue;
+            if (registry.all_of<EditorCameraComponent>(entity) || registry.all_of<TransientComponent>(entity)) continue;
+            return entity;
+        }
+        return entt::null;
+    }
+
+    std::pair<glm::vec3, float> CullingStage::computeMeshBounds(const Mesh &mesh) {
+        const auto &verts = mesh.vertices();
+        if (verts.empty()) return {glm::vec3(0.0f), 0.0f};
+
+        glm::vec3 center{0.0f};
+        for (const auto &v: verts) center += v.position;
+        center /= static_cast<float>(verts.size());
+
+        float radius = 0.0f;
+        for (const auto &v: verts) radius = glm::max(radius, glm::length(v.position - center));
+
+        return {center, radius};
+    }
+
+    std::pair<glm::vec3, float> CullingStage::meshBounds(const AssetHandle<Mesh> &handle) {
+        const void *key = handle.identity();
+        const auto it = meshBoundsCache_.find(key);
+        if (it != meshBoundsCache_.end()) return it->second;
+
+        // Conservative fallback if the CPU asset is somehow unavailable.
+        if (!handle.get()) {
+            const auto fallback = std::make_pair(glm::vec3(0.0f), 1.0f);
+            meshBoundsCache_.emplace(key, fallback);
+            return fallback;
+        }
+
+        auto bounds = computeMeshBounds(*handle.get());
+        meshBoundsCache_.emplace(key, bounds);
+        return bounds;
+    }
+
+    bool CullingStage::sphereInFrustum(const std::array<glm::vec4, 6> &planes, glm::vec3 center, float radius) {
+        for (const auto &plane: planes) {
+            if (glm::dot(glm::vec3(plane), center) + plane.w < -radius) return false;
+        }
+        return true;
     }
 } // namespace Atlas

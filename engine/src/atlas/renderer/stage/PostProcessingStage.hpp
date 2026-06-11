@@ -1,6 +1,7 @@
 #pragma once
 
 #include "RenderStage.hpp"
+#include "entity/Object.hpp"
 #include "renderer/Device.hpp"
 #include "renderer/abstraction/Pipeline.hpp"
 #include "renderer/abstraction/Descriptors.hpp"
@@ -79,9 +80,9 @@ namespace Atlas {
         void barrierGeneralToGeneral(VkCommandBuffer cmd, VkImage image) const;
         void barrierGeneralToFragmentRead(VkCommandBuffer cmd, VkImage image) const;
 
-        bool activePostProcessingEnabled = false;
         bool activeBloomEnabled = false;
-        bool activeVignetteEnabled = true;
+        bool activeVignetteEnabled = false;
+        TonemappingMode activeTonemapping = TonemappingMode::NONE;
         float activeExposure = 1.0f;
         float activeContrast = 1.0f;
         float activeSaturation = 1.0f;

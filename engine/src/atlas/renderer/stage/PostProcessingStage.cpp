@@ -32,7 +32,8 @@ namespace Atlas {
     };
 
     constexpr uint32_t POST_PROCESS_FLAG_VIGNETTE = 1u << 0u;
-    constexpr uint32_t POST_PROCESS_FLAG_BLOOM = 1u << 1u;
+    constexpr uint32_t POST_PROCESS_FLAG_BLOOM    = 1u << 1u;
+    constexpr uint32_t POST_PROCESS_FLAG_ACES     = 1u << 2u;
 
     PostProcessPass::PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout, bool bloomEnabled)
         : RenderStage(Queue::GRAPHICS), device(device), globalSetLayout(globalSetLayout), bloomEnabled(bloomEnabled) {
@@ -93,7 +94,7 @@ namespace Atlas {
     }
 
     void PostProcessPass::resolveGlobalVolume(entt::registry &registry) {
-        activePostProcessingEnabled = false;
+        activeTonemapping = TonemappingMode::NONE;
         activeBloomEnabled = false;
         activeVignetteEnabled = false;
         activeExposure = 1.0f;
@@ -109,7 +110,7 @@ namespace Atlas {
             }
 
             const auto &volume = registry.get<PostProcessingVolumeComponent>(entity);
-            activePostProcessingEnabled = true;
+            activeTonemapping = volume.tonemapping;
             activeBloomEnabled = bloomEnabled && volume.bloomEnabled;
             activeVignetteEnabled = volume.vignetteEnabled;
             activeExposure = volume.exposure;
@@ -421,11 +422,6 @@ namespace Atlas {
     void PostProcessPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
         ATLAS_PROFILE_SCOPE("PostProcessPass::record");
         ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessPass");
-        if (!activePostProcessingEnabled) {
-            recordBypass(cmd);
-            return;
-        }
-
         if (bloomEnabled && !bloomImagesInitialized) {
             ensureBloomImagesInitialized(cmd);
         }
@@ -467,12 +463,9 @@ namespace Atlas {
             pc.bloomStrength = activeBloomStrength;
             pc.vignetteStrength = activeVignetteStrength;
             pc.flags = 0;
-            if (activeVignetteEnabled) {
-                pc.flags |= POST_PROCESS_FLAG_VIGNETTE;
-            }
-            if (activeBloomEnabled) {
-                pc.flags |= POST_PROCESS_FLAG_BLOOM;
-            }
+            if (activeTonemapping == TonemappingMode::ACES) pc.flags |= POST_PROCESS_FLAG_ACES;
+            if (activeVignetteEnabled) pc.flags |= POST_PROCESS_FLAG_VIGNETTE;
+            if (activeBloomEnabled)    pc.flags |= POST_PROCESS_FLAG_BLOOM;
             vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PostProcessPC), &pc);
 
             vkCmdDraw(cmd, 3, 1, 0, 0); // full-screen triangle

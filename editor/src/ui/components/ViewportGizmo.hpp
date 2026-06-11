@@ -33,6 +33,7 @@ namespace Atlas::Editor {
         static bool projectRectLight(const Camera::Data &cameraData, const glm::vec3 &position, const LightComponent &light, ImVec2 imageMin, ImVec2 imageSize, std::array<ImVec2, 4> &outCorners, ImVec2 &outCenter, ImVec2 &outWidthHandle, ImVec2 &outHeightHandle);
         static const char *lightTypeName(LightType type);
         static void drawLightBillboard(ImDrawList &dl, const std::array<ImVec2, 4> &corners, ImVec2 center, const LightComponent &light, bool selected, IconRegistry &icons);
+        static void drawGenericBillboard(ImDrawList &dl, const std::array<ImVec2, 4> &corners, ImVec2 center, ImU32 tint, const char *iconName, bool selected, IconRegistry &icons);
         static void drawRectLight(ImDrawList &dl, const std::array<ImVec2, 4> &corners, ImVec2 center, ImVec2 widthHandle, ImVec2 heightHandle, const LightComponent &light, bool hoveredWidth, bool hoveredHeight);
 
     private:

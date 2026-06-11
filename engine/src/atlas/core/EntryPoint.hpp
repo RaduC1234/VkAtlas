@@ -34,6 +34,7 @@ int main(int argc, char **argv) {
         delete application;
     } catch (const std::exception &error) {
         std::cerr << "Atlas failed: " << error.what() << '\n';
+        system("pause");
         return 1;
     }
 

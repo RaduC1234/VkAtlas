@@ -1,9 +1,6 @@
 #include "EditorLayer.hpp"
 
-#include <cstdint>
-#include <cstdio>
 #include <filesystem>
-#include <utility>
 
 #include <Atlas.hpp>
 
@@ -16,7 +13,7 @@
 #endif
 
 namespace Atlas {
-    Application *CreateApplication(ApplicationCommandLineArgs args) {
+    Application *CreateApplication(const ApplicationCommandLineArgs &args) {
         const std::filesystem::path manifestPath = args.count > 1
                                                        ? std::filesystem::path(args.values[1])
                                                        : std::filesystem::path{};
@@ -32,6 +29,7 @@ namespace Atlas {
         createInfo.rendererCreateInfo.window.properties = Window::Properties::Decorated | Window::Properties::Resizeable;
         createInfo.rendererCreateInfo.window.inputProvider = &DesktopInputProvider::instance();
         createInfo.rendererCreateInfo.sceneOutputTarget = Renderer::SceneOutputTarget::Texture;
+        createInfo.rendererCreateInfo.enableRaytracing = false;
 
         auto *application = new Application(createInfo);
         auto &projectLayer = application->pushLayer<ProjectLayer>(application->renderer(), application->assets(), manifestPath, modulePath);

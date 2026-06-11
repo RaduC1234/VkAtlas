@@ -240,7 +240,7 @@ namespace Atlas::Editor {
 
                             if (texBase) {
                                 auto tv = reinterpret_cast<const float *>(texBase + v * texStride);
-                                vert.uv = glm::vec2(tv[0], 1.0f - tv[1]); // flip V for Vulkan
+                                vert.uv = glm::vec2(tv[0], tv[1]);
                             }
 
                             if (colorBase) {
@@ -256,7 +256,7 @@ namespace Atlas::Editor {
                                 if (glm::dot(tangent, tangent) > 0.0f) {
                                     tangent = glm::normalize(tangent);
                                 }
-                                vert.tangent = glm::vec4(tangent, -tv[3]);
+                                vert.tangent = glm::vec4(tangent, tv[3]);
                             } else {
                                 vert.tangent = glm::vec4(1.0f, 0.0f, 0.0f, 1.0f);
                             }

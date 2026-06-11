@@ -3,6 +3,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <array>
 #include <tuple>
 #include <unordered_map>
 #include <utility>
@@ -75,6 +76,11 @@ namespace Atlas {
             dirty_ = true;
         }
 
+        static entt::entity activeCamera(entt::registry &registry);
+        static std::pair<glm::vec3, float> computeMeshBounds(const Mesh &mesh);
+        std::pair<glm::vec3, float> meshBounds(const AssetHandle<Mesh> &handle);
+        static bool sphereInFrustum(const std::array<glm::vec4, 6> &planes, glm::vec3 center, float radius);
+
         AssetManager &assets_;
 
         bool signalsConnected_ = false;
@@ -91,5 +97,6 @@ namespace Atlas {
 
         uint32_t nextTextureSlot_ = 1;
         std::unordered_map<AssetHandle<Texture>, uint32_t> handleToTextureSlot_;
+        std::unordered_map<const void *, std::pair<glm::vec3, float>> meshBoundsCache_;
     };
 } // namespace Atlas

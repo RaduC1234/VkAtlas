@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project("atlas_desktop_runtime")
+project("atlas_desktop")
 
 add_library(atlas_desktop_runtime_module STATIC
         src/core/DesktopRuntimeModule.cpp

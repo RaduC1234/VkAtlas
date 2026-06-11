@@ -232,16 +232,51 @@ namespace Atlas {
             vkGetPhysicalDeviceFeatures(dev, &feats);
 
             const QueueFamilyIndices idx = findQueueFamilies(dev);
-            if (!idx.isComplete() || !checkDeviceExtensionSupport(dev) || !feats.samplerAnisotropy)
+            if (!idx.isComplete()) {
+                AT_TRACE("[{}] rejected — missing queue families (graphics={}, present={}, compute={}, transfer={})",
+                         props.deviceName,
+                         idx.graphicsFamily.has_value(), idx.presentFamily.has_value(),
+                         idx.computeFamily.has_value(), idx.transferFamily.has_value());
                 continue;
+            }
+
+            if (!checkDeviceExtensionSupport(dev)) {
+                uint32_t extCount = 0;
+                vkEnumerateDeviceExtensionProperties(dev, nullptr, &extCount, nullptr);
+                std::vector<VkExtensionProperties> avail(extCount);
+                vkEnumerateDeviceExtensionProperties(dev, nullptr, &extCount, avail.data());
+                std::set<std::string> availNames;
+                for (const auto &e: avail) availNames.insert(e.extensionName);
+
+                std::string missing;
+                for (const char *req: getRequiredDeviceExtensions()) {
+                    if (!availNames.count(req)) {
+                        if (!missing.empty()) missing += ", ";
+                        missing += req;
+                    }
+                }
+                AT_TRACE("[{}] rejected — missing extensions: {}", props.deviceName, missing);
+                continue;
+            }
+
+            if (!feats.samplerAnisotropy) {
+                AT_TRACE("[{}] rejected — samplerAnisotropy not supported", props.deviceName);
+                continue;
+            }
 
             const SwapChainSupportDetails sc = querySwapChainSupport(dev);
-            if (sc.formats.empty() || sc.presentModes.empty()) continue;
+            if (sc.formats.empty() || sc.presentModes.empty()) {
+                AT_TRACE("[{}] rejected — inadequate swap chain (formats={}, presentModes={})",
+                         props.deviceName, sc.formats.size(), sc.presentModes.size());
+                continue;
+            }
 
             int score = 0;
             if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) score += 1000;
             else if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) score += 500;
             score += static_cast<int>(props.limits.maxImageDimension2D);
+
+            AT_TRACE("[{}] suitable, score={}", props.deviceName, score);
 
             if (score > bestScore) {
                 bestScore = score;
@@ -306,25 +341,16 @@ namespace Atlas {
         feats2.pNext = &vk11;
         vkGetPhysicalDeviceFeatures2(physicalDevice_, &feats2);
 
-        if (!vk12.runtimeDescriptorArray || !vk12.shaderSampledImageArrayNonUniformIndexing) {
+        if (!vk12.runtimeDescriptorArray || !vk12.shaderSampledImageArrayNonUniformIndexing)
             throw std::runtime_error("GPU lacks descriptor indexing features required for bindless textures");
-        }
-
-        if (!vk12.scalarBlockLayout) {
+        if (!vk12.scalarBlockLayout)
             throw std::runtime_error("GPU does not support scalarBlockLayout (required for path tracing buffers)");
-        }
-
-        if (!vk12.bufferDeviceAddress) {
+        if (!vk12.bufferDeviceAddress)
             throw std::runtime_error("GPU does not support bufferDeviceAddress (required for ray tracing)");
-        }
-
-        if (!accelFeatures.accelerationStructure) {
+        if (!accelFeatures.accelerationStructure)
             throw std::runtime_error("GPU does not support VK_KHR_acceleration_structure");
-        }
-
-        if (!rtPipelineFeatures.rayTracingPipeline) {
+        if (!rtPipelineFeatures.rayTracingPipeline)
             throw std::runtime_error("GPU does not support VK_KHR_ray_tracing_pipeline");
-        }
 
         feats2.features.samplerAnisotropy = VK_TRUE;
         feats2.features.multiDrawIndirect = VK_TRUE;
@@ -363,9 +389,8 @@ namespace Atlas {
             createInfo.ppEnabledLayerNames = validationLayers_.data();
         }
 
-        if (vkCreateDevice(physicalDevice_, &createInfo, nullptr, &device_) != VK_SUCCESS) {
+        if (vkCreateDevice(physicalDevice_, &createInfo, nullptr, &device_) != VK_SUCCESS)
             throw std::runtime_error("Failed to create logical device");
-        }
 
         vkGetDeviceQueue(device_, queueFamilyIndices_.graphicsFamily.value(), 0, &graphicsQueue_);
         vkGetDeviceQueue(device_, queueFamilyIndices_.presentFamily.value(), 0, &presentQueue_);
@@ -375,11 +400,10 @@ namespace Atlas {
         RayTracingFunctions::get().load(device_);
 
         AT_INFO("Logical device created. Max push constant size: {} bytes", properties.limits.maxPushConstantsSize);
-        AT_INFO("Ray Tracing Properties:");
-        AT_INFO("  - Shader Group Handle Size:    {}", rtPipelineProperties_.shaderGroupHandleSize);
-        AT_INFO("  - Max Ray Recursion Depth:     {}", rtPipelineProperties_.maxRayRecursionDepth);
-        AT_INFO("  - Shader Group Base Alignment: {}", rtPipelineProperties_.shaderGroupBaseAlignment);
-        AT_INFO("  - Max Shader Group Stride:     {}", rtPipelineProperties_.maxShaderGroupStride);
+        AT_INFO("Ray Tracing: shader group handle {} B, max recursion {}, base alignment {}",
+            rtPipelineProperties_.shaderGroupHandleSize,
+            rtPipelineProperties_.maxRayRecursionDepth,
+            rtPipelineProperties_.shaderGroupBaseAlignment);
     }
 
     void Device::createVmaAllocator() {
@@ -498,17 +522,12 @@ namespace Atlas {
         std::vector<const char *> deviceExtensions;
         deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
         deviceExtensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
-
         deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
         deviceExtensions.push_back(VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME);
 
-        if constexpr (enableValidationLayers) {
-            /*deviceExtensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
-            deviceExtensions.push_back(VK_KHR_SHADER_RELAXED_EXTENDED_INSTRUCTION_EXTENSION_NAME);*/
-        }
         return deviceExtensions;
     }
 
@@ -749,8 +768,13 @@ namespace Atlas {
     }
 
     void Device::pollTransferCallbacks() {
-        if (!pendingTransferCallback_) return;
-        if (!isTransferComplete(pendingTransferSignalValue_)) return;
+        if (!pendingTransferCallback_) {
+            return;
+        }
+
+        if (!isTransferComplete(pendingTransferSignalValue_)) {
+            return;
+        }
 
         const uint64_t signalValue = pendingTransferSignalValue_;
         auto callback = std::move(pendingTransferCallback_);

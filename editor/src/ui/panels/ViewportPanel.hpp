@@ -48,6 +48,8 @@ namespace Atlas::Editor {
         void renderToolbar(ImVec2 imageMin, ImVec2 imageSize);
         void renderContextMenu(bool viewportHovered);
         void renderLightBillboards(ImVec2 imageMin, ImVec2 imageSize);
+        void renderSkyboxBillboards(ImVec2 imageMin, ImVec2 imageSize);
+        void renderPostProcessingBillboards(ImVec2 imageMin, ImVec2 imageSize);
         void renderRectLightControls(ImVec2 imageMin, ImVec2 imageSize);
         void renderLightDirectionControls(ImVec2 imageMin, ImVec2 imageSize);
         void renderObjectGizmo(ImVec2 imageMin, ImVec2 imageSize, bool viewportHovered);

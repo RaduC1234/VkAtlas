@@ -281,16 +281,20 @@ namespace Atlas::Editor {
             registry.emplace<CameraComponent>(selectedEntity);
         }
 
-        if (!registry.all_of<SkyboxComponent>(selectedEntity) && ImGui::MenuItem("Skybox")) {
+        if (registry.view<SkyboxComponent>().begin() == registry.view<SkyboxComponent>().end()
+            && ImGui::MenuItem("Skybox")) {
             registry.emplace<SkyboxComponent>(selectedEntity);
         }
 
-        if (!registry.all_of<PostProcessingVolumeComponent>(selectedEntity) && ImGui::MenuItem("Post Processing")) {
+        if (registry.view<PostProcessingVolumeComponent>().begin() == registry.view<PostProcessingVolumeComponent>().end()
+            && ImGui::MenuItem("Post Processing")) {
             registry.emplace<PostProcessingVolumeComponent>(selectedEntity);
         }
 
-        if (registry.all_of<TransformComponent, ModelComponent, MaterialComponent, LightComponent, CameraComponent,
-                SkyboxComponent, PostProcessingVolumeComponent>(selectedEntity)) {
+        const bool skyboxTaken = registry.view<SkyboxComponent>().begin() != registry.view<SkyboxComponent>().end();
+        const bool ppTaken     = registry.view<PostProcessingVolumeComponent>().begin() != registry.view<PostProcessingVolumeComponent>().end();
+        if (registry.all_of<TransformComponent, ModelComponent, MaterialComponent, LightComponent, CameraComponent>(selectedEntity)
+            && skyboxTaken && ppTaken) {
             ImGui::BeginDisabled();
             ImGui::MenuItem("No components available");
             ImGui::EndDisabled();
@@ -811,6 +815,13 @@ namespace Atlas::Editor {
 
         auto &volume = registry.get<PostProcessingVolumeComponent>(selectedEntity);
         bool changed = false;
+
+        constexpr const char *tonemappingNames[] = {"None", "ACES"};
+        int tonemappingIdx = static_cast<int>(volume.tonemapping);
+        if (ImGui::Combo("Tonemapping", &tonemappingIdx, tonemappingNames, IM_ARRAYSIZE(tonemappingNames))) {
+            volume.tonemapping = static_cast<TonemappingMode>(tonemappingIdx);
+            changed = true;
+        }
 
         changed |= ImGui::DragFloat("Exposure", &volume.exposure, 0.01f, 0.0f, 10.0f);
         changed |= ImGui::DragFloat("Contrast", &volume.contrast, 0.01f, 0.0f, 4.0f);

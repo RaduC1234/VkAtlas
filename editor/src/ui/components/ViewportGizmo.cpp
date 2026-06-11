@@ -270,6 +270,43 @@ namespace Atlas::Editor {
         }
     }
 
+    void ViewportGizmo::drawGenericBillboard(
+        ImDrawList &dl,
+        const std::array<ImVec2, 4> &corners,
+        const ImVec2 center,
+        const ImU32 tint,
+        const char *iconName,
+        const bool selected,
+        IconRegistry &icons) {
+        const float w = std::abs(corners[1].x - corners[0].x) + std::abs(corners[1].y - corners[0].y);
+        const float h = std::abs(corners[3].x - corners[0].x) + std::abs(corners[3].y - corners[0].y);
+        const float sz = std::max(w, h);
+
+        dl.AddRectFilled(
+            {center.x - sz * 0.5f + 1.5f, center.y - sz * 0.5f + 1.5f},
+            {center.x + sz * 0.5f + 1.5f, center.y + sz * 0.5f + 1.5f},
+            IM_COL32(0, 0, 0, 60), sz * 0.15f);
+
+        if (selected) {
+            dl.AddCircle(center, sz * 0.54f, IM_COL32(255, 255, 255, 200), 32, 1.5f);
+            dl.AddCircle(center, sz * 0.54f, IM_COL32(88, 140, 230, 120), 32, 3.5f);
+        }
+
+        const uint32_t pixels = static_cast<uint32_t>(std::max(16.0f, sz));
+        const auto &ic = icons.get(iconName, pixels);
+
+        if (ic.valid()) {
+            dl.AddImage(
+                ic.textureId(),
+                {center.x - sz * 0.5f, center.y - sz * 0.5f},
+                {center.x + sz * 0.5f, center.y + sz * 0.5f},
+                {0, 0}, {1, 1}, tint);
+        } else {
+            dl.AddCircleFilled(center, sz * 0.38f, (tint & IM_COL32(255, 255, 255, 0)) | IM_COL32(0, 0, 0, 180));
+            dl.AddCircle(center, sz * 0.38f, tint, 24, selected ? 2.0f : 1.2f);
+        }
+    }
+
     void ViewportGizmo::drawRectLight(
         ImDrawList &dl,
         const std::array<ImVec2, 4> &corners,
