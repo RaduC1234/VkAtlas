@@ -37,12 +37,14 @@ layout(set = 1, binding = 9) uniform samplerCube envMap;
 layout(location = 0) rayPayloadInEXT RayPayload payload;
 
 void main() {
-    vec3 env  = texture(envMap, payload.direction).rgb;
-    env      *= ubo.debugData.iblMultiplier;
+    vec3 env = texture(envMap, payload.direction).rgb;
+    env *= ubo.debugData.iblMultiplier;
 
     // Guard against NaN/Inf from malformed HDR data
-    if (any(isnan(env)) || any(isinf(env))) env = vec3(0.0);
+    if (any(isnan(env)) || any(isinf(env))) {
+        env = vec3(0.0);
+    }
 
     payload.radiance += payload.throughput * env;
-    payload.done      = true;
+    payload.done = true;
 }

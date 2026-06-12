@@ -17,7 +17,7 @@ struct CameraData {
     float farPlane;
 };
 
-layout(location = 0) in  vec2 inUV;
+layout(location = 0) in vec2 inUV;
 layout(location = 0) out vec4 outColor;
 
 layout(set = 0, binding = 0) uniform GlobalUbo {
@@ -39,13 +39,13 @@ layout(push_constant) uniform PC {
     uint  flags;            // bit 0 = vignette enabled, bit 1 = bloom enabled
 } pc;
 
-const uint VIEWMODE_CLAY         = 2u;
-const uint VIEWMODE_UNLIT        = 1u;
+const uint VIEWMODE_UNLIT = 1u;
+const uint VIEWMODE_CLAY = 2u;
 const uint VIEWMODE_PATH_TRACING = 3u;
 
 const uint FLAG_VIGNETTE = 1u << 0u;
-const uint FLAG_BLOOM    = 1u << 1u;
-const uint FLAG_ACES     = 1u << 2u;
+const uint FLAG_BLOOM = 1u << 1u;
+const uint FLAG_ACES  = 1u << 2u;
 
 // ---- Tone mapping ----
 
@@ -88,6 +88,7 @@ void main() {
     if ((pc.flags & FLAG_ACES) != 0u) {
         color = ACESFitted(color);
     }
+
     color *= pc.colorTint.rgb;
     color = mix(vec3(0.5), color, pc.contrast);
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));

@@ -55,9 +55,9 @@ void main() {
 
     gl_Position = ubo.cameraData.viewProjection * worldPosition;
 
-    fragNormal  = normalize(mat3(obj.normalMatrix) * inNormal);
+    fragNormal = normalize(mat3(obj.normalMatrix) * inNormal);
     fragTangent = vec4(normalize(mat3(obj.modelMatrix) * inTangent.xyz), inTangent.w);
 
     fragTexCoord = inTexCoord;
-    fragColor    = inColor;
+    fragColor = inColor;
 }

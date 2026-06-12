@@ -32,8 +32,8 @@ namespace Atlas {
     };
 
     constexpr uint32_t POST_PROCESS_FLAG_VIGNETTE = 1u << 0u;
-    constexpr uint32_t POST_PROCESS_FLAG_BLOOM    = 1u << 1u;
-    constexpr uint32_t POST_PROCESS_FLAG_ACES     = 1u << 2u;
+    constexpr uint32_t POST_PROCESS_FLAG_BLOOM = 1u << 1u;
+    constexpr uint32_t POST_PROCESS_FLAG_ACES = 1u << 2u;
 
     PostProcessPass::PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout, bool bloomEnabled)
         : RenderStage(Queue::GRAPHICS), device(device), globalSetLayout(globalSetLayout), bloomEnabled(bloomEnabled) {
@@ -78,6 +78,7 @@ namespace Atlas {
             createBloomImages();
             createBloomDescriptors(colorImage, colorLayout);
         }
+
         createDescriptors(colorImage, colorLayout, depthImage);
         createPipelineLayouts();
         createRenderPass(outImage.format());
@@ -364,8 +365,9 @@ namespace Atlas {
         info.pushConstantRangeCount = 1;
         info.pPushConstantRanges = &pushRange;
 
-        if (vkCreatePipelineLayout(device.device(), &info, nullptr, &pipelineLayout) != VK_SUCCESS)
+        if (vkCreatePipelineLayout(device.device(), &info, nullptr, &pipelineLayout) != VK_SUCCESS) {
             throw std::runtime_error("PostProcessPass: failed to create pipeline layout");
+        }
 
         if (bloomEnabled) {
             const std::array bloomLayouts = {
@@ -380,7 +382,7 @@ namespace Atlas {
 
             VkPipelineLayoutCreateInfo bloomInfo{};
             bloomInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-            bloomInfo.setLayoutCount = static_cast<uint32_t>(bloomLayouts.size());
+            bloomInfo.setLayoutCount = bloomLayouts.size();
             bloomInfo.pSetLayouts = bloomLayouts.data();
             bloomInfo.pushConstantRangeCount = 1;
             bloomInfo.pPushConstantRanges = &bloomPushRange;
@@ -422,6 +424,7 @@ namespace Atlas {
     void PostProcessPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
         ATLAS_PROFILE_SCOPE("PostProcessPass::record");
         ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessPass");
+
         if (bloomEnabled && !bloomImagesInitialized) {
             ensureBloomImagesInitialized(cmd);
         }
@@ -446,9 +449,7 @@ namespace Atlas {
         viewport.maxDepth = 1.0f;
         VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-        {
+        vkCmdSetScissor(cmd, 0, 1, &scissor); {
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessPass::FullscreenComposite");
             pipeline->bind(cmd);
 
@@ -465,7 +466,7 @@ namespace Atlas {
             pc.flags = 0;
             if (activeTonemapping == TonemappingMode::ACES) pc.flags |= POST_PROCESS_FLAG_ACES;
             if (activeVignetteEnabled) pc.flags |= POST_PROCESS_FLAG_VIGNETTE;
-            if (activeBloomEnabled)    pc.flags |= POST_PROCESS_FLAG_BLOOM;
+            if (activeBloomEnabled) pc.flags |= POST_PROCESS_FLAG_BLOOM;
             vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PostProcessPC), &pc);
 
             vkCmdDraw(cmd, 3, 1, 0, 0); // full-screen triangle
@@ -506,8 +507,8 @@ namespace Atlas {
         pre[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
         const VkPipelineStageFlags sourceStage = geometryColorLayout == VK_IMAGE_LAYOUT_GENERAL
-                                                    ? (VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
-                                                    : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                                                     ? (VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
+                                                     : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         const VkPipelineStageFlags postStage = postColorInitialized ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 
         vkCmdPipelineBarrier(cmd,
@@ -552,8 +553,8 @@ namespace Atlas {
         post[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
 
         const VkPipelineStageFlags restoreStage = geometryColorLayout == VK_IMAGE_LAYOUT_GENERAL
-                                                     ? (VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
-                                                     : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+                                                      ? (VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
+                                                      : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 
         vkCmdPipelineBarrier(cmd,
                              VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -577,9 +578,15 @@ namespace Atlas {
 
         {
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "Bloom::Extract");
+
             pc.horizontal = 0;
             bloomExtractPipeline->bind(cmd);
-            const VkDescriptorSet extractSets[] = {globalSet, bloomExtractSet};
+
+            const VkDescriptorSet extractSets[] = {
+                globalSet,
+                bloomExtractSet
+            };
+
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, bloomPipelineLayout, 0, std::size(extractSets), extractSets, 0, nullptr);
             vkCmdPushConstants(cmd, bloomPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(BloomPushConstants), &pc);
             vkCmdDispatch(cmd, groupX, groupY, 1);
