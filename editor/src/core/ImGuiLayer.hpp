@@ -22,6 +22,7 @@ namespace Atlas {
 
     private:
         void createDescriptorPool(Device &device);
+        static ImGuiLayer *instance;
 
         VkDescriptorPool descriptorPool = VK_NULL_HANDLE;
         VkDevice device = VK_NULL_HANDLE;

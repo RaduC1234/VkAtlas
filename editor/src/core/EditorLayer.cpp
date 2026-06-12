@@ -112,12 +112,12 @@ namespace Atlas::Editor {
     void EditorLayer::onAttach() {
         ATLAS_PROFILE_SCOPE("EditorLayer::onAttach");
         auto &renderer = projectLayer.getRenderer();
-        loadSplashTexture();
         imguiLayer = std::make_unique<ImGuiLayer>(
             renderer.device(),
             renderer.window(),
             renderer.getOverlayRenderPass(Renderer::OverlayLoadOp::Clear),
             static_cast<uint32_t>(renderer.getImageCount()));
+        loadSplashTexture();
         iconRegistry = std::make_unique<IconRegistry>(renderer.device());
         hierarchyPanel = std::make_shared<HierarchyPanel>(projectLayer, selectedEntity, selectedEntities, history);
         inspectorPanel = std::make_shared<InspectorPanel>(

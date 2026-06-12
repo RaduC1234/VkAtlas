@@ -14,8 +14,10 @@
 #include <imgui_impl_vulkan.h>
 
 namespace Atlas {
+    ImGuiLayer *ImGuiLayer::instance = nullptr;
     ImGuiLayer::ImGuiLayer(Device &device, Window &window, VkRenderPass renderPass, uint32_t imageCount) : device(device.device()), atlasDevice(&device), nativeWindow(window.getNativeHandle()) {
         ATLAS_PROFILE_SCOPE("ImGuiLayer::create");
+        instance = this;
         createDescriptorPool(device);
 
         IMGUI_CHECKVERSION();
@@ -53,6 +55,7 @@ namespace Atlas {
 
     ImGuiLayer::~ImGuiLayer() {
         ATLAS_PROFILE_SCOPE("ImGuiLayer::destroy");
+        instance = nullptr;
         if (device != VK_NULL_HANDLE) {
             vkDeviceWaitIdle(device);
             ImGui_ImplVulkan_Shutdown();
@@ -116,7 +119,7 @@ namespace Atlas {
     }
 
     VkDescriptorSet ImGuiLayer::addTexture(VkSampler sampler, VkImageView imageView, VkImageLayout imageLayout) {
-        if (imageView == VK_NULL_HANDLE || imageLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+        if (imageView == VK_NULL_HANDLE || imageLayout == VK_IMAGE_LAYOUT_UNDEFINED || !instance) {
             return VK_NULL_HANDLE;
         }
 
@@ -124,7 +127,7 @@ namespace Atlas {
     }
 
     void ImGuiLayer::removeTexture(VkDescriptorSet texture) {
-        if (texture == VK_NULL_HANDLE) {
+        if (texture == VK_NULL_HANDLE || !instance) {
             return;
         }
 
