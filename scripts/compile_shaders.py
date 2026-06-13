@@ -29,14 +29,16 @@ def compile_shaders(extension):
     for shader_file in SHADER_DIR.glob(f"*.{extension}"):
         output_file = shader_file.with_suffix(shader_file.suffix + ".spv")
         print(f"Compiling {shader_file}...")
-        subprocess.run(["glslc", str(shader_file), "-o", str(output_file)], check=True)
+        subprocess.run(["glslc", str(shader_file), "-o", str(output_file),
+                        f"-I{SHADER_DIR}"], check=True)
 
 
 def compile_rt_shaders(extension):
     for shader_file in SHADER_DIR.glob(f"*.{extension}"):
         output_file = shader_file.with_suffix(shader_file.suffix + ".spv")
         print(f"Compiling RT {shader_file}...")
-        subprocess.run(["glslc", str(shader_file), "-o", str(output_file), "--target-env=vulkan1.2"], check=True)
+        subprocess.run(["glslc", str(shader_file), "-o", str(output_file),
+                        "--target-env=vulkan1.2", f"-I{SHADER_DIR}"], check=True)
 
 
 def main():
