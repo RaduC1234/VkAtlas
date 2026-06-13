@@ -80,8 +80,12 @@ namespace Atlas {
                             .setDebugName(output.name);
 
                     if (output.type == RenderStage::Resource::Type::ATTACHMENT_DEPTH) {
-                        builder.addView(VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
-                                .addView(VK_IMAGE_ASPECT_STENCIL_BIT);
+                        if (formatHasStencil(output.format)) {
+                            builder.addView(VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)
+                                    .addView(VK_IMAGE_ASPECT_STENCIL_BIT);
+                        } else {
+                            builder.addView(VK_IMAGE_ASPECT_DEPTH_BIT);
+                        }
                     } else {
                         builder.addView(VK_IMAGE_ASPECT_COLOR_BIT);
                     }
@@ -418,6 +422,18 @@ namespace Atlas {
         switch (type) {
             case RenderStage::Resource::Type::ATTACHMENT_DEPTH: return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
             default: return VK_IMAGE_ASPECT_COLOR_BIT;
+        }
+    }
+
+    bool RenderGraph::formatHasStencil(VkFormat format) {
+        switch (format) {
+            case VK_FORMAT_S8_UINT:
+            case VK_FORMAT_D16_UNORM_S8_UINT:
+            case VK_FORMAT_D24_UNORM_S8_UINT:
+            case VK_FORMAT_D32_SFLOAT_S8_UINT:
+                return true;
+            default:
+                return false;
         }
     }
 } // namespace Atlas

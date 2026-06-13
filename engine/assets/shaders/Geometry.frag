@@ -37,6 +37,8 @@ struct Light {
     float width;
     vec3  direction;
     float height;
+    vec3  right;
+    float _pad;
 };
 
 layout(location = 0) in vec3 fragWorldPos;
@@ -66,10 +68,41 @@ layout(std430, set = 3, binding = 0) readonly buffer ObjectDataBuffer {
 } objectData;
 
 layout(std430, set = 4, binding = 0) readonly buffer LightBuffer {
-    uint  count;    // actual light count written by CPU
-    uint  _pad[3];  // 16-byte alignment
+    uint  count;            // total lights written by CPU, directional first
+    uint  directionalCount; // evaluated globally, never clustered
+    uint  _pad0;
+    uint  _pad1;
     Light lights[];
 } lightData;
+
+// Per-froxel light lists built by LightCluster.comp; constants are mirrored
+// in LightClusterStage.hpp and LightCluster.comp.
+const uvec3 CLUSTER_GRID = uvec3(16, 9, 24);
+const uint MAX_LIGHTS_PER_CLUSTER = 63u;
+
+struct Cluster {
+    uint count;
+    uint indices[MAX_LIGHTS_PER_CLUSTER];
+};
+
+layout(std430, set = 4, binding = 1) readonly buffer ClusterBuffer {
+    Cluster clusters[];
+} clusterData;
+
+// Directional shadow map; layout mirrored by ShadowStage::ShadowData.
+layout(std430, set = 4, binding = 2) readonly buffer ShadowDataBuffer {
+    mat4 lightViewProj;
+    uint lightIndex;
+    uint enabled;
+    float texelSize;
+    float _pad;
+} shadowData;
+
+layout(set = 4, binding = 3) uniform sampler2DShadow shadowMap;
+
+layout(push_constant) uniform ClusterPush {
+    vec2 tileScale; // CLUSTER_GRID.xy / framebuffer size
+} push;
 
 const float PI             = 3.14159265359;
 const float INV_PI         = 0.31830988618;
@@ -81,8 +114,6 @@ const uint LIGHT_TYPE_POINT       = 1u;
 const uint LIGHT_TYPE_SPOT        = 2u;
 const uint LIGHT_TYPE_DIRECTIONAL = 3u;
 const uint LIGHT_TYPE_RECT        = 4u;
-
-const uint MAX_LIGHT_COUNT = 256u; // lights
 
 // Debug view modes (debugData.viewMode)
 const uint VIEWMODE_LIT   = 0u;
@@ -141,7 +172,7 @@ float spotAttenuation(vec3 L, vec3 dir, float innerAngle, float outerAngle) {
 }
 
 
-// ---- Direct light evaluation ----
+// ---- Punctual light evaluation (point / spot / directional) ----
 
 vec3 evaluateLight(Light light, vec3 N, vec3 V, vec3 worldPos, vec3 albedo, float metallic, float roughness, vec3 F0)
 {
@@ -157,17 +188,10 @@ vec3 evaluateLight(Light light, vec3 N, vec3 V, vec3 worldPos, vec3 albedo, floa
         vec3  toLight = light.position - worldPos;
         float dist    = length(toLight);
         L             = toLight / max(dist, EPSILON);
-        if (light.type == LIGHT_TYPE_RECT) {
-            vec3  lightNormal = normalize(light.direction);
-            float rectArea    = max(light.width * light.height, EPSILON);
-            float cosLight    = max(dot(lightNormal, -L), 0.0);
-            atten             = rectArea * cosLight / max(dist * dist, EPSILON);
-        } else {
-            atten = distanceAttenuation(dist, light.range);
-            if (light.type == LIGHT_TYPE_SPOT)
-            atten *= spotAttenuation(L, normalize(light.direction),
-            light.innerConeAngle, light.outerConeAngle);
-        }
+        atten         = distanceAttenuation(dist, light.range);
+        if (light.type == LIGHT_TYPE_SPOT)
+        atten *= spotAttenuation(L, normalize(light.direction),
+        light.innerConeAngle, light.outerConeAngle);
     }
 
     float NdotL = max(dot(N, L), 0.0);
@@ -188,6 +212,135 @@ vec3 evaluateLight(Light light, vec3 N, vec3 V, vec3 worldPos, vec3 albedo, floa
     vec3 radiance = light.color * light.intensity * atten;
     return (diffuse + specular) * radiance * NdotL;
 }
+
+
+// ---- Rect area lights (Heitz et al., linearly transformed cosines) ----
+
+vec3 ltcIntegrateEdge(vec3 v1, vec3 v2) {
+    float x = dot(v1, v2);
+    float y = abs(x);
+    float a = 0.8543985 + (0.4965155 + 0.0145206 * y) * y;
+    float b = 3.4175940 + (4.1616724 + y) * y;
+    float v = a / b;
+    float thetaSinTheta = x > 0.0 ? v : 0.5 * inversesqrt(max(1.0 - x * x, 1e-7)) - v;
+    return cross(v1, v2) * thetaSinTheta;
+}
+
+float ltcEvaluate(vec3 N, vec3 V, vec3 P, mat3 Minv, vec3 p0, vec3 p1, vec3 p2, vec3 p3) {
+    // transform the polygon into the cosine space defined by Minv around (T1, T2, N)
+    vec3 T1 = normalize(V - N * dot(V, N));
+    vec3 T2 = cross(N, T1);
+    Minv = Minv * transpose(mat3(T1, T2, N));
+
+    vec3 L0 = normalize(Minv * (p0 - P));
+    vec3 L1 = normalize(Minv * (p1 - P));
+    vec3 L2 = normalize(Minv * (p2 - P));
+    vec3 L3 = normalize(Minv * (p3 - P));
+
+    vec3 vsum = ltcIntegrateEdge(L0, L1)
+              + ltcIntegrateEdge(L1, L2)
+              + ltcIntegrateEdge(L2, L3)
+              + ltcIntegrateEdge(L3, L0);
+
+    // abs() keeps the integral winding-independent; one-sidedness is handled
+    // by the caller through the light plane test.
+    return abs(vsum.z);
+}
+
+vec3 evaluateRectLight(Light light, vec3 N, vec3 V, vec3 P, vec3 albedo, float metallic, float roughness, vec3 F0)
+{
+    if (light.intensity <= 0.0 || light.width <= 0.0 || light.height <= 0.0) return vec3(0.0);
+
+    // the rect emits along its normal; points behind it receive nothing
+    vec3 n = normalize(light.direction);
+    if (dot(P - light.position, n) <= 0.0) return vec3(0.0);
+
+    vec3 ex = light.right * (0.5 * light.width);
+    vec3 ey = cross(n, light.right) * (0.5 * light.height);
+    vec3 p0 = light.position - ex - ey;
+    vec3 p1 = light.position + ex - ey;
+    vec3 p2 = light.position + ex + ey;
+    vec3 p3 = light.position - ex + ey;
+
+    // LUT layout from scripts/generate_ltc.py: u = roughness, v = 1 - theta / (pi/2)
+    float NdotV = clamp(dot(N, V), EPSILON, 1.0);
+    vec2 uv = vec2(roughness, 1.0 - acos(NdotV) * (2.0 * INV_PI));
+    vec4 t1 = texture(ltcMatLUT, uv);
+    vec2 t2 = texture(ltcAmpLUT, uv).rg;
+
+    mat3 Minv = mat3(
+        vec3(t1.x, 0.0, t1.y),
+        vec3(0.0, 1.0, 0.0),
+        vec3(t1.z, 0.0, t1.w));
+
+    float specI = ltcEvaluate(N, V, P, Minv, p0, p1, p2, p3);
+    vec3 specular = (F0 * t2.x + (1.0 - F0) * t2.y) * specI;
+
+    float diffI = ltcEvaluate(N, V, P, mat3(1.0), p0, p1, p2, p3);
+    vec3 diffuse = (1.0 - metallic) * albedo * diffI;
+
+    return light.color * light.intensity * (diffuse + specular);
+}
+
+
+// ---- Shadows ----
+
+float shadowFactor(vec3 worldPos) {
+    if (shadowData.enabled == 0u) return 1.0;
+
+    vec4 lightSpace = shadowData.lightViewProj * vec4(worldPos, 1.0);
+    vec3 ndc = lightSpace.xyz / lightSpace.w;
+    if (ndc.z <= 0.0 || ndc.z >= 1.0) return 1.0;
+
+    // Out-of-map samples land on the white border and stay lit.
+    vec2 uv = ndc.xy * 0.5 + 0.5;
+
+    float sum = 0.0;
+    for (int x = -1; x <= 1; x++)
+    for (int y = -1; y <= 1; y++)
+    sum += texture(shadowMap, vec3(uv + vec2(x, y) * shadowData.texelSize, ndc.z));
+    return sum / 9.0;
+}
+
+
+// ---- Clustered light loop ----
+
+uint clusterIndexFor(vec3 worldPos) {
+    float viewZ = (ubo.cameraData.view * vec4(worldPos, 1.0)).z;
+    float near = ubo.cameraData.nearPlane;
+    float far = ubo.cameraData.farPlane;
+
+    float slicef = log(max(viewZ, near) / near) / log(far / near) * float(CLUSTER_GRID.z);
+    uint slice = min(uint(max(slicef, 0.0)), CLUSTER_GRID.z - 1u);
+    uvec2 tile = min(uvec2(gl_FragCoord.xy * push.tileScale), CLUSTER_GRID.xy - 1u);
+
+    return tile.x + CLUSTER_GRID.x * (tile.y + CLUSTER_GRID.y * slice);
+}
+
+vec3 evaluateLights(vec3 N, vec3 V, vec3 worldPos, vec3 albedo, float metallic, float roughness, vec3 F0)
+{
+    vec3 Lo = vec3(0.0);
+
+    for (uint i = 0u; i < lightData.directionalCount; i++) {
+        vec3 contribution = evaluateLight(lightData.lights[i], N, V, worldPos, albedo, metallic, roughness, F0);
+        if (shadowData.enabled != 0u && i == shadowData.lightIndex) {
+            contribution *= shadowFactor(worldPos);
+        }
+        Lo += contribution;
+    }
+
+    uint cluster = clusterIndexFor(worldPos);
+    uint clusterLightCount = min(clusterData.clusters[cluster].count, MAX_LIGHTS_PER_CLUSTER);
+    for (uint i = 0u; i < clusterLightCount; i++) {
+        Light light = lightData.lights[clusterData.clusters[cluster].indices[i]];
+        Lo += light.type == LIGHT_TYPE_RECT
+            ? evaluateRectLight(light, N, V, worldPos, albedo, metallic, roughness, F0)
+            : evaluateLight(light, N, V, worldPos, albedo, metallic, roughness, F0);
+    }
+
+    return Lo;
+}
+
 
 // ---- IBL ----
 
@@ -277,12 +430,7 @@ void main() {
         vec3 clayF0 = vec3(0.04);
 
         vec3 ambientClay = evaluateIBL(N, V, clayAlbedo, clayMetallic, clayRoughness, clayF0, ao);
-
-        vec3 LoClay = vec3(0.0);
-        uint lightCount = min(lightData.count, MAX_LIGHT_COUNT);
-        for (uint i = 0u; i < lightCount; i++)
-        LoClay += evaluateLight(lightData.lights[i], N, V, fragWorldPos,
-        clayAlbedo, clayMetallic, clayRoughness, clayF0);
+        vec3 LoClay = evaluateLights(N, V, fragWorldPos, clayAlbedo, clayMetallic, clayRoughness, clayF0);
 
         outColor = vec4(ambientClay + LoClay, alpha);
         return;
@@ -291,12 +439,7 @@ void main() {
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
     vec3 ambient = evaluateIBL(N, V, albedo, metallic, roughness, F0, ao);
-
-    vec3 Lo = vec3(0.0);
-    uint lightCount = min(lightData.count, MAX_LIGHT_COUNT);
-    for (uint i = 0u; i < lightCount; i++)
-    Lo += evaluateLight(lightData.lights[i], N, V, fragWorldPos,
-    albedo, metallic, roughness, F0);
+    vec3 Lo = evaluateLights(N, V, fragWorldPos, albedo, metallic, roughness, F0);
 
     outColor = vec4(ambient + Lo, alpha);
 }

@@ -108,7 +108,7 @@ namespace Atlas {
         // Camera position and direction in world space
         glm::mat4 invView = glm::inverse(viewMatrix);
         data.position = glm::vec3(invView[3]); // translation column
-        data.direction = glm::normalize(glm::vec3(invView * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)));
+        data.direction = glm::normalize(glm::vec3(invView * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f))); // view space is +Z forward
 
         data.nearPlane = this->nearPlane;
         data.farPlane = this->farPlane;

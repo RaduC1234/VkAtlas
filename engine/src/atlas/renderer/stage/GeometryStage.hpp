@@ -73,6 +73,7 @@ namespace Atlas {
 
         std::unique_ptr<DescriptorSetLayout> lightSetLayout;
         VkDescriptorSet lightSet = VK_NULL_HANDLE;
+        VkSampler shadowSampler = VK_NULL_HANDLE;
 
         std::unique_ptr<DescriptorSetLayout> skyboxSetLayout;
         VkDescriptorSet skyboxDescriptorSet = VK_NULL_HANDLE;

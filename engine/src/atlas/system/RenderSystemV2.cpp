@@ -4,9 +4,11 @@
 #include "core/Profiler.hpp"
 #include "renderer/stage/CullingStage.hpp"
 #include "renderer/stage/GeometryStage.hpp"
+#include "renderer/stage/LightClusterStage.hpp"
 #include "renderer/stage/OutputStage.hpp"
 #include "renderer/stage/PathTracingStage.hpp"
 #include "renderer/stage/PostProcessingStage.hpp"
+#include "renderer/stage/ShadowStage.hpp"
 
 namespace Atlas {
     RenderSystemV2::RenderSystemV2(Device &device, Renderer &renderer, AssetManager &assets) : device(device), renderer(renderer) {
@@ -14,6 +16,8 @@ namespace Atlas {
 
         auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
             .addStage<CullingStage>(device, assets)
+            .addStage<ShadowStage>(device)
+            .addStage<LightClusterStage>(device, *globalSetLayout)
             .addStage<GeometryStage>(device, assets, *globalSetLayout)
             .addStage<PostProcessPass>(device, *globalSetLayout, false)
             .addStage<OutputStage>(device, renderer)

@@ -1,0 +1,115 @@
+#version 460
+
+// One thread per cluster: build the cluster's view-space AABB and collect every
+// positional light whose bounding sphere intersects it. Directional lights
+// (lights[0 .. directionalCount)) apply everywhere and never enter the clusters.
+//
+// Grid and layout constants are mirrored in LightClusterStage.hpp and Geometry.frag.
+
+layout(local_size_x = 64) in;
+
+const uvec3 CLUSTER_GRID = uvec3(16, 9, 24);
+const uint MAX_LIGHTS_PER_CLUSTER = 63u;
+const uint MAX_LIGHT_COUNT = 256u;
+
+struct DebugData {
+    float iblMultiplier;
+    float exposureMultiplier;
+    uint viewMode;
+};
+
+struct CameraData {
+    mat4 projection;
+    mat4 view;
+    mat4 viewProjection;
+    vec4 frustumPlanes[6];
+    vec3 position;
+    float nearPlane;
+    vec3 direction;
+    float farPlane;
+};
+
+struct Light {
+    uint  type;
+    float intensity;
+    float range;
+    float innerConeAngle;
+    vec3  color;
+    float outerConeAngle;
+    vec3  position;
+    float width;
+    vec3  direction;
+    float height;
+    vec3  right;
+    float _pad;
+};
+
+layout(set = 0, binding = 0) uniform GlobalUbo {
+    CameraData cameraData;
+    DebugData debugData;
+} ubo;
+
+layout(std430, set = 1, binding = 0) readonly buffer LightBuffer {
+    uint  count;
+    uint  directionalCount;
+    uint  _pad0;
+    uint  _pad1;
+    Light lights[];
+} lightData;
+
+struct Cluster {
+    uint count;
+    uint indices[MAX_LIGHTS_PER_CLUSTER];
+};
+
+layout(std430, set = 1, binding = 1) writeonly buffer ClusterBuffer {
+    Cluster clusters[];
+} clusterData;
+
+void main() {
+    const uint clusterCount = CLUSTER_GRID.x * CLUSTER_GRID.y * CLUSTER_GRID.z;
+    const uint clusterIndex = gl_GlobalInvocationID.x;
+    if (clusterIndex >= clusterCount) {
+        return;
+    }
+
+    const uvec3 cluster = uvec3(
+        clusterIndex % CLUSTER_GRID.x,
+        (clusterIndex / CLUSTER_GRID.x) % CLUSTER_GRID.y,
+        clusterIndex / (CLUSTER_GRID.x * CLUSTER_GRID.y));
+
+    // Logarithmic depth slices between the near and far planes (view space, +Z forward).
+    const float near = ubo.cameraData.nearPlane;
+    const float far = ubo.cameraData.farPlane;
+    const float zMin = near * pow(far / near, float(cluster.z) / float(CLUSTER_GRID.z));
+    const float zMax = near * pow(far / near, float(cluster.z + 1u) / float(CLUSTER_GRID.z));
+
+    // Tile corners in NDC, unprojected at both slice depths. Assumes a symmetric
+    // perspective projection: x_view = ndc.x * z_view / P[0][0].
+    const vec2 ndcMin = 2.0 * vec2(cluster.xy) / vec2(CLUSTER_GRID.xy) - 1.0;
+    const vec2 ndcMax = 2.0 * vec2(cluster.xy + 1u) / vec2(CLUSTER_GRID.xy) - 1.0;
+    const vec2 invP = 1.0 / vec2(ubo.cameraData.projection[0][0], ubo.cameraData.projection[1][1]);
+
+    const vec2 cornerA = ndcMin * invP * zMin;
+    const vec2 cornerB = ndcMin * invP * zMax;
+    const vec2 cornerC = ndcMax * invP * zMin;
+    const vec2 cornerD = ndcMax * invP * zMax;
+
+    const vec3 aabbMin = vec3(min(min(cornerA, cornerB), min(cornerC, cornerD)), zMin);
+    const vec3 aabbMax = vec3(max(max(cornerA, cornerB), max(cornerC, cornerD)), zMax);
+
+    const uint lightCount = min(lightData.count, MAX_LIGHT_COUNT);
+    uint count = 0u;
+
+    for (uint i = lightData.directionalCount; i < lightCount && count < MAX_LIGHTS_PER_CLUSTER; i++) {
+        const vec3 viewPos = (ubo.cameraData.view * vec4(lightData.lights[i].position, 1.0)).xyz;
+        const float radius = lightData.lights[i].range;
+
+        const vec3 delta = clamp(viewPos, aabbMin, aabbMax) - viewPos;
+        if (dot(delta, delta) <= radius * radius) {
+            clusterData.clusters[clusterIndex].indices[count++] = i;
+        }
+    }
+
+    clusterData.clusters[clusterIndex].count = count;
+}

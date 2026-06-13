@@ -92,6 +92,7 @@ namespace Atlas {
         static VkAccessFlags writeAccessFor(VkImageLayout layout);
         static VkPipelineStageFlags writeStageFor(VkImageLayout layout);
         static VkImageAspectFlags aspectFor(RenderStage::Resource::Type type);
+        static bool formatHasStencil(VkFormat format);
 
         Device &device;
         Mode mode;

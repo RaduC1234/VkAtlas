@@ -1,5 +1,7 @@
 #include "CullingStage.hpp"
 
+#include <algorithm>
+
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/gtc/matrix_inverse.hpp>
@@ -66,6 +68,7 @@ namespace Atlas {
         objectData_.clear();
         lightData_.clear();
         lightCount_ = 0;
+        directionalCount_ = 0;
         bool anyUnready = false;
 
         // Build frustum from the active camera.
@@ -140,20 +143,47 @@ namespace Atlas {
             }
 
             auto [transform, light] = registry.get<TransformComponent, LightComponent>(entity);
+            const bool directional = light.type == LightType::DIRECTIONAL;
+            const float range = effectiveRange(light);
+
+            // Positional lights outside the frustum can't touch any cluster.
+            if (!directional && hasFrustum && !sphereInFrustum(frustumPlanes, transform.translation, range)) {
+                continue;
+            }
+
+            // Keep the rect frame orthonormal so the shader can derive up = cross(direction, right).
+            glm::vec3 direction = light.direction;
+            if (glm::length(direction) > 0.0f) direction = glm::normalize(direction);
+            glm::vec3 right = light.rectRight - direction * glm::dot(light.rectRight, direction);
+            right = glm::length(right) > 1e-4f ? glm::normalize(right) : glm::vec3(1.0f, 0.0f, 0.0f);
+
             lightData_.push_back(Light{
                 static_cast<uint32_t>(light.type),
                 light.intensity,
-                light.range == 0.0f ? 20.0f : light.range,
+                range,
                 light.innerConeAngle,
                 light.color,
                 light.outerConeAngle,
                 transform.translation,
                 light.width,
-                light.direction,
+                direction,
                 light.height,
+                right,
             });
         }
+
+        // Directional lights first: the geometry pass evaluates them globally while
+        // the cluster pass only bins what comes after directionalCount.
+        const auto positionalBegin = std::stable_partition(lightData_.begin(), lightData_.end(), [](const Light &light) {
+            return light.type == static_cast<uint32_t>(LightType::DIRECTIONAL);
+        });
+        directionalCount_ = static_cast<uint32_t>(std::distance(lightData_.begin(), positionalBegin));
         lightCount_ = static_cast<uint32_t>(lightData_.size());
+
+        // Group draws by mesh so the geometry pass can skip redundant vertex/index binds.
+        std::stable_sort(draws_.begin(), draws_.end(), [](const RasterDraw &a, const RasterDraw &b) {
+            return a.first.identity() < b.first.identity();
+        });
 
         if (drawData_) {
             auto &[draws, textures, textureRevision] = *drawData_;
@@ -172,6 +202,7 @@ namespace Atlas {
         if (lightBuffer_) {
             LightBufferLayout lightBufferData{};
             lightBufferData.count = lightCount_;
+            lightBufferData.directionalCount = directionalCount_;
             for (size_t i = 0; i < lightData_.size(); ++i) {
                 lightBufferData.lights[i] = lightData_[i];
             }
@@ -251,5 +282,15 @@ namespace Atlas {
             if (glm::dot(glm::vec3(plane), center) + plane.w < -radius) return false;
         }
         return true;
+    }
+
+    float CullingStage::effectiveRange(const LightComponent &light) {
+        if (light.type == LightType::RECT) {
+            // Rect attenuation is area / d² with no window, so cull where the
+            // unshadowed irradiance drops below ~1% of the light's intensity.
+            const float area = glm::max(light.width * light.height, 1e-4f);
+            return glm::sqrt(area * glm::max(light.intensity, 0.0f) * 100.0f) + 1.0f;
+        }
+        return light.range == 0.0f ? 20.0f : light.range;
     }
 } // namespace Atlas

@@ -7,6 +7,7 @@
 
 #include <glm/glm.hpp>
 
+#include "LightClusterStage.hpp"
 #include "asset/AssetManager.hpp"
 #include "core/Log.hpp"
 #include "core/Profiler.hpp"
@@ -14,12 +15,18 @@
 #include "renderer/abstraction/GPUBuffer.hpp"
 
 namespace Atlas {
+    // Mirrored by the ClusterPush block in Geometry.frag.
+    struct ClusterPush {
+        glm::vec2 tileScale;
+    };
+
     GeometryStage::GeometryStage(Device &device, AssetManager &assets, const DescriptorSetLayout &globalSetLayout)
         : RenderStage(Queue::GRAPHICS), device(device), assets(assets), globalSetLayout(globalSetLayout) {
         createDescriptors();
     }
 
     GeometryStage::~GeometryStage() {
+        vkDestroySampler(device.device(), shadowSampler, nullptr);
         vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
         vkDestroyRenderPass(device.device(), renderPass, nullptr);
         vkDestroyPipelineLayout(device.device(), pipelineLayout, nullptr);
@@ -28,6 +35,9 @@ namespace Atlas {
     void GeometryStage::getDeclaredInputs(std::vector<std::string> &out) const {
         out.push_back("scene_objects");
         out.push_back("scene_lights");
+        out.push_back("cluster_lights");
+        out.push_back("shadow_map");
+        out.push_back("shadow_data");
         out.push_back("scene_draws");
     }
 
@@ -44,6 +54,13 @@ namespace Atlas {
 
         auto objInfo = ctx.resources.at("scene_objects").get().asBuffer().descriptorInfo();
         auto lightInfo = ctx.resources.at("scene_lights").get().asBuffer().descriptorInfo();
+        auto clusterInfo = ctx.resources.at("cluster_lights").get().asBuffer().descriptorInfo();
+        auto shadowInfo = ctx.resources.at("shadow_data").get().asBuffer().descriptorInfo();
+
+        VkDescriptorImageInfo shadowMapInfo{};
+        shadowMapInfo.sampler = shadowSampler;
+        shadowMapInfo.imageView = ctx.resources.at("shadow_map").get().asImage().view(0);
+        shadowMapInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
         DescriptorWriter(*objectDataSetLayout, *pool)
                 .writeBuffer(0, &objInfo)
@@ -51,6 +68,9 @@ namespace Atlas {
 
         DescriptorWriter(*lightSetLayout, *pool)
                 .writeBuffer(0, &lightInfo)
+                .writeBuffer(1, &clusterInfo)
+                .writeBuffer(2, &shadowInfo)
+                .writeImage(3, &shadowMapInfo)
                 .overwrite(lightSet);
 
         createRenderPass();
@@ -150,8 +170,19 @@ namespace Atlas {
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
                                     0, std::size(sets), sets, 0, nullptr);
 
+            const ClusterPush clusterPush{
+                glm::vec2(LightClusterStage::GRID_X, LightClusterStage::GRID_Y) /
+                glm::vec2(extent.width, extent.height)
+            };
+            vkCmdPushConstants(cmd, pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ClusterPush), &clusterPush);
+
+            // Draws arrive sorted by mesh (CullingStage), so identical meshes bind once.
+            const void *boundMesh = nullptr;
             for (const auto &[mesh, objectIndex]: draws) {
-                mesh.bind(cmd);
+                if (mesh.identity() != boundMesh) {
+                    mesh.bind(cmd);
+                    boundMesh = mesh.identity();
+                }
                 vkCmdDrawIndexed(cmd,
                                  static_cast<uint32_t>(mesh->indices().size()),
                                  1, 0, 0,
@@ -272,7 +303,10 @@ namespace Atlas {
                 .build();
 
         lightSetLayout = DescriptorSetLayout::Builder(device)
-                .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1)
+                .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // lights
+                .addBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // cluster light lists
+                .addBinding(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // shadow data
+                .addBinding(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // shadow map
                 .build();
 
         skyboxSetLayout = DescriptorSetLayout::Builder(device)
@@ -283,8 +317,8 @@ namespace Atlas {
 
         pool = DescriptorPool::Builder(device)
                 .setMaxSets(4)
-                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6) // 5 IBL + 1 skybox
-                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2) // objects + lights
+                .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 7) // 5 IBL + 1 skybox + 1 shadow map
+                .addPoolSize(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4) // objects + lights + clusters + shadow data
                 .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                 .build();
 
@@ -293,6 +327,23 @@ namespace Atlas {
                 .addPoolSize(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_TEXTURES)
                 .setPoolFlags(VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT)
                 .build();
+
+        // Comparison sampler for PCF; out-of-map samples hit the white border and stay lit.
+        VkSamplerCreateInfo shadowSamplerInfo{};
+        shadowSamplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        shadowSamplerInfo.magFilter = VK_FILTER_LINEAR;
+        shadowSamplerInfo.minFilter = VK_FILTER_LINEAR;
+        shadowSamplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        shadowSamplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        shadowSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        shadowSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        shadowSamplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+        shadowSamplerInfo.compareEnable = VK_TRUE;
+        shadowSamplerInfo.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+
+        if (vkCreateSampler(device.device(), &shadowSamplerInfo, nullptr, &shadowSampler) != VK_SUCCESS) {
+            throw std::runtime_error("GeometryStage: failed to create shadow sampler");
+        }
 
         if (!pool->allocateDescriptor(environmentSetLayout->getDescriptorSetLayout(), environmentSet)) {
             throw std::runtime_error("GeometryStage: failed to allocate environment set");
@@ -413,10 +464,17 @@ namespace Atlas {
             skyboxSetLayout->getDescriptorSetLayout(),
         };
 
+        VkPushConstantRange pushRange{};
+        pushRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        pushRange.offset = 0;
+        pushRange.size = sizeof(ClusterPush);
+
         VkPipelineLayoutCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         info.setLayoutCount = static_cast<uint32_t>(layouts.size());
         info.pSetLayouts = layouts.data();
+        info.pushConstantRangeCount = 1;
+        info.pPushConstantRanges = &pushRange;
 
         if (vkCreatePipelineLayout(device.device(), &info, nullptr, &pipelineLayout) != VK_SUCCESS) {
             throw std::runtime_error("GeometryStage: failed to create pipeline layout");
