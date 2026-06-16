@@ -40,7 +40,7 @@ namespace Atlas {
         for (int i = 1; i < args.count; ++i) {
             const std::string arg = args.values[i] ? args.values[i] : "";
 
-            if (arg == "--editor" ) {
+            if (arg == "--editor") {
                 useDeferredInput = true;
             }
 
@@ -53,7 +53,6 @@ namespace Atlas {
                 } else {
                     startupLevelOverride = levelPath;
                 }
-
             } else if (!arg.empty() && arg[0] != '-' && !manifestWasSet) {
                 manifestPath = arg;
                 manifestWasSet = true;
@@ -68,8 +67,8 @@ namespace Atlas {
         createInfo.projectManifest = manifestPath;
         createInfo.projectModule = modulePath;
         createInfo.rendererCreateInfo.window.title = createInfo.name;
-        createInfo.rendererCreateInfo.window.inputProvider = /*useDeferredInput? &PipeServer::InputProvider::instance() :*/ &DesktopInputProvider::instance();
-        createInfo.onFrame = [title = createInfo.name, elapsed = 0.0f, frames = uint32_t{0}] (Window &window, const float deltaTime) mutable {
+        createInfo.rendererCreateInfo.window.inputProvider = &DesktopInputProvider::instance();
+        createInfo.onFrame = [title = createInfo.name, elapsed = 0.0f, frames = uint32_t{0}](Window &window, const float deltaTime) mutable {
             elapsed += deltaTime;
             ++frames;
 

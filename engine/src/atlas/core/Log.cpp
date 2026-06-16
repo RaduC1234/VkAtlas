@@ -2,9 +2,7 @@
 
 #include <iostream>
 
-#if defined(ATLAS_PLATFORM_ANDROID)
-#include <android/log.h>
-#elif defined(_WIN32)
+#if defined(_WIN32)
 #include <windows.h>
 #endif
 
@@ -66,19 +64,7 @@ namespace Atlas {
 #endif
 
     void Log::platformLog(LogLevel level, const std::string& prefix, const std::string& message) {
-#if defined(ATLAS_PLATFORM_ANDROID)
-        android_LogPriority priority;
-        switch (level) {
-            case LogLevel::Trace: priority = ANDROID_LOG_VERBOSE; break;
-            case LogLevel::Info:  priority = ANDROID_LOG_INFO;    break;
-            case LogLevel::Warn:  priority = ANDROID_LOG_WARN;    break;
-            case LogLevel::Error: priority = ANDROID_LOG_ERROR;   break;
-            case LogLevel::Fatal: priority = ANDROID_LOG_FATAL;   break;
-            default:              priority = ANDROID_LOG_DEBUG;   break;
-        }
-        __android_log_print(priority, "Atlas", "%s: %s", prefix.c_str(), message.c_str());
-
-#elif defined(ATLAS_PLATFORM_WINDOWS)
+#if defined(ATLAS_PLATFORM_WINDOWS)
         setConsoleColor(level);
         std::cout << prefix << " " << message << std::endl;
         setConsoleColor(LogLevel::Trace); // Reset

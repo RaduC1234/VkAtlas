@@ -13,7 +13,7 @@
 #include "utils/ExecutorService.hpp"
 
 namespace Atlas {
-#if defined(NDEBUG) || defined(__ANDROID__)
+#if defined(NDEBUG)
     constexpr bool enableValidationLayers = false;
 #else
     constexpr bool enableValidationLayers = true;

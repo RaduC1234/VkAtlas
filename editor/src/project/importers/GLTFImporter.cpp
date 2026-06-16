@@ -71,19 +71,18 @@ namespace Atlas::Editor::GLTFImport {
         }
 
         return assets.rootPath().empty()
-            ? std::filesystem::current_path() / "assets" / requested
-            : assets.rootPath() / requested;
+                   ? std::filesystem::current_path() / "assets" / requested
+                   : assets.rootPath() / requested;
     }
 }
 
 namespace Atlas::Editor {
     using namespace GLTFImport;
 
-    GLTFImporter::GLTFImporter(AssetManager &assets) : assets(assets) {}
+    GLTFImporter::GLTFImporter(AssetManager &assets) : assets(assets) {
+    }
 
     void GLTFImporter::importAsset(const std::string &path, EntityBuffer &buffer) {
-
-        // ---- Load file bytes ------------------------------------------------
         const auto sourcePath = resolveAssetPath(assets, path);
         std::ifstream file(sourcePath, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
@@ -109,10 +108,9 @@ namespace Atlas::Editor {
             return;
         }
 
-        // ---- Parse glTF -----------------------------------------------------
-        tinygltf::Model    model;
+        tinygltf::Model model;
         tinygltf::TinyGLTF loader;
-        std::string        err, warn;
+        std::string err, warn;
 
         loader.RemoveImageLoader();
         loader.SetStoreOriginalJSONForExtrasAndExtensions(true);
@@ -125,7 +123,6 @@ namespace Atlas::Editor {
                 reinterpret_cast<const unsigned char *>(fileBytes.data()),
                 static_cast<uint32_t>(fileBytes.size()));
         } else {
-            // For .gltf we need the resolved filesystem directory so tinygltf can resolve buffers/images.
             const std::string baseDir = sourcePath.parent_path().string();
             success = loader.LoadASCIIFromString(
                 &model, &err, &warn,
@@ -138,27 +135,18 @@ namespace Atlas::Editor {
             return;
         }
 
-        AT_INFO("GLTFImporter: loaded {} - {} meshes, {} images",
-                path, model.meshes.size(), model.images.size());
+        AT_INFO("GLTFImporter: loaded {} - {} meshes, {} images", path, model.meshes.size(), model.images.size());
 
-        // =========================================================================
-        // STEP 1: Decode & store all images (parallel)
-        // =========================================================================
-        std::vector<AssetHandle<Texture>> imageHandles = decodeAndStoreTextures(model.images, path);
-
-        // =========================================================================
-        // STEP 2: Build mesh handles (parallel per mesh)
-        // =========================================================================
-        std::vector<std::vector<AssetHandle<Mesh>>> meshHandles(model.meshes.size());
-        {
-            std::mutex           meshMutex;
-            std::vector<std::future<void>> meshFutures;
+        std::vector<AssetHandle<Texture> > imageHandles = decodeAndStoreTextures(model.images, path);
+        std::vector<std::vector<AssetHandle<Mesh> > > meshHandles(model.meshes.size()); {
+            std::mutex meshMutex;
+            std::vector<std::future<void> > meshFutures;
             meshFutures.reserve(model.meshes.size());
 
             for (size_t meshIdx = 0; meshIdx < model.meshes.size(); ++meshIdx) {
                 meshFutures.push_back(std::async(std::launch::async, [&, meshIdx]() {
                     const tinygltf::Mesh &gltfMesh = model.meshes[meshIdx];
-                    std::vector<AssetHandle<Mesh>> primHandles(gltfMesh.primitives.size());
+                    std::vector<AssetHandle<Mesh> > primHandles(gltfMesh.primitives.size());
 
                     for (size_t primIdx = 0; primIdx < gltfMesh.primitives.size(); ++primIdx) {
                         const tinygltf::Primitive &prim = gltfMesh.primitives[primIdx];
@@ -168,67 +156,64 @@ namespace Atlas::Editor {
                             continue;
                         }
 
-                        // ---- POSITION (required) --------------------------------
                         auto posIt = prim.attributes.find("POSITION");
                         if (posIt == prim.attributes.end()) {
                             AT_ERROR("Primitive missing POSITION - mesh[{}] prim[{}]", meshIdx, primIdx);
                             continue;
                         }
-                        const tinygltf::Accessor   &posAcc  = model.accessors[posIt->second];
+                        const tinygltf::Accessor &posAcc = model.accessors[posIt->second];
                         const tinygltf::BufferView &posView = model.bufferViews[posAcc.bufferView];
-                        const tinygltf::Buffer     &posBuf  = model.buffers[posView.buffer];
-                        const unsigned char *posBase  = posBuf.data.data() + posView.byteOffset + posAcc.byteOffset;
-                        size_t               posStride = posView.byteStride ? posView.byteStride : (3 * sizeof(float));
+                        const tinygltf::Buffer &posBuf = model.buffers[posView.buffer];
+                        const unsigned char *posBase = posBuf.data.data() + posView.byteOffset + posAcc.byteOffset;
+                        size_t posStride = posView.byteStride ? posView.byteStride : (3 * sizeof(float));
 
-                        // ---- NORMAL ---------------------------------------------
-                        const unsigned char *normBase  = nullptr;
-                        size_t               normStride = 0;
+                        // NORMAL
+                        const unsigned char *normBase = nullptr;
+                        size_t normStride = 0;
                         if (auto it = prim.attributes.find("NORMAL"); it != prim.attributes.end()) {
-                            const auto &acc  = model.accessors[it->second];
+                            const auto &acc = model.accessors[it->second];
                             const auto &view = model.bufferViews[acc.bufferView];
-                            normBase   = model.buffers[view.buffer].data.data() + view.byteOffset + acc.byteOffset;
+                            normBase = model.buffers[view.buffer].data.data() + view.byteOffset + acc.byteOffset;
                             normStride = view.byteStride ? view.byteStride : (3 * sizeof(float));
                         }
 
-                        // ---- TEXCOORD_0 -----------------------------------------
-                        const unsigned char *texBase  = nullptr;
-                        size_t               texStride = 0;
+                        // TEXCOORD_0
+                        const unsigned char *texBase = nullptr;
+                        size_t texStride = 0;
                         if (auto it = prim.attributes.find("TEXCOORD_0"); it != prim.attributes.end()) {
-                            const auto &acc  = model.accessors[it->second];
+                            const auto &acc = model.accessors[it->second];
                             const auto &view = model.bufferViews[acc.bufferView];
-                            texBase   = model.buffers[view.buffer].data.data() + view.byteOffset + acc.byteOffset;
+                            texBase = model.buffers[view.buffer].data.data() + view.byteOffset + acc.byteOffset;
                             texStride = view.byteStride ? view.byteStride : (2 * sizeof(float));
                         }
 
-                        // ---- COLOR_0 --------------------------------------------
-                        const unsigned char *colorBase  = nullptr;
-                        size_t               colorStride = 0;
+                        // COLOR_0
+                        const unsigned char *colorBase = nullptr;
+                        size_t colorStride = 0;
                         if (auto it = prim.attributes.find("COLOR_0"); it != prim.attributes.end()) {
-                            const auto &acc  = model.accessors[it->second];
+                            const auto &acc = model.accessors[it->second];
                             const auto &view = model.bufferViews[acc.bufferView];
-                            colorBase   = model.buffers[view.buffer].data.data() + view.byteOffset + acc.byteOffset;
+                            colorBase = model.buffers[view.buffer].data.data() + view.byteOffset + acc.byteOffset;
                             colorStride = view.byteStride ? view.byteStride : (3 * sizeof(float));
                         }
 
-                        // ---- TANGENT --------------------------------------------
-                        const unsigned char *tangentBase  = nullptr;
-                        size_t               tangentStride = 0;
+                        // TANGENT
+                        const unsigned char *tangentBase = nullptr;
+                        size_t tangentStride = 0;
                         if (auto it = prim.attributes.find("TANGENT"); it != prim.attributes.end()) {
-                            const auto &acc  = model.accessors[it->second];
+                            const auto &acc = model.accessors[it->second];
                             const auto &view = model.bufferViews[acc.bufferView];
-                            tangentBase   = model.buffers[view.buffer].data.data() + view.byteOffset + acc.byteOffset;
+                            tangentBase = model.buffers[view.buffer].data.data() + view.byteOffset + acc.byteOffset;
                             tangentStride = view.byteStride ? view.byteStride : (4 * sizeof(float));
                         }
 
-                        // ---- Build vertex array ---------------------------------
                         std::vector<Mesh::Vertex> vertices;
                         vertices.reserve(posAcc.count);
                         for (size_t v = 0; v < posAcc.count; ++v) {
                             Mesh::Vertex vert{};
 
-                            // Position - 180 degree rotation around Z (coordinate system conversion)
                             auto pv = reinterpret_cast<const float *>(posBase + v * posStride);
-                            vert.position = glm::vec3(-pv[0], -pv[1], pv[2]);
+                            vert.position = glm::vec3(-pv[0], -pv[1], pv[2]); // Rotate Vk
 
                             if (normBase) {
                                 auto nv = reinterpret_cast<const float *>(normBase + v * normStride);
@@ -264,42 +249,40 @@ namespace Atlas::Editor {
                             vertices.push_back(vert);
                         }
 
-                        // ---- Build index array ----------------------------------
                         std::vector<uint32_t> indices;
                         if (prim.indices >= 0) {
-                            const auto &idxAcc  = model.accessors[prim.indices];
+                            const auto &idxAcc = model.accessors[prim.indices];
                             const auto &idxView = model.bufferViews[idxAcc.bufferView];
                             const unsigned char *base = model.buffers[idxView.buffer].data.data()
                                                         + idxView.byteOffset + idxAcc.byteOffset;
-                            size_t idxStride = idxView.byteStride
-                                               ? idxView.byteStride
-                                               : tinygltf::GetComponentSizeInBytes(idxAcc.componentType);
+                            size_t idxStride = idxView.byteStride ? idxView.byteStride : tinygltf::GetComponentSizeInBytes(idxAcc.componentType);
 
                             indices.reserve(idxAcc.count);
                             for (size_t i = 0; i < idxAcc.count; ++i) {
                                 uint32_t idx = 0;
                                 switch (idxAcc.componentType) {
                                     case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-                                        idx = *reinterpret_cast<const uint8_t *>(base + i * idxStride); break;
+                                        idx = *reinterpret_cast<const uint8_t *>(base + i * idxStride);
+                                        break;
                                     case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-                                        idx = *reinterpret_cast<const uint16_t *>(base + i * idxStride); break;
+                                        idx = *reinterpret_cast<const uint16_t *>(base + i * idxStride);
+                                        break;
                                     case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-                                        idx = *reinterpret_cast<const uint32_t *>(base + i * idxStride); break;
+                                        idx = *reinterpret_cast<const uint32_t *>(base + i * idxStride);
+                                        break;
                                     default:
-                                        AT_ERROR("Unsupported index component type"); break;
+                                        AT_ERROR("Unsupported index component type");
+                                        break;
                                 }
                                 indices.push_back(idx);
                             }
                         } else {
-                            // Non-indexed - generate sequential indices
                             indices.resize(vertices.size());
                             std::iota(indices.begin(), indices.end(), 0u);
                         }
 
-                        // ---- Store via AssetManager -----------------------------
-                        const std::string meshPath = path + "#mesh" + std::to_string(meshIdx)
-                                                     + "_prim" + std::to_string(primIdx);
-                        auto meshAsset  = std::make_shared<Mesh>(std::move(vertices), std::move(indices));
+                        const std::string meshPath = path + "#mesh" + std::to_string(meshIdx) + "_prim" + std::to_string(primIdx);
+                        auto meshAsset = std::make_shared<Mesh>(std::move(vertices), std::move(indices));
                         auto meshHandle = assets.store(std::move(meshAsset), meshPath);
 
                         primHandles[primIdx] = meshHandle;
@@ -310,14 +293,12 @@ namespace Atlas::Editor {
                 }));
             }
 
-            for (auto &f : meshFutures) f.get();
+            for (auto &f: meshFutures) f.get();
         }
 
         AT_INFO("GLTFImporter: built {} mesh groups", meshHandles.size());
 
-        // =========================================================================
-        // STEP 3: Walk scene graph, create entities
-        // =========================================================================
+
         bool skyboxAdded = false;
         bool postProcessingAdded = false;
         handleSkybox(buffer, model, skyboxAdded);
@@ -325,7 +306,7 @@ namespace Atlas::Editor {
 
         const int sceneIdx = model.defaultScene >= 0 ? model.defaultScene : 0;
         if (sceneIdx < static_cast<int>(model.scenes.size())) {
-            for (int nodeIdx : model.scenes[sceneIdx].nodes) {
+            for (int nodeIdx: model.scenes[sceneIdx].nodes) {
                 processNode(buffer, model, nodeIdx, glm::mat4(1.0f),
                             meshHandles, imageHandles, path);
             }
@@ -334,15 +315,10 @@ namespace Atlas::Editor {
         AT_INFO("GLTFImporter: staged entities from {}", path);
     }
 
-    // =========================================================================
-    // decodeAndStoreTextures
-    // =========================================================================
 
-    std::vector<AssetHandle<Texture>> GLTFImporter::decodeAndStoreTextures(
-        const std::vector<tinygltf::Image> &images,
-        const std::string &path) {
-        std::vector<AssetHandle<Texture>> imageHandles(images.size());
-        std::vector<std::future<std::pair<size_t, AssetHandle<Texture>>>> textureFutures;
+    std::vector<AssetHandle<Texture> > GLTFImporter::decodeAndStoreTextures(const std::vector<tinygltf::Image> &images, const std::string &path) const {
+        std::vector<AssetHandle<Texture> > imageHandles(images.size());
+        std::vector<std::future<std::pair<size_t, AssetHandle<Texture> > > > textureFutures;
         textureFutures.reserve(images.size());
 
         for (size_t imgIdx = 0; imgIdx < images.size(); ++imgIdx) {
@@ -351,54 +327,51 @@ namespace Atlas::Editor {
 
                 if (image.image.empty()) {
                     AT_WARN("Image[{}] has no data - skipping", imgIdx);
-                    return std::pair<size_t, AssetHandle<Texture>>{imgIdx, AssetHandle<Texture>::invalid()};
+                    return std::pair{imgIdx, AssetHandle<Texture>::invalid()};
                 }
 
-                // Determine if this texture is linear data (normal / metallic-roughness / AO)
-                // by checking common name conventions used by DCC tools.
                 const std::string name = toLower(image.name);
                 const bool isNormalMap =
-                    name.find("normal") != std::string::npos ||
-                    name.find("nrm") != std::string::npos ||
-                    name.find("norm") != std::string::npos ||
-                    name.ends_with("_n") ||
-                    name.ends_with("-n") ||
-                    name.find("_n.") != std::string::npos ||
-                    name.find("_n_") != std::string::npos;
+                        name.find("normal") != std::string::npos ||
+                        name.find("nrm") != std::string::npos ||
+                        name.find("norm") != std::string::npos ||
+                        name.ends_with("_n") ||
+                        name.ends_with("-n") ||
+                        name.find("_n.") != std::string::npos ||
+                        name.find("_n_") != std::string::npos;
                 const bool isLinear =
-                    isNormalMap ||
-                    name.find("roughness") != std::string::npos ||
-                    name.find("metallic")  != std::string::npos ||
-                    name.find("metallicroughness") != std::string::npos ||
-                    name.find("_mr")       != std::string::npos ||
-                    name.find("occlusion") != std::string::npos ||
-                    name.find("_ao")       != std::string::npos ||
-                    name.find("ambientocclusion") != std::string::npos ||
-                    name.find("_arm")      != std::string::npos ||
-                    name.find("_orm")      != std::string::npos;
+                        isNormalMap ||
+                        name.find("roughness") != std::string::npos ||
+                        name.find("metallic") != std::string::npos ||
+                        name.find("metallicroughness") != std::string::npos ||
+                        name.find("_mr") != std::string::npos ||
+                        name.find("occlusion") != std::string::npos ||
+                        name.find("_ao") != std::string::npos ||
+                        name.find("ambientocclusion") != std::string::npos ||
+                        name.find("_arm") != std::string::npos ||
+                        name.find("_orm") != std::string::npos;
 
                 const VkFormat format = isLinear
-                                        ? VK_FORMAT_R8G8B8A8_UNORM
-                                        : VK_FORMAT_R8G8B8A8_SRGB;
+                                            ? VK_FORMAT_R8G8B8A8_UNORM
+                                            : VK_FORMAT_R8G8B8A8_SRGB;
 
-                int    width = 0, height = 0;
+                int width = 0, height = 0;
                 std::vector<std::byte> pixelBytes;
 
                 if (image.width > 0 && image.height > 0 && image.component > 0) {
-                    // tinygltf already decoded it (buffer-view embedded image)
-                    width  = image.width;
+                    width = image.width;
                     height = image.height;
 
                     if (image.bits != 8) {
                         AT_WARN("Image[{}] has unsupported bit depth {} - skipping", imgIdx, image.bits);
-                        return std::pair<size_t, AssetHandle<Texture>>{imgIdx, AssetHandle<Texture>::invalid()};
+                        return std::pair<size_t, AssetHandle<Texture> >{imgIdx, AssetHandle<Texture>::invalid()};
                     }
 
                     const size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
                     const size_t sourceChannels = static_cast<size_t>(image.component);
                     if (image.image.size() < pixelCount * sourceChannels) {
                         AT_WARN("Image[{}] data is smaller than expected - skipping", imgIdx);
-                        return std::pair<size_t, AssetHandle<Texture>>{imgIdx, AssetHandle<Texture>::invalid()};
+                        return std::pair<size_t, AssetHandle<Texture> >{imgIdx, AssetHandle<Texture>::invalid()};
                     }
 
                     pixelBytes.resize(pixelCount * 4);
@@ -424,14 +397,13 @@ namespace Atlas::Editor {
                         }
                     }
                 } else {
-                    // Compressed (PNG/JPEG) - decode with stb
                     int channels = 0;
                     unsigned char *pixels = stbi_load_from_memory(
                         image.image.data(), static_cast<int>(image.image.size()),
                         &width, &height, &channels, STBI_rgb_alpha);
                     if (!pixels) {
                         AT_ERROR("Image[{}] stb decode failed: {}", imgIdx, stbi_failure_reason());
-                        return std::pair<size_t, AssetHandle<Texture>>{imgIdx, AssetHandle<Texture>::invalid()};
+                        return std::pair<size_t, AssetHandle<Texture> >{imgIdx, AssetHandle<Texture>::invalid()};
                     }
 
                     const size_t byteCount = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
@@ -441,8 +413,8 @@ namespace Atlas::Editor {
                 }
 
                 const std::string texPath = image.name.empty()
-                    ? basePath + "#image" + std::to_string(imgIdx)
-                    : basePath + "#" + image.name;
+                                                ? basePath + "#image" + std::to_string(imgIdx)
+                                                : basePath + "#" + image.name;
 
                 auto handle = assets.store<Texture>(
                     std::make_shared<Texture>(
@@ -457,7 +429,7 @@ namespace Atlas::Editor {
                          imgIdx, texPath, width, height,
                          isNormalMap ? "normal" : (isLinear ? "linear" : "sRGB"));
 
-                return std::pair<size_t, AssetHandle<Texture>>{imgIdx, handle};
+                return std::pair<size_t, AssetHandle<Texture> >{imgIdx, handle};
             }));
         }
 
@@ -469,19 +441,14 @@ namespace Atlas::Editor {
         return imageHandles;
     }
 
-    // =========================================================================
-    // processNode
-    // =========================================================================
-
     void GLTFImporter::processNode(
-        EntityBuffer                                    &buffer,
-        const tinygltf::Model                           &model,
-        int32_t                                          nodeIdx,
-        const glm::mat4                                 &parentTransform,
-        const std::vector<std::vector<AssetHandle<Mesh>>> &meshHandles,
-        const std::vector<AssetHandle<Texture>>          &imageHandles,
-        const std::string                                &sourcePath) {
-
+        EntityBuffer &buffer,
+        const tinygltf::Model &model,
+        int32_t nodeIdx,
+        const glm::mat4 &parentTransform,
+        const std::vector<std::vector<AssetHandle<Mesh> > > &meshHandles,
+        const std::vector<AssetHandle<Texture> > &imageHandles,
+        const std::string &sourcePath) {
         const tinygltf::Node &node = model.nodes[nodeIdx];
 
         const glm::mat4 localTransform = getNodeTransform(node);
@@ -492,7 +459,6 @@ namespace Atlas::Editor {
         glm::vec4 perspective;
         glm::decompose(worldTransform, scale, rotation, translation, skew, perspective);
 
-        // ---- Mesh primitives ------------------------------------------------
         if (node.mesh >= 0 && node.mesh < static_cast<int>(meshHandles.size())) {
             const tinygltf::Mesh &gltfMesh = model.meshes[node.mesh];
             const auto &primHandles = meshHandles[node.mesh];
@@ -509,16 +475,14 @@ namespace Atlas::Editor {
 
                 TransformComponent transform{};
                 transform.translation = translation;
-                transform.rotation    = glm::eulerAngles(rotation);
-                transform.scale       = scale;
+                transform.rotation = glm::eulerAngles(rotation);
+                transform.scale = scale;
                 buffer.add(transform);
 
-                // Model component
                 ModelComponent modelComp{};
                 modelComp.meshHandle = primHandles[primIdx];
                 buffer.add(modelComp);
 
-                // Material component
                 MaterialComponent material{};
                 auto materialAsset = std::make_shared<Material>();
                 materialAsset->baseColor = glm::vec4(1.0f);
@@ -528,15 +492,14 @@ namespace Atlas::Editor {
                     const tinygltf::Material &mat = model.materials[prim.material];
                     const auto &pbr = mat.pbrMetallicRoughness;
                     materialAsset->name = mat.name.empty()
-                        ? "Material_" + std::to_string(prim.material)
-                        : mat.name;
+                                              ? "Material_" + std::to_string(prim.material)
+                                              : mat.name;
 
                     if (mat.extensions.contains("KHR_materials_sheen") ||
                         mat.extensions.contains("KHR_material_sheen")) {
                         materialAsset->shadingModel = ShadingModel::CLOTH_CHARLIE;
                     }
 
-                    // Base color factor
                     if (pbr.baseColorFactor.size() == 4) {
                         materialAsset->baseColor = glm::vec4(
                             pbr.baseColorFactor[0], pbr.baseColorFactor[1],
@@ -569,7 +532,7 @@ namespace Atlas::Editor {
             }
         }
 
-        // ---- KHR_lights_punctual --------------------------------------------
+        // KHR_lights_punctual
         if (node.light >= 0 && node.light < static_cast<int>(model.lights.size())) {
             const tinygltf::Light &gltfLight = model.lights[node.light];
 
@@ -580,24 +543,25 @@ namespace Atlas::Editor {
 
             TransformComponent transform{};
             transform.translation = translation;
-            transform.rotation    = glm::eulerAngles(rotation);
-            transform.scale       = scale;
+            transform.rotation = glm::eulerAngles(rotation);
+            transform.scale = scale;
             buffer.add(transform);
 
             LightComponent light{};
 
-            if      (gltfLight.type == "point")       light.type = LightType::POINT;
-            else if (gltfLight.type == "spot")         { light.type = LightType::SPOT;
-                                                         light.innerConeAngle = static_cast<float>(gltfLight.spot.innerConeAngle);
-                                                         light.outerConeAngle = static_cast<float>(gltfLight.spot.outerConeAngle); }
-            else if (gltfLight.type == "directional")  light.type = LightType::DIRECTIONAL;
+            if (gltfLight.type == "point") light.type = LightType::POINT;
+            else if (gltfLight.type == "spot") {
+                light.type = LightType::SPOT;
+                light.innerConeAngle = static_cast<float>(gltfLight.spot.innerConeAngle);
+                light.outerConeAngle = static_cast<float>(gltfLight.spot.outerConeAngle);
+            } else if (gltfLight.type == "directional") light.type = LightType::DIRECTIONAL;
 
             light.color = gltfLight.color.size() == 3
-                ? glm::vec3(gltfLight.color[0], gltfLight.color[1], gltfLight.color[2])
-                : glm::vec3(1.0f);
+                              ? glm::vec3(gltfLight.color[0], gltfLight.color[1], gltfLight.color[2])
+                              : glm::vec3(1.0f);
 
             light.intensity = static_cast<float>(gltfLight.intensity);
-            light.range     = static_cast<float>(gltfLight.range);
+            light.range = static_cast<float>(gltfLight.range);
 
             constexpr glm::vec3 defaultDir{0.0f, 0.0f, -1.0f};
             light.direction = toEngineDirection(rotation * defaultDir);
@@ -605,17 +569,15 @@ namespace Atlas::Editor {
             buffer.next();
         }
 
-        // ---- ATLAS_lights_special -------------------------------------------
+        // ATLAS_lights_special
         if (auto nodeAtlasIt = node.extensions.find("ATLAS_lights_special");
             nodeAtlasIt != node.extensions.end() && nodeAtlasIt->second.IsObject()) {
-
             const tinygltf::Value &nodeAtlas = nodeAtlasIt->second;
             if (nodeAtlas.Has("light") && nodeAtlas.Get("light").IsInt()) {
                 const int lightIndex = nodeAtlas.Get("light").Get<int>();
 
                 if (auto modelAtlasIt = model.extensions.find("ATLAS_lights_special");
                     modelAtlasIt != model.extensions.end() && modelAtlasIt->second.IsObject()) {
-
                     const tinygltf::Value &modelAtlas = modelAtlasIt->second;
                     if (modelAtlas.Has("lights") && modelAtlas.Get("lights").IsArray()) {
                         const auto &arr = modelAtlas.Get("lights").Get<tinygltf::Value::Array>();
@@ -626,19 +588,19 @@ namespace Atlas::Editor {
 
                             SceneNodeComponent sceneNode{};
                             sceneNode.name = lobj.Has("name") && lobj.Get("name").IsString()
-                                ? lobj.Get("name").Get<std::string>()
-                                : ("AtlasLight_" + std::to_string(lightIndex));
+                                                 ? lobj.Get("name").Get<std::string>()
+                                                 : ("AtlasLight_" + std::to_string(lightIndex));
                             sceneNode.parent = entt::null;
                             buffer.add(sceneNode);
 
                             TransformComponent transform{};
                             transform.translation = translation;
-                            transform.rotation    = glm::eulerAngles(rotation);
-                            transform.scale       = scale;
+                            transform.rotation = glm::eulerAngles(rotation);
+                            transform.scale = scale;
                             buffer.add(transform);
 
                             LightComponent light{};
-                            light.type  = LightType::RECT;
+                            light.type = LightType::RECT;
 
                             glm::vec3 localDirection{0.0f, 0.0f, -1.0f};
                             if (lobj.Has("direction") && lobj.Get("direction").IsArray()) {
@@ -672,19 +634,13 @@ namespace Atlas::Editor {
             }
         }
 
-        // ---- Recurse into children ------------------------------------------
-        for (int childIdx : node.children) {
+        for (int childIdx: node.children) {
             processNode(buffer, model, childIdx, worldTransform,
                         meshHandles, imageHandles, sourcePath);
         }
     }
 
-    // =========================================================================
-    // handleSkybox
-    // =========================================================================
-
-    void GLTFImporter::handleSkybox(
-        EntityBuffer &buffer, const tinygltf::Model &model, bool &skyboxAdded) {
+    void GLTFImporter::handleSkybox(EntityBuffer &buffer, const tinygltf::Model &model, bool &skyboxAdded) {
         if (skyboxAdded) return;
 
         auto it = model.extensions.find("ATLAS_skybox");
@@ -715,12 +671,7 @@ namespace Atlas::Editor {
         AT_TRACE("Loaded skybox from ATLAS_skybox extension");
     }
 
-    // =========================================================================
-    // handlePostProcessing
-    // =========================================================================
-
-    void GLTFImporter::handlePostProcessing(
-        EntityBuffer &buffer, const tinygltf::Model &model, bool &postProcessingAdded) {
+    void GLTFImporter::handlePostProcessing(EntityBuffer &buffer, const tinygltf::Model &model, bool &postProcessingAdded) {
         if (postProcessingAdded) return;
 
         auto it = model.extensions.find("ATLAS_post_processing");
@@ -756,15 +707,10 @@ namespace Atlas::Editor {
         AT_TRACE("Loaded post processing: exposure={} contrast={} saturation={}", volume.exposure, volume.contrast, volume.saturation);
     }
 
-    // =========================================================================
-    // resolveTexture
-    // =========================================================================
-
     AssetHandle<Texture> GLTFImporter::resolveTexture(
-        const tinygltf::Model             &model,
-        int                                texIdx,
-        const std::vector<AssetHandle<Texture>> &imageHandles) {
-
+        const tinygltf::Model &model,
+        int texIdx,
+        const std::vector<AssetHandle<Texture> > &imageHandles) {
         if (texIdx < 0 || texIdx >= static_cast<int>(model.textures.size()))
             return {};
 
@@ -774,10 +720,6 @@ namespace Atlas::Editor {
 
         return imageHandles[imgIdx];
     }
-
-    // =========================================================================
-    // getNodeTransform
-    // =========================================================================
 
     glm::mat4 GLTFImporter::getNodeTransform(const tinygltf::Node &node) {
         glm::mat4 mat(1.0f);
@@ -790,7 +732,7 @@ namespace Atlas::Editor {
                 glm::vec3 t(
                     -static_cast<float>(node.translation[0]),
                     -static_cast<float>(node.translation[1]),
-                     static_cast<float>(node.translation[2]));
+                    static_cast<float>(node.translation[2]));
                 mat = glm::translate(mat, t);
             }
             if (node.rotation.size() == 4) {
@@ -798,18 +740,17 @@ namespace Atlas::Editor {
                     static_cast<float>(node.rotation[3]), // w
                     static_cast<float>(node.rotation[0]), // x
                     static_cast<float>(node.rotation[1]), // y
-                    static_cast<float>(node.rotation[2]));// z
+                    static_cast<float>(node.rotation[2])); // z
                 mat *= glm::mat4_cast(q);
             }
             if (node.scale.size() == 3) {
                 mat = glm::scale(mat, glm::vec3(
-                    static_cast<float>(node.scale[0]),
-                    static_cast<float>(node.scale[1]),
-                    static_cast<float>(node.scale[2])));
+                                     static_cast<float>(node.scale[0]),
+                                     static_cast<float>(node.scale[1]),
+                                     static_cast<float>(node.scale[2])));
             }
         }
 
         return mat;
     }
-
 }

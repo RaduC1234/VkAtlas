@@ -64,18 +64,7 @@ target_link_libraries(atlas_engine PRIVATE
 )
 
 # Platform-specific configurations
-if (ANDROID)
-    find_package(game-activity REQUIRED CONFIG)
-    find_library(VULKAN_LIB vulkan REQUIRED)
-
-    target_link_libraries(atlas_engine PUBLIC
-            game-activity::game-activity
-            ${VULKAN_LIB}
-            android
-            log
-    )
-
-elseif (WIN32)
+if (WIN32)
     find_package(Vulkan REQUIRED)
     set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
     add_subdirectory(dependencies/glfw)

@@ -24,29 +24,31 @@ namespace Atlas::Editor {
 
     void IconButton::draw(ImDrawList &dl, const ImVec2 bMin, const ImVec2 bMax, const bool hovered) const {
         // Hover highlight
-        if (hovered && !m_active)
+        if (hovered && !m_active) {
             dl.AddRectFilled(bMin, bMax, m_style.colHover, 7.0f);
+        }
 
         // Icon image
         const auto &ic = m_icons.get(m_iconName, static_cast<uint32_t>(m_style.iconSize));
         if (ic.valid()) {
             const ImVec2 sz = ic.size();
-            const ImVec2 p(
-                bMin.x + (m_style.btnW - sz.x) * 0.5f,
-                bMin.y + (m_style.btnH - sz.y) * 0.5f);
+            const ImVec2 p(bMin.x + (m_style.btnW - sz.x) * 0.5f, bMin.y + (m_style.btnH - sz.y) * 0.5f);
             dl.AddImage(ic.textureId(), p, {p.x + sz.x, p.y + sz.y});
         }
 
         // Active underline
-        if (m_active)
+        if (m_active) {
             dl.AddLine(
                 {bMin.x + 8.0f, bMax.y - 3.0f},
                 {bMax.x - 8.0f, bMax.y - 3.0f},
-                m_style.colAccent, 2.0f);
+                m_style.colAccent, 2.0f
+            );
+        }
 
         // Tooltip
-        if (hovered && m_tooltip)
+        if (hovered && m_tooltip) {
             ImGui::SetTooltip("%s", m_tooltip);
+        }
     }
 
     bool IconButton::render(float &cursorX, const float btnY) const {
@@ -134,7 +136,6 @@ namespace Atlas::Editor {
         // Border
         dl->AddRect(mn, mx, m_style.colBorder, m_style.islandRounding);
 
-        // Suppress ImGui button chrome for all children
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));

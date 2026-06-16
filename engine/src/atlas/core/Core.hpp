@@ -11,7 +11,7 @@
 #else
 #define AVALON_API
 #endif
-#elif defined(__ANDROID__) || defined(__linux__)
+#elif defined(__linux__)
 #if defined(AVALON_BUILD_SHARED) || defined(AVALON_USE_SHARED)
 #define AVALON_API __attribute__((visibility("default")))
 #else

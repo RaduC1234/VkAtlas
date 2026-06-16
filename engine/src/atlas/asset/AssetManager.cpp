@@ -18,7 +18,6 @@
 #include "renderer/resources/GPUCubemap.hpp"
 
 namespace Atlas {
-    // ── paths.json mount overrides ────────────────────────────────────────────
     // Format (place paths.json next to the executable / working directory):
     //   {
     //     "engine": "E:/Atlas/engine/assets",

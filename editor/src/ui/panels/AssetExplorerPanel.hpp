@@ -50,8 +50,6 @@ namespace Atlas::Editor {
             std::filesystem::path path;
             std::filesystem::path relativePath;
             std::string name;
-            // OPT: pre-lowercased name cached at snapshot build time,
-            //      avoids per-frame allocations in applyFiltersAndSort
             std::string nameLower;
             AssetKind kind = AssetKind::Other;
             bool directory = false;

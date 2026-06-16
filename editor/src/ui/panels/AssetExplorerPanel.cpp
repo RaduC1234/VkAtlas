@@ -21,8 +21,6 @@
 namespace Atlas::Editor {
     using AEC = AssetExplorerComponents;
 
-    // ── lifecycle ────────────────────────────────────────────────────────────
-
     AssetExplorerPanel::AssetExplorerPanel(ProjectLayer &projectLayer, IconRegistry &iconRegistry)
         : projectLayer(projectLayer), iconRegistry(iconRegistry) {
     }

@@ -10,8 +10,6 @@
 #include <cmath>
 
 namespace Atlas::Editor {
-    // ── Math helpers ──────────────────────────────────────────────────────
-
     glm::vec3 ViewportGizmo::meshLocalCenter(const Mesh &mesh) {
         const auto &verts = mesh.vertices();
         if (verts.empty()) return {};
@@ -77,8 +75,6 @@ namespace Atlas::Editor {
         };
     }
 
-    // ── ImViewGuizmo bridge ───────────────────────────────────────────────
-
     ImViewGuizmo::TransformOperation ViewportGizmo::toImViewOperation(const ObjectGizmoMode mode) {
         switch (mode) {
             case ObjectGizmoMode::Translate: return ImViewGuizmo::TRANSFORM_TRANSLATE;
@@ -109,8 +105,6 @@ namespace Atlas::Editor {
         }
         return "light_point";
     }
-
-    // ── Projection ────────────────────────────────────────────────────────
 
     bool ViewportGizmo::projectPoint(
         const Camera::Data &cameraData,
@@ -217,8 +211,6 @@ namespace Atlas::Editor {
                && projectCorner(cam.viewProjection, position + right * (halfWidth + 0.18f), imageMin, imageSize, widthHandle)
                && projectCorner(cam.viewProjection, position + up * (halfHeight + 0.18f), imageMin, imageSize, heightHandle);
     }
-
-    // ── Billboard drawing ─────────────────────────────────────────────────
 
     ImU32 ViewportGizmo::lightIconColor(const LightComponent &light) {
         const glm::vec3 c = glm::clamp(light.color, glm::vec3{0}, glm::vec3{1});
