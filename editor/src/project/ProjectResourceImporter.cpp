@@ -222,6 +222,28 @@ namespace Atlas::Editor {
         importer->importAsset(sourcePath, buffer);
 
         std::vector<entt::entity> importedEntities = buffer.flush(registry);
+
+        // If importing brought in a skybox but one already existed, destroy the duplicate
+        {
+            entt::entity existingSkybox = entt::null;
+            for (const entt::entity e : registry.view<SkyboxComponent>()) {
+                if (std::find(importedEntities.begin(), importedEntities.end(), e) == importedEntities.end()) {
+                    existingSkybox = e;
+                    break;
+                }
+            }
+            if (existingSkybox != entt::null) {
+                for (auto it = importedEntities.begin(); it != importedEntities.end();) {
+                    if (registry.all_of<SkyboxComponent>(*it)) {
+                        registry.destroy(*it);
+                        it = importedEntities.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+            }
+        }
+
         persistImportedResources(projectLayer, sourcePath, importedEntities, registry);
         return importedEntities;
     }

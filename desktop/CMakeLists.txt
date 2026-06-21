@@ -11,17 +11,17 @@ target_link_libraries(atlas_desktop_runtime_module PUBLIC
         atlas_engine
 )
 
-add_executable(atlas_desktop_runtime
+add_executable(atlas_desktop
         src/DesktopRuntimeEntryPoint.cpp
 )
-atlas_set_output_dirs(atlas_desktop_runtime)
+atlas_set_output_dirs(atlas_desktop)
 
-target_link_libraries(atlas_desktop_runtime PRIVATE
+target_link_libraries(atlas_desktop PRIVATE
         atlas_desktop_runtime_module
 )
 
 if (TARGET atlas_office_project)
-    add_dependencies(atlas_desktop_runtime atlas_office_project)
+    add_dependencies(atlas_desktop atlas_office_project)
 endif ()
 
-atlas_copy_runtime_dependencies(atlas_desktop_runtime "$<TARGET_FILE_DIR:atlas_desktop_runtime>")
+atlas_copy_runtime_dependencies(atlas_desktop "$<TARGET_FILE_DIR:atlas_desktop>")

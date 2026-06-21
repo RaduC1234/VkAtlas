@@ -7,7 +7,7 @@
 #include "core/Log.hpp"
 #include "renderer/Renderer.hpp"
 #include "scene/LevelScene.hpp"
-#include "utils/DynamicLibrary.hpp"
+#include "utils/OSUtils.hpp"
 
 namespace Atlas {
     std::filesystem::path ProjectInstance::absolutePath(const std::filesystem::path &path) {
@@ -27,15 +27,15 @@ namespace Atlas {
     }
 
     void *ProjectInstance::openLibrary(const std::filesystem::path &path) {
-        return DynamicLibrary::open(path);
+        return OSUtils::openDynamicLibrary(path);
     }
 
     void ProjectInstance::closeLibrary(void *library) {
-        DynamicLibrary::close(library);
+        OSUtils::closeDynamicLibrary(library);
     }
 
     void *ProjectInstance::loadSymbol(void *library, const char *symbolName, const std::filesystem::path &libraryPath) {
-        return DynamicLibrary::loadSymbol(library, symbolName, libraryPath);
+        return OSUtils::loadSymbol(library, symbolName, libraryPath);
     }
 
     ProjectInstance::~ProjectInstance() {

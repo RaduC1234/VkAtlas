@@ -533,9 +533,9 @@ namespace Atlas::Editor {
                 ImGui::OpenPopup("##gizmo_settings_popup");
 
             ImDrawList *dl = ImGui::GetWindowDrawList();
-            if (settingsHovered)
-                dl->AddRectFilled(btnMin, btnMax, ts.colHover, 7.0f);
-            dl->AddRectFilled(btnMin, btnMax, settingsHovered ? ts.colHover : IM_COL32(30, 32, 38, 180), 7.0f);
+            dl->AddRectFilled({btnMin.x, btnMin.y + 2.0f}, {btnMax.x, btnMax.y + 2.0f}, ts.colShadow, ts.islandRounding);
+            dl->AddRectFilled(btnMin, btnMax, settingsHovered ? ts.colHover : ts.colFill, ts.islandRounding);
+            dl->AddRect(btnMin, btnMax, ts.colBorder, ts.islandRounding);
 
             const auto &settingsIcon = iconRegistry.get("settings", static_cast<uint32_t>(ts.iconSize));
             if (settingsIcon.valid()) {

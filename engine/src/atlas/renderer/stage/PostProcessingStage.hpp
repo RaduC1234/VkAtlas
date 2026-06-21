@@ -10,13 +10,13 @@
 #include <glm/vec4.hpp>
 
 namespace Atlas {
-    class PostProcessPass : public RenderStage {
+    class PostProcessingStage : public RenderStage {
     public:
-        PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout, bool bloomEnabled = false);
-        ~PostProcessPass() override;
+        PostProcessingStage(Device &device, const DescriptorSetLayout &globalSetLayout, bool bloomEnabled = false);
+        ~PostProcessingStage() override;
 
-        PostProcessPass(const PostProcessPass &) = delete;
-        PostProcessPass &operator=(const PostProcessPass &) = delete;
+        PostProcessingStage(const PostProcessingStage &) = delete;
+        PostProcessingStage &operator=(const PostProcessingStage &) = delete;
 
         void getDeclaredOutputs(std::vector<Resource::Description> &out) const override;
         void getDeclaredInputs(std::vector<std::string> &out) const override;

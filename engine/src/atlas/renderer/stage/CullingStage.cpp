@@ -19,11 +19,12 @@ namespace Atlas {
         out.push_back(Resource::Description::cpuBuffer<RasterDrawData>("scene_draws"));
     }
 
-    void CullingStage::getDeclaredInputs(std::vector<std::string> &out) const {}
+    void CullingStage::getDeclaredInputs(std::vector<std::string> &out) const {
+    }
 
     void CullingStage::onResourcesCreated(const Context &ctx) {
         objectBuffer_ = &ctx.resources.at("scene_objects").get().asBuffer();
-        lightBuffer_  = &ctx.resources.at("scene_lights").get().asBuffer();
+        lightBuffer_ = &ctx.resources.at("scene_lights").get().asBuffer();
         drawData_ = &ctx.resources.at("scene_draws").get().asCPUBuffer().as<RasterDrawData>();
     }
 
@@ -84,7 +85,7 @@ namespace Atlas {
 
             auto &transform = registry.get<TransformComponent>(entity);
             auto &materialComponent = registry.get<MaterialComponent>(entity);
-            auto &model     = registry.get<ModelComponent>(entity);
+            auto &model = registry.get<ModelComponent>(entity);
 
             if (!model.meshHandle.valid() || !model.meshHandle.isReady()) {
                 if (model.meshHandle.valid()) anyUnready = true;
@@ -111,14 +112,14 @@ namespace Atlas {
 
             const uint32_t albedoIdx = registerTexture(material->baseColorTexture);
             const uint32_t normalIdx = registerTexture(material->normalTexture);
-            const uint32_t mrIdx     = registerTexture(material->metallicRoughnessTexture);
-            const uint32_t aoIdx     = registerTexture(material->occlusionTexture);
+            const uint32_t mrIdx = registerTexture(material->metallicRoughnessTexture);
+            const uint32_t aoIdx = registerTexture(material->occlusionTexture);
 
             const GPUObjectData data{
-                .modelMatrix    = m,
-                .normalMatrix   = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
+                .modelMatrix = m,
+                .normalMatrix = glm::mat4(glm::inverseTranspose(glm::mat3(m))),
                 .textureIndices = glm::uvec4(albedoIdx, normalIdx, mrIdx, aoIdx),
-                .baseColor      = material->baseColor,
+                .baseColor = material->baseColor,
                 .materialFactors = glm::vec4(material->metallic, material->roughness, material->alphaCutoff, 0.0f),
             };
 

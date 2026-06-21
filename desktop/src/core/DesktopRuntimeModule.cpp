@@ -6,7 +6,7 @@
 #include <utility>
 
 #ifndef ATLAS_DEFAULT_PROJECT_MANIFEST
-#define ATLAS_DEFAULT_PROJECT_MANIFEST "samples/office/project.atlas.json"
+#define ATLAS_DEFAULT_PROJECT_MANIFEST "./samples/office/office.atlas.json"
 #endif
 
 #ifndef ATLAS_DEFAULT_PROJECT_MODULE

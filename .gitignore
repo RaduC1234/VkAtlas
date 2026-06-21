@@ -85,6 +85,7 @@ app/build/
 **/obj/**
 **/intermediates/**
 **/docs/**
+**/samples/**
 
 **/engine/dependencies/*/build/
 **/engine/dependencies/*/lib/

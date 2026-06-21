@@ -35,12 +35,12 @@ namespace Atlas {
     constexpr uint32_t POST_PROCESS_FLAG_BLOOM = 1u << 1u;
     constexpr uint32_t POST_PROCESS_FLAG_ACES = 1u << 2u;
 
-    PostProcessPass::PostProcessPass(Device &device, const DescriptorSetLayout &globalSetLayout, bool bloomEnabled)
+    PostProcessingStage::PostProcessingStage(Device &device, const DescriptorSetLayout &globalSetLayout, bool bloomEnabled)
         : RenderStage(Queue::GRAPHICS), device(device), globalSetLayout(globalSetLayout), bloomEnabled(bloomEnabled) {
         createSampler();
     }
 
-    PostProcessPass::~PostProcessPass() {
+    PostProcessingStage::~PostProcessingStage() {
         vkDestroyFramebuffer(device.device(), framebuffer, nullptr);
         vkDestroyRenderPass(device.device(), renderPass, nullptr);
         vkDestroyPipelineLayout(device.device(), bloomPipelineLayout, nullptr);
@@ -49,16 +49,16 @@ namespace Atlas {
         vkDestroySampler(device.device(), colorSampler, nullptr);
     }
 
-    void PostProcessPass::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
+    void PostProcessingStage::getDeclaredOutputs(std::vector<Resource::Description> &out) const {
         out.push_back(Resource::Description::color("post_color", VK_FORMAT_R8G8B8A8_SRGB));
     }
 
-    void PostProcessPass::getDeclaredInputs(std::vector<std::string> &out) const {
+    void PostProcessingStage::getDeclaredInputs(std::vector<std::string> &out) const {
         out.push_back("geometry_color");
         out.push_back("geometry_depth");
     }
 
-    void PostProcessPass::onResourcesCreated(const Context &ctx) {
+    void PostProcessingStage::onResourcesCreated(const Context &ctx) {
         const GPUImage &colorImage = ctx.resources.at("geometry_color").get().asImage();
         const GPUImage &depthImage = ctx.resources.at("geometry_depth").get().asImage();
         const GPUImage &outImage = ctx.resources.at("post_color").get().asImage();
@@ -89,12 +89,11 @@ namespace Atlas {
         }
     }
 
-    void PostProcessPass::onUpdate(entt::registry &registry) {
-        RenderStage::onUpdate(registry);
+    void PostProcessingStage::onUpdate(entt::registry &registry) {
         resolveGlobalVolume(registry);
     }
 
-    void PostProcessPass::resolveGlobalVolume(entt::registry &registry) {
+    void PostProcessingStage::resolveGlobalVolume(entt::registry &registry) {
         activeTonemapping = TonemappingMode::NONE;
         activeBloomEnabled = false;
         activeVignetteEnabled = false;
@@ -124,7 +123,7 @@ namespace Atlas {
         }
     }
 
-    void PostProcessPass::createSampler() {
+    void PostProcessingStage::createSampler() {
         VkSamplerCreateInfo info{};
         info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
         info.magFilter = VK_FILTER_LINEAR;
@@ -137,7 +136,7 @@ namespace Atlas {
         info.maxLod = 0.0f;
 
         if (vkCreateSampler(device.device(), &info, nullptr, &colorSampler) != VK_SUCCESS) {
-            throw std::runtime_error("PostProcessPass: failed to create colorSampler");
+            throw std::runtime_error("PostProcessingStage: failed to create colorSampler");
         }
 
         VkSamplerCreateInfo stencilInfo{};
@@ -149,7 +148,7 @@ namespace Atlas {
         stencilInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 
         if (vkCreateSampler(device.device(), &stencilInfo, nullptr, &stencilSampler) != VK_SUCCESS)
-            throw std::runtime_error("PostProcessPass: failed to create stencilSampler");
+            throw std::runtime_error("PostProcessingStage: failed to create stencilSampler");
     }
 
     // -------------------------------------------------------------------------
@@ -159,7 +158,7 @@ namespace Atlas {
     // OutputPass reads it.
     // -------------------------------------------------------------------------
 
-    void PostProcessPass::createRenderPass(VkFormat colorFmt) {
+    void PostProcessingStage::createRenderPass(VkFormat colorFmt) {
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = colorFmt;
         colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -204,10 +203,10 @@ namespace Atlas {
         rpInfo.pDependencies = &dep;
 
         if (vkCreateRenderPass(device.device(), &rpInfo, nullptr, &renderPass) != VK_SUCCESS)
-            throw std::runtime_error("PostProcessPass: failed to create render pass");
+            throw std::runtime_error("PostProcessingStage: failed to create render pass");
     }
 
-    void PostProcessPass::createFramebuffer(const GPUImage &colorImage) {
+    void PostProcessingStage::createFramebuffer(const GPUImage &colorImage) {
         VkImageView view = colorImage.view(0); // view 0 = COLOR aspect
 
         VkFramebufferCreateInfo fbInfo{};
@@ -220,11 +219,11 @@ namespace Atlas {
         fbInfo.layers = 1;
 
         if (vkCreateFramebuffer(device.device(), &fbInfo, nullptr, &framebuffer) != VK_SUCCESS) {
-            throw std::runtime_error("PostProcessPass: failed to create framebuffer");
+            throw std::runtime_error("PostProcessingStage: failed to create framebuffer");
         }
     }
 
-    void PostProcessPass::createDescriptors(const GPUImage &colorImage, VkImageLayout colorLayout, const GPUImage &depthImage) {
+    void PostProcessingStage::createDescriptors(const GPUImage &colorImage, VkImageLayout colorLayout, const GPUImage &depthImage) {
         inputSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // hdrInput {z
                 .addBinding(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1) // stencil
@@ -237,7 +236,7 @@ namespace Atlas {
                 .build();
 
         if (!pool->allocateDescriptor(inputSetLayout->getDescriptorSetLayout(), inputSet))
-            throw std::runtime_error("PostProcessPass: failed to allocate descriptor set");
+            throw std::runtime_error("PostProcessingStage: failed to allocate descriptor set");
 
         VkDescriptorImageInfo hdrInfo{};
         hdrInfo.sampler = colorSampler;
@@ -271,10 +270,10 @@ namespace Atlas {
         w2.pImageInfo = &bloomInfo;
 
         const std::array writes = {w0, w1, w2};
-        vkUpdateDescriptorSets(device.device(), static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        vkUpdateDescriptorSets(device.device(), writes.size(), writes.data(), 0, nullptr);
     }
 
-    void PostProcessPass::createBloomImages() {
+    void PostProcessingStage::createBloomImages() {
         bloomExtent = {
             std::max(1u, extent.width / 2),
             std::max(1u, extent.height / 2)
@@ -296,7 +295,7 @@ namespace Atlas {
         bloomImagesInitialized = false;
     }
 
-    void PostProcessPass::createBloomDescriptors(const GPUImage &colorImage, VkImageLayout colorLayout) {
+    void PostProcessingStage::createBloomDescriptors(const GPUImage &colorImage, VkImageLayout colorLayout) {
         bloomSetLayout = DescriptorSetLayout::Builder(device)
                 .addBinding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT, 1)
                 .addBinding(1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_COMPUTE_BIT, 1)
@@ -309,7 +308,7 @@ namespace Atlas {
 
         auto allocate = [&](VkDescriptorSet &set) {
             if (!bloomPool->allocateDescriptor(bloomSetLayout->getDescriptorSetLayout(), set)) {
-                throw std::runtime_error("PostProcessPass: failed to allocate bloom descriptor set");
+                throw std::runtime_error("PostProcessingStage: failed to allocate bloom descriptor set");
             }
         };
 
@@ -348,7 +347,7 @@ namespace Atlas {
         write(bloomBlurVSet, 1, blurredInfo);
     }
 
-    void PostProcessPass::createPipelineLayouts() {
+    void PostProcessingStage::createPipelineLayouts() {
         const std::vector layouts = {
             globalSetLayout.getDescriptorSetLayout(),
             inputSetLayout->getDescriptorSetLayout(),
@@ -366,7 +365,7 @@ namespace Atlas {
         info.pPushConstantRanges = &pushRange;
 
         if (vkCreatePipelineLayout(device.device(), &info, nullptr, &pipelineLayout) != VK_SUCCESS) {
-            throw std::runtime_error("PostProcessPass: failed to create pipeline layout");
+            throw std::runtime_error("PostProcessingStage: failed to create pipeline layout");
         }
 
         if (bloomEnabled) {
@@ -388,12 +387,12 @@ namespace Atlas {
             bloomInfo.pPushConstantRanges = &bloomPushRange;
 
             if (vkCreatePipelineLayout(device.device(), &bloomInfo, nullptr, &bloomPipelineLayout) != VK_SUCCESS) {
-                throw std::runtime_error("PostProcessPass: failed to create bloom pipeline layout");
+                throw std::runtime_error("PostProcessingStage: failed to create bloom pipeline layout");
             }
         }
     }
 
-    void PostProcessPass::createPipeline() {
+    void PostProcessingStage::createPipeline() {
         GraphicsPipelineConfigInfo cfg{};
         Pipeline::defaultGraphicsPipelineConfigInfo(cfg);
 
@@ -412,7 +411,7 @@ namespace Atlas {
         );
     }
 
-    void PostProcessPass::createBloomPipelines() {
+    void PostProcessingStage::createBloomPipelines() {
         ComputePipelineConfigInfo config{bloomPipelineLayout};
         Pipeline::defaultComputePipelineConfigInfo(config);
 
@@ -421,9 +420,9 @@ namespace Atlas {
         bloomBlurVPipeline = std::make_unique<Pipeline>(device, "##engine/shaders/BloomBlur.comp.spv", config);
     }
 
-    void PostProcessPass::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
-        ATLAS_PROFILE_SCOPE("PostProcessPass::record");
-        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessPass");
+    void PostProcessingStage::record(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
+        ATLAS_PROFILE_SCOPE("PostProcessingStage::record");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessingStage");
 
         if (bloomEnabled && !bloomImagesInitialized) {
             ensureBloomImagesInitialized(cmd);
@@ -450,7 +449,7 @@ namespace Atlas {
         VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor); {
-            ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessPass::FullscreenComposite");
+            ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessingStage::FullscreenComposite");
             pipeline->bind(cmd);
 
             const VkDescriptorSet sets[] = {globalSet, inputSet};
@@ -476,97 +475,9 @@ namespace Atlas {
         postColorInitialized = true;
     }
 
-    void PostProcessPass::recordBypass(VkCommandBuffer cmd) {
-        ATLAS_PROFILE_SCOPE("PostProcessPass::bypass");
-        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessPass::Bypass");
-        if (!geometryColorSource || !postColorTarget) {
-            return;
-        }
-
-        VkImageMemoryBarrier pre[2]{};
-        pre[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        pre[0].oldLayout = geometryColorLayout;
-        pre[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        pre[0].srcAccessMask = geometryColorLayout == VK_IMAGE_LAYOUT_GENERAL
-                                   ? VK_ACCESS_SHADER_WRITE_BIT
-                                   : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-        pre[0].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        pre[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre[0].image = geometryColorSource->image();
-        pre[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-        pre[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        pre[1].oldLayout = postColorInitialized ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
-        pre[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        pre[1].srcAccessMask = postColorInitialized ? VK_ACCESS_SHADER_READ_BIT : 0;
-        pre[1].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        pre[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        pre[1].image = postColorTarget->image();
-        pre[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-        const VkPipelineStageFlags sourceStage = geometryColorLayout == VK_IMAGE_LAYOUT_GENERAL
-                                                     ? (VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
-                                                     : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        const VkPipelineStageFlags postStage = postColorInitialized ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-
-        vkCmdPipelineBarrier(cmd,
-                             sourceStage | postStage,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             0, 0, nullptr, 0, nullptr, 2, pre);
-
-        const VkExtent2D src = geometryColorSource->extent();
-        const VkExtent2D dst = postColorTarget->extent();
-        VkImageBlit region{};
-        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.srcOffsets[1] = {static_cast<int32_t>(src.width), static_cast<int32_t>(src.height), 1};
-        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.dstOffsets[1] = {static_cast<int32_t>(dst.width), static_cast<int32_t>(dst.height), 1};
-
-        vkCmdBlitImage(cmd,
-                       geometryColorSource->image(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                       postColorTarget->image(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                       1, &region, VK_FILTER_LINEAR);
-
-        VkImageMemoryBarrier post[2]{};
-        post[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        post[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        post[0].newLayout = geometryColorLayout;
-        post[0].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        post[0].dstAccessMask = geometryColorLayout == VK_IMAGE_LAYOUT_GENERAL
-                                    ? VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT
-                                    : VK_ACCESS_SHADER_READ_BIT;
-        post[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post[0].image = geometryColorSource->image();
-        post[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-        post[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        post[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        post[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        post[1].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        post[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        post[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        post[1].image = postColorTarget->image();
-        post[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-
-        const VkPipelineStageFlags restoreStage = geometryColorLayout == VK_IMAGE_LAYOUT_GENERAL
-                                                      ? (VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
-                                                      : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-
-        vkCmdPipelineBarrier(cmd,
-                             VK_PIPELINE_STAGE_TRANSFER_BIT,
-                             restoreStage,
-                             0, 0, nullptr, 0, nullptr, 2, post);
-
-        postColorInitialized = true;
-    }
-
-    void PostProcessPass::recordBloom(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
-        ATLAS_PROFILE_SCOPE("PostProcessPass::bloom");
-        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessPass::Bloom");
+    void PostProcessingStage::recordBloom(VkCommandBuffer cmd, VkDescriptorSet globalSet) {
+        ATLAS_PROFILE_SCOPE("PostProcessingStage::bloom");
+        ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessingStage::Bloom");
         BloomPushConstants pc{};
         pc.texelSizeX = 1.0f / static_cast<float>(bloomExtent.width);
         pc.texelSizeY = 1.0f / static_cast<float>(bloomExtent.height);
@@ -574,9 +485,7 @@ namespace Atlas {
         const uint32_t groupX = (bloomExtent.width + 15) / 16;
         const uint32_t groupY = (bloomExtent.height + 15) / 16;
 
-        ensureBloomImagesInitialized(cmd);
-
-        {
+        ensureBloomImagesInitialized(cmd); {
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "Bloom::Extract");
 
             pc.horizontal = 0;
@@ -592,9 +501,7 @@ namespace Atlas {
             vkCmdDispatch(cmd, groupX, groupY, 1);
         }
 
-        barrierGeneralToGeneral(cmd, bloomBright->image());
-
-        {
+        barrierGeneralToGeneral(cmd, bloomBright->image()); {
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "Bloom::BlurHorizontal");
             pc.horizontal = 1;
             bloomBlurHPipeline->bind(cmd);
@@ -604,9 +511,7 @@ namespace Atlas {
             vkCmdDispatch(cmd, groupX, groupY, 1);
         }
 
-        barrierGeneralToGeneral(cmd, bloomBlurH->image());
-
-        {
+        barrierGeneralToGeneral(cmd, bloomBlurH->image()); {
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "Bloom::BlurVertical");
             pc.horizontal = 0;
             bloomBlurVPipeline->bind(cmd);
@@ -619,7 +524,7 @@ namespace Atlas {
         barrierGeneralToFragmentRead(cmd, bloomBlurred->image());
     }
 
-    void PostProcessPass::transitionUndefinedToGeneral(VkCommandBuffer cmd, VkImage image) const {
+    void PostProcessingStage::transitionUndefinedToGeneral(VkCommandBuffer cmd, VkImage image) const {
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -636,7 +541,7 @@ namespace Atlas {
                              0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 
-    void PostProcessPass::ensureBloomImagesInitialized(VkCommandBuffer cmd) {
+    void PostProcessingStage::ensureBloomImagesInitialized(VkCommandBuffer cmd) {
         if (bloomImagesInitialized || !bloomEnabled) {
             return;
         }
@@ -647,7 +552,7 @@ namespace Atlas {
         bloomImagesInitialized = true;
     }
 
-    void PostProcessPass::barrierGeneralToGeneral(VkCommandBuffer cmd, VkImage image) const {
+    void PostProcessingStage::barrierGeneralToGeneral(VkCommandBuffer cmd, VkImage image) const {
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -664,7 +569,7 @@ namespace Atlas {
                              0, 0, nullptr, 0, nullptr, 1, &barrier);
     }
 
-    void PostProcessPass::barrierGeneralToFragmentRead(VkCommandBuffer cmd, VkImage image) const {
+    void PostProcessingStage::barrierGeneralToFragmentRead(VkCommandBuffer cmd, VkImage image) const {
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;

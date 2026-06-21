@@ -546,6 +546,7 @@ namespace Atlas {
         entt::entity entity,
         const Json &data) {
         PostProcessingVolumeComponent component{};
+        component.tonemapping = data.value("tonemapping", component.tonemapping);
         component.exposure = readFloat(data, "exposure", component.exposure);
         component.contrast = readFloat(data, "contrast", component.contrast);
         component.saturation = readFloat(data, "saturation", component.saturation);
@@ -803,6 +804,7 @@ namespace Atlas {
             }
             if (const auto *component = registry.try_get<PostProcessingVolumeComponent>(entity)) {
                 Json volume;
+                volume["tonemapping"] = component->tonemapping;
                 volume["exposure"] = component->exposure;
                 volume["contrast"] = component->contrast;
                 volume["saturation"] = component->saturation;

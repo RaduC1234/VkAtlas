@@ -374,8 +374,12 @@ namespace Atlas::Editor {
         ImGui::SameLine(0, 4);
 
         // Import button
-        if (AEC::toolbarButton("+##ae_import", "Import asset", false, ImVec2(btnW, 0)))
-            ImGui::OpenPopup("##ae_importpop");
+        {
+            const auto &ic = iconRegistry.get("plus", 16);
+            if (ic.valid() ? AEC::toolbarIconButton("##ae_import", ic.textureId(), ic.size(), "Import asset", false, ImVec2(btnW, 0))
+                           : AEC::toolbarButton("+##ae_import", "Import asset", false, ImVec2(btnW, 0)))
+                ImGui::OpenPopup("##ae_importpop");
+        }
 
         ImGui::PopStyleVar(2);
 

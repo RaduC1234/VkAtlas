@@ -456,7 +456,7 @@ namespace Atlas::Editor {
                 registry.emplace<CameraComponent>(entity, camera);
                 registry.patch<CameraComponent>(entity);
             }
-            if (entry.hasSkybox) {
+            if (entry.hasSkybox && registry.view<SkyboxComponent>().empty()) {
                 registry.emplace<SkyboxComponent>(entity, entry.skybox);
             }
             if (entry.hasPostProcessing) {

@@ -15,14 +15,14 @@ namespace Atlas {
         auto rasterGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
             .addStage<CullingStage>(device, assets)
             .addStage<GeometryStage>(device, assets, *globalSetLayout)
-            .addStage<PostProcessPass>(device, *globalSetLayout, false)
+            .addStage<PostProcessingStage>(device, *globalSetLayout, false)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));
 
         auto rayTracingGraph = std::make_shared<RenderGraph>(RenderGraph::Builder(device)
             .addStage<PathTracingStage>(device, assets, *globalSetLayout)
-            .addStage<PostProcessPass>(device, *globalSetLayout, true)
+            .addStage<PostProcessingStage>(device, *globalSetLayout, true)
             .addStage<OutputStage>(device, renderer)
             .setExtent(G_BUFFER_WIDTH, G_BUFFER_HEIGHT)
             .build(RenderGraph::Mode::MultiPass));
@@ -36,7 +36,7 @@ namespace Atlas {
         renderGraphs.at(viewMode)->build(registry);
     }
 
-    void RenderSystemV2::render(const FrameContext frameContext, const Camera::Data &cameraData, const DebugData &debugData, const ViewMode viewMode) const {
+    void RenderSystemV2::render(const FrameContext &frameContext, const Camera::Data &cameraData, const DebugData &debugData, const ViewMode viewMode) const {
         ATLAS_PROFILE_SCOPE("RenderSystemV2::render");
         GlobalUbo globalUbo{};
         globalUbo.cameraData = cameraData;
