@@ -3,7 +3,8 @@
 #include "core/Profiler.hpp"
 
 namespace Atlas {
-    Application::Application(const ApplicationCreateInfo& specification) : specification_(std::move(specification)), renderer_(specification_.rendererCreateInfo), assetManager_(renderer_.resourceManager()) {
+    Application::Application(const ApplicationCreateInfo &specification)
+        : specification_(specification), renderer_(specification_.rendererCreateInfo), assetManager_(renderer_.resourceManager()) {
         ATLAS_PROFILE_FUNCTION();
         renderer_.window().setTheme(Window::Theme::Dark);
     }
@@ -23,6 +24,15 @@ namespace Atlas {
             {
                 ATLAS_PROFILE_SCOPE("Application::pollEvents");
                 renderer_.window().pollEvents();
+            }
+
+            {
+                ATLAS_PROFILE_SCOPE("Application::getWindowProperties");
+                if (renderer_.window().getProperties() & Window::Minimized) {
+                    renderer_.window().waitEvents();
+                    currentTime = std::chrono::high_resolution_clock::now();
+                    continue;
+                }
             }
 
             auto newTime = std::chrono::high_resolution_clock::now();

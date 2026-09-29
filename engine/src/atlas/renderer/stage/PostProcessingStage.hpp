@@ -30,7 +30,6 @@ namespace Atlas {
         Device &device;
         const DescriptorSetLayout &globalSetLayout;
 
-        // Owned render pass + framebuffer targeting post_color.
         VkRenderPass renderPass = VK_NULL_HANDLE;
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
         VkExtent2D extent = {};
@@ -73,7 +72,6 @@ namespace Atlas {
         void createPipelineLayouts();
         void createPipeline();
         void createBloomPipelines();
-        void recordBypass(VkCommandBuffer cmd);
         void recordBloom(VkCommandBuffer cmd, VkDescriptorSet globalSet);
         void transitionUndefinedToGeneral(VkCommandBuffer cmd, VkImage image) const;
         void ensureBloomImagesInitialized(VkCommandBuffer cmd);

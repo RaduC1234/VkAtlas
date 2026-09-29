@@ -21,8 +21,6 @@
 namespace Atlas::Editor {
     using AEC = AssetExplorerComponents;
 
-    // ── lifecycle ────────────────────────────────────────────────────────────
-
     AssetExplorerPanel::AssetExplorerPanel(ProjectLayer &projectLayer, IconRegistry &iconRegistry)
         : projectLayer(projectLayer), iconRegistry(iconRegistry) {
     }
@@ -35,21 +33,14 @@ namespace Atlas::Editor {
         clearPreviewCache();
     }
 
-    // ── main render ──────────────────────────────────────────────────────────
-
     void AssetExplorerPanel::onImGuiRender() {
-        if (!visible) return;
-
-        {
+        if (!visible) return; {
             ATLAS_PROFILE_SCOPE("AssetExplorerPanel::syncProjectRoot");
             syncProjectRoot();
-        }
-        {
+        } {
             ATLAS_PROFILE_SCOPE("AssetExplorerPanel::pollAssetRefresh");
             pollAssetRefresh();
-        }
-        // OPT: poll the tree future independently from the entries future
-        {
+        } {
             ATLAS_PROFILE_SCOPE("AssetExplorerPanel::pollTreeRefresh");
             pollTreeRefresh();
         }
@@ -69,29 +60,18 @@ namespace Atlas::Editor {
         if (currentDirectory.empty()) {
             currentDirectory = assetRoot;
             requestAssetRefresh();
-        }
-
-        {
+        } {
             ATLAS_PROFILE_SCOPE("AssetExplorerPanel::scheduleAssetRefreshIfNeeded");
             scheduleAssetRefreshIfNeeded();
-        }
-        // OPT: schedule tree refresh on its own slower cadence
-        {
+        } {
             ATLAS_PROFILE_SCOPE("AssetExplorerPanel::scheduleTreeRefreshIfNeeded");
             scheduleTreeRefreshIfNeeded();
         }
 
-        const bool snapshotMatches =
-                assetSnapshot.valid &&
-                assetSnapshot.assetRoot == assetRoot &&
-                assetSnapshot.directory == currentDirectory;
+        const bool snapshotMatches = assetSnapshot.valid && assetSnapshot.assetRoot == assetRoot && assetSnapshot.directory == currentDirectory;
         const std::vector<AssetEntry> emptyEntries;
-        const std::vector<AssetEntry> &rawEntries = snapshotMatches
-                                                       ? assetSnapshot.entries
-                                                       : emptyEntries;
+        const std::vector<AssetEntry> &rawEntries = snapshotMatches ? assetSnapshot.entries : emptyEntries;
 
-        // OPT: filteredEntries() is cached — only recomputed when search/sort/filter
-        //      state or the snapshot generation actually changes, not every frame.
         const std::vector<AssetEntry> &entries = filteredEntries(rawEntries);
 
         // Toolbar
@@ -100,20 +80,17 @@ namespace Atlas::Editor {
             renderToolbar(assetRoot);
         }
 
-        // Body: tree | content area
         const float bodyH = -AEC::stripHeight();
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
         ImGui::BeginChild("##ae_body", ImVec2(0, bodyH), false, ImGuiWindowFlags_NoScrollbar);
         ImGui::PopStyleVar(2);
 
-        // Left tree
         ImGui::PushStyleColor(ImGuiCol_ChildBg, AEC::colorVec4(AEC::Color::TreeBg));
         ImGui::BeginChild("##ae_tree", ImVec2(AEC::treeWidth(), 0), false);
         ImGui::PopStyleColor();
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
-        ImGui::SetCursorPos(ImVec2(6, 6));
-        {
+        ImGui::SetCursorPos(ImVec2(6, 6)); {
             ATLAS_PROFILE_SCOPE("AssetExplorerPanel::renderFolderTree");
             renderFolderTree(assetRoot);
         }
@@ -122,13 +99,11 @@ namespace Atlas::Editor {
 
         ImGui::SameLine(0, 0);
 
-        // Vertical separator
         ImDrawList *bg = ImGui::GetWindowDrawList();
         ImVec2 sepMin = ImGui::GetCursorScreenPos();
         AEC::separatorLine(bg, sepMin, ImVec2(sepMin.x, sepMin.y + ImGui::GetContentRegionAvail().y));
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 1.0f);
 
-        // Right content
         ImGui::BeginChild("##ae_content", ImVec2(0, 0), false);
         const float pad = viewMode == ViewMode::Grid ? 14.0f : 10.0f;
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(pad, pad));
@@ -174,8 +149,7 @@ namespace Atlas::Editor {
             renderContextMenu(assetRoot);
         }
 
-        ImGui::End();
-        {
+        ImGui::End(); {
             ATLAS_PROFILE_SCOPE("AssetExplorerPanel::renderTexturePreviewWindow");
             renderTexturePreviewWindow(assetRoot);
         }
@@ -268,11 +242,11 @@ namespace Atlas::Editor {
         ImGui::SameLine(0, 4);
 
         // Sort button
-        const bool sortActive = (sortKey != SortKey::Name || sortDir != 1);
-        {
+        const bool sortActive = (sortKey != SortKey::Name || sortDir != 1); {
             const auto &ic = iconRegistry.get("sort", 16);
-            if (ic.valid() ? AEC::toolbarIconButton("##ae_sort", ic.textureId(), ic.size(), "Sort", sortActive, ImVec2(btnW, 0))
-                           : AEC::toolbarButton("S##ae_sort", "Sort", sortActive, ImVec2(btnW, 0)))
+            if (ic.valid()
+                    ? AEC::toolbarIconButton("##ae_sort", ic.textureId(), ic.size(), "Sort", sortActive, ImVec2(btnW, 0))
+                    : AEC::toolbarButton("S##ae_sort", "Sort", sortActive, ImVec2(btnW, 0)))
                 sortMenuOpen = !sortMenuOpen;
         }
 
@@ -312,11 +286,11 @@ namespace Atlas::Editor {
         ImGui::SameLine(0, 4);
 
         // Filter button
-        const bool filterActive = (filterKind != FilterKind::All);
-        {
+        const bool filterActive = (filterKind != FilterKind::All); {
             const auto &ic = iconRegistry.get("filter", 16);
-            if (ic.valid() ? AEC::toolbarIconButton("##ae_filter", ic.textureId(), ic.size(), "Filter by type", filterActive, ImVec2(btnW, 0))
-                           : AEC::toolbarButton("F##ae_filter", "Filter by type", filterActive, ImVec2(btnW, 0)))
+            if (ic.valid()
+                    ? AEC::toolbarIconButton("##ae_filter", ic.textureId(), ic.size(), "Filter by type", filterActive, ImVec2(btnW, 0))
+                    : AEC::toolbarButton("F##ae_filter", "Filter by type", filterActive, ImVec2(btnW, 0)))
                 filterMenuOpen = !filterMenuOpen;
         }
 
@@ -356,15 +330,15 @@ namespace Atlas::Editor {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, 4));
 
         const char *viewIconNames[] = {"layout-grid", "list", "layout-detail"};
-        const char *viewIds[]       = {"##ae_vm0", "##ae_vm1", "##ae_vm2"};
-        const char *viewTips[]      = {"Grid view", "List view", "Detail view"};
+        const char *viewIds[] = {"##ae_vm0", "##ae_vm1", "##ae_vm2"};
+        const char *viewTips[] = {"Grid view", "List view", "Detail view"};
         for (int i = 0; i < 3; i++) {
             const ViewMode vm = static_cast<ViewMode>(i);
             const bool active = (viewMode == vm);
             const auto &ic = iconRegistry.get(viewIconNames[i], 16);
             bool clicked = ic.valid()
-                ? AEC::toolbarIconButton(viewIds[i], ic.textureId(), ic.size(), viewTips[i], active, ImVec2(btnW, 0))
-                : AEC::toolbarButton(viewIds[i], viewTips[i], active, ImVec2(btnW, 0));
+                               ? AEC::toolbarIconButton(viewIds[i], ic.textureId(), ic.size(), viewTips[i], active, ImVec2(btnW, 0))
+                               : AEC::toolbarButton(viewIds[i], viewTips[i], active, ImVec2(btnW, 0));
             if (clicked) viewMode = vm;
             if (i < 2) ImGui::SameLine(0, 2);
         }
@@ -376,8 +350,9 @@ namespace Atlas::Editor {
         // Import button
         {
             const auto &ic = iconRegistry.get("plus", 16);
-            if (ic.valid() ? AEC::toolbarIconButton("##ae_import", ic.textureId(), ic.size(), "Import asset", false, ImVec2(btnW, 0))
-                           : AEC::toolbarButton("+##ae_import", "Import asset", false, ImVec2(btnW, 0)))
+            if (ic.valid()
+                    ? AEC::toolbarIconButton("##ae_import", ic.textureId(), ic.size(), "Import asset", false, ImVec2(btnW, 0))
+                    : AEC::toolbarButton("+##ae_import", "Import asset", false, ImVec2(btnW, 0)))
                 ImGui::OpenPopup("##ae_importpop");
         }
 
@@ -458,29 +433,29 @@ namespace Atlas::Editor {
 
         // OPT: hoist all metric calls outside the loop
         const float tileSize = AEC::tileMin();
-        const float tileGap  = AEC::tileGap();
-        const float labelH   = AEC::tileLabelHeight();
+        const float tileGap = AEC::tileGap();
+        const float labelH = AEC::tileLabelHeight();
 
-        const int   cols  = std::max(1, static_cast<int>(panelW / (tileSize + tileGap)));
-        const float tile  = std::floor((panelW - tileGap * static_cast<float>(cols - 1)) /
-                                       static_cast<float>(cols));
-        const float rowH  = tile + labelH + tileGap;
+        const int cols = std::max(1, static_cast<int>(panelW / (tileSize + tileGap)));
+        const float tile = std::floor((panelW - tileGap * static_cast<float>(cols - 1)) /
+                                      static_cast<float>(cols));
+        const float rowH = tile + labelH + tileGap;
         const float cellW = tile + tileGap;
 
         const ImVec2 origin = ImGui::GetCursorScreenPos();
 
         // OPT: cull off-screen tiles — only submit InvisibleButton + drawTile for
         //      rows that are actually in the visible scroll region.
-        const float scrollY  = ImGui::GetScrollY();
+        const float scrollY = ImGui::GetScrollY();
         const float visibleH = ImGui::GetContentRegionAvail().y;
-        const float visMin   = scrollY - rowH;           // one extra row buffer
-        const float visMax   = scrollY + visibleH + rowH;
+        const float visMin = scrollY - rowH; // one extra row buffer
+        const float visMax = scrollY + visibleH + rowH;
 
         const int totalEntries = static_cast<int>(entries.size());
 
         for (int idx = 0; idx < totalEntries; ++idx) {
-            const int   row  = idx / cols;
-            const int   col  = idx % cols;
+            const int row = idx / cols;
+            const int col = idx % cols;
             const float tileY = static_cast<float>(row) * rowH;
 
             // Skip tiles that are above or below the visible area entirely.
@@ -729,8 +704,6 @@ namespace Atlas::Editor {
         ImGui::PopStyleColor();
     }
 
-    // ── detail view ──────────────────────────────────────────────────────────
-
     void AssetExplorerPanel::renderDetailView(const std::vector<AssetEntry> &entries,
                                               const std::filesystem::path &assetRoot) {
         const float rowH = 60.0f;
@@ -745,22 +718,19 @@ namespace Atlas::Editor {
         for (int idx = 0; idx < static_cast<int>(entries.size()); ++idx) {
             const AssetEntry &entry = entries[idx];
 
-            // OPT: integer index ID
             ImGui::PushID(idx);
             const bool selected = (selectedPath == entry.path);
 
             ImVec2 rowMin = ImGui::GetCursorScreenPos();
 
-            // Row background
             const ImU32 bgColor = selected ? AEC::color(AEC::Color::SelectionSoft) : AEC::color(AEC::Color::DetailRow);
             dl->AddRectFilled(rowMin, ImVec2(rowMin.x + panelW, rowMin.y + rowH), bgColor, AEC::rowRounding());
-            if (selected)
+            if (selected) {
                 dl->AddRect(rowMin, ImVec2(rowMin.x + panelW, rowMin.y + rowH), AEC::color(AEC::Color::SelectionRing), AEC::rowRounding(), 0, 1.2f);
-            else
-                dl->AddRect(rowMin, ImVec2(rowMin.x + panelW, rowMin.y + rowH),
-                            AEC::color(AEC::Color::Separator, 0.5f), AEC::rowRounding(), 0, 1.0f);
+            } else {
+                dl->AddRect(rowMin, ImVec2(rowMin.x + panelW, rowMin.y + rowH), AEC::color(AEC::Color::Separator, 0.5f), AEC::rowRounding(), 0, 1.0f);
+            }
 
-            // Invisible hit target
             ImGui::InvisibleButton("##dr", ImVec2(panelW, rowH));
             if (ImGui::IsItemHovered() && !selected) {
                 dl->AddRectFilled(rowMin, ImVec2(rowMin.x + panelW, rowMin.y + rowH),
@@ -780,7 +750,6 @@ namespace Atlas::Editor {
                 ImGui::OpenPopup("##ae_ctx");
             }
 
-            // Thumbnail (44x44)
             const ImVec2 tmin(rowMin.x + 10, rowMin.y + (rowH - thumbS) * 0.5f);
             const ImVec2 tmax(tmin.x + thumbS, tmin.y + thumbS); {
                 dl->AddRectFilled(tmin, tmax, kindColorBg(entry.kind), 5.0f);
@@ -807,13 +776,11 @@ namespace Atlas::Editor {
                 dl->AddRect(tmin, tmax, AEC::color(AEC::Color::TileBorder, 0.8f), 5.0f, 0, 1.0f);
             }
 
-            // Name + type badge
             const float nameX = tmax.x + 12;
             const float nameY = rowMin.y + 10;
             dl->AddText(nullptr, 0, ImVec2(nameX, nameY), AEC::color(AEC::Color::Text), entry.name.c_str(), nullptr);
 
             if (!entry.directory) {
-                // Type pill badge
                 const char *bl = kindBadge(entry.kind);
                 ImVec2 ts = ImGui::CalcTextSize(bl);
                 const float bw = ts.x + 10.0f;
@@ -823,7 +790,6 @@ namespace Atlas::Editor {
                 dl->AddText(ImVec2(nameX + 5, by + 2), AEC::color(AEC::Color::BadgeText), bl);
 
                 float metaX = rowMin.x + panelW - 10;
-                // Modified
                 if (!entry.formattedDate.empty()) {
                     ImVec2 vs = ImGui::CalcTextSize(entry.formattedDate.c_str());
                     metaX -= vs.x + 2;
@@ -834,7 +800,7 @@ namespace Atlas::Editor {
                                 ImVec2(metaX, rowMin.y + 12), AEC::color(AEC::Color::TextDim), "MODIFIED", nullptr);
                     metaX -= 24;
                 }
-                // Size
+
                 if (!entry.formattedSize.empty()) {
                     ImVec2 vs = ImGui::CalcTextSize(entry.formattedSize.c_str());
                     metaX -= vs.x + 2;
@@ -855,14 +821,11 @@ namespace Atlas::Editor {
         ImGui::PopStyleVar();
     }
 
-    // ── detail strip ─────────────────────────────────────────────────────────
-
     void AssetExplorerPanel::renderDetailStrip(const std::vector<AssetEntry> &entries) {
         ImDrawList *dl = ImGui::GetWindowDrawList();
         ImVec2 strip = ImGui::GetCursorScreenPos();
         float winW = ImGui::GetWindowWidth();
 
-        // Background
         dl->AddRectFilled(strip, ImVec2(strip.x + winW, strip.y + AEC::stripHeight()), AEC::color(AEC::Color::Strip));
         AEC::separatorLine(dl, strip, ImVec2(strip.x + winW, strip.y));
 
@@ -873,7 +836,6 @@ namespace Atlas::Editor {
         ImGui::SetCursorPos(ImVec2(14, (AEC::stripHeight() - ImGui::GetTextLineHeight()) * 0.5f));
 
         if (!sel) {
-            // Count summary
             int folders = 0, files = 0;
             uintmax_t total = 0;
             for (const auto &e: entries) {
@@ -889,7 +851,6 @@ namespace Atlas::Editor {
             ImGui::SetCursorPosX(ImGui::GetWindowWidth() - 80);
             ImGui::TextDisabled("%s", formatSize(total).c_str());
         } else {
-            // Selected asset info
             const float thumbS = 28.0f;
             ImVec2 p = ImGui::GetCursorScreenPos();
             ImVec2 tmin(p.x, p.y - 2);
@@ -915,9 +876,7 @@ namespace Atlas::Editor {
 
             ImGui::BeginGroup();
             ImGui::Text("%s", sel->name.c_str());
-            ImGui::SameLine(0, 8);
-            // Pill badge
-            {
+            ImGui::SameLine(0, 8); {
                 ImVec2 bp = ImGui::GetCursorScreenPos();
                 bp.y += 1;
                 const float bw = ts.x + 10;
@@ -928,7 +887,7 @@ namespace Atlas::Editor {
             }
             ImGui::EndGroup();
 
-            // Metadata (right side)
+
             float mx = ImGui::GetWindowWidth() - 14;
             auto metaCell = [&](const char *label, const char *value, float &x) {
                 ImVec2 vs = ImGui::CalcTextSize(value);
@@ -951,7 +910,6 @@ namespace Atlas::Editor {
         ImGui::EndChild();
     }
 
-    // ── context menu ─────────────────────────────────────────────────────────
 
     void AssetExplorerPanel::renderContextMenu(const std::filesystem::path &assetRoot) {
         if (!contextMenuOpen) return;
@@ -992,8 +950,6 @@ namespace Atlas::Editor {
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
     }
-
-    // ── texture preview window ────────────────────────────────────────────────
 
     void AssetExplorerPanel::renderTexturePreviewWindow(const std::filesystem::path &assetRoot) {
         if (!texturePreviewOpen) return;
@@ -1095,8 +1051,6 @@ namespace Atlas::Editor {
         return descriptor != VK_NULL_HANDLE && texture != nullptr;
     }
 
-    // ── data helpers ─────────────────────────────────────────────────────────
-
     void AssetExplorerPanel::syncProjectRoot() {
         const std::filesystem::path assetRoot = projectLayer.project().assetsPath();
         if (assetRoot == cachedAssetRoot) return;
@@ -1142,13 +1096,11 @@ namespace Atlas::Editor {
             AssetSnapshot snapshot = assetRefreshFuture.get();
             if (snapshot.generation >= appliedRefreshGeneration) {
                 appliedRefreshGeneration = snapshot.generation;
-                // Preserve the current tree in the snapshot if we didn't rebuild it
                 if (snapshot.treeGeneration == 0 && assetSnapshot.valid) {
-                    snapshot.folderTree   = std::move(assetSnapshot.folderTree);
+                    snapshot.folderTree = std::move(assetSnapshot.folderTree);
                     snapshot.treeGeneration = assetSnapshot.treeGeneration;
                 }
                 assetSnapshot = std::move(snapshot);
-                // Invalidate the filter cache so it rebuilds on the next frame
                 cachedFilterGeneration = 0;
             }
         } catch (const std::exception &e) {
@@ -1156,8 +1108,6 @@ namespace Atlas::Editor {
         }
     }
 
-    // OPT: poll the tree future separately — it runs on a much longer interval
-    //      so it won't interfere with the entries refresh cadence.
     void AssetExplorerPanel::pollTreeRefresh() {
         if (!treeRefreshFuture.valid()) return;
         if (treeRefreshFuture.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
@@ -1165,7 +1115,7 @@ namespace Atlas::Editor {
         try {
             FolderNode tree = treeRefreshFuture.get();
             appliedTreeGeneration = requestedTreeGeneration;
-            assetSnapshot.folderTree   = std::move(tree);
+            assetSnapshot.folderTree = std::move(tree);
             assetSnapshot.treeGeneration = appliedTreeGeneration;
         } catch (const std::exception &e) {
             AT_WARN("AssetExplorerPanel: tree refresh failed: {}", e.what());
@@ -1190,13 +1140,11 @@ namespace Atlas::Editor {
         assetRefreshRequested = false;
         lastAssetRefresh = now;
 
-        const uint64_t generation    = ++requestedRefreshGeneration;
-        const uint64_t treeGen       = appliedTreeGeneration;
-        const std::filesystem::path assetRoot  = cachedAssetRoot;
-        const std::filesystem::path directory  = currentDirectory;
+        const uint64_t generation = ++requestedRefreshGeneration;
+        const uint64_t treeGen = appliedTreeGeneration;
+        const std::filesystem::path assetRoot = cachedAssetRoot;
+        const std::filesystem::path directory = currentDirectory;
 
-        // OPT: pass the existing tree so the entries-only refresh can reuse it
-        //      without doing the expensive recursive scan again.
         FolderNode existingTree = assetSnapshot.valid ? assetSnapshot.folderTree : FolderNode{};
 
         assetRefreshFuture = projectLayer.getRenderer().device().executor().submit(
@@ -1207,13 +1155,9 @@ namespace Atlas::Editor {
             });
     }
 
-    // OPT: tree refresh is on its own slower cadence (TreeRefreshInterval).
-    //      It only does the recursive scan and nothing else.
     void AssetExplorerPanel::scheduleTreeRefreshIfNeeded() {
         if (cachedAssetRoot.empty()) return;
-        // Don't schedule if a tree rebuild is already in flight
         if (treeRefreshFuture.valid()) return;
-        // Also wait until the entries future is done to avoid racing on assetSnapshot
         if (assetRefreshFuture.valid()) return;
 
         const auto now = std::chrono::steady_clock::now();
@@ -1235,20 +1179,17 @@ namespace Atlas::Editor {
             });
     }
 
-    // OPT: buildAssetSnapshot no longer unconditionally calls buildFolderTree.
-    //      It receives the existing tree and embeds it as-is, so entries refresh
-    //      is only a flat directory_iterator call (very fast).
     AssetExplorerPanel::AssetSnapshot AssetExplorerPanel::buildAssetSnapshot(
         std::filesystem::path assetRoot, std::filesystem::path directory,
         const uint64_t generation, const uint64_t treeGeneration, FolderNode existingTree) {
         AssetSnapshot snapshot;
-        snapshot.assetRoot     = std::move(assetRoot);
-        snapshot.directory     = std::move(directory);
-        snapshot.generation    = generation;
+        snapshot.assetRoot = std::move(assetRoot);
+        snapshot.directory = std::move(directory);
+        snapshot.generation = generation;
         snapshot.treeGeneration = treeGeneration;
-        snapshot.entries       = collectEntries(snapshot.directory, snapshot.assetRoot);
-        snapshot.folderTree    = std::move(existingTree);
-        snapshot.valid         = true;
+        snapshot.entries = collectEntries(snapshot.directory, snapshot.assetRoot);
+        snapshot.folderTree = std::move(existingTree);
+        snapshot.valid = true;
         return snapshot;
     }
 
@@ -1286,8 +1227,6 @@ namespace Atlas::Editor {
             ae.path = e.path();
             ae.relativePath = relativeTo(ae.path, assetRoot);
             ae.name = ae.path.filename().string();
-            // OPT: pre-compute lowercased name once here so applyFiltersAndSort
-            //      never has to allocate a string per entry per frame.
             ae.nameLower = lower(ae.name);
             ae.directory = isDir;
             ae.kind = classify(ae.path, isDir);
@@ -1307,59 +1246,55 @@ namespace Atlas::Editor {
         return entries;
     }
 
-    // OPT: filteredEntries() replaces the old per-frame applyFiltersAndSort() call.
-    //      It checks whether any of the inputs have changed and only rebuilds the
-    //      cached result when they actually have.  On a typical idle frame with no
-    //      user interaction this is a handful of comparisons and an early return.
     const std::vector<AssetExplorerPanel::AssetEntry> &
     AssetExplorerPanel::filteredEntries(const std::vector<AssetEntry> &raw) {
         const bool dirty =
-            cachedFilterGeneration != appliedRefreshGeneration ||
-            cachedFilterSearch     != searchText              ||
-            cachedFilterSortKey    != sortKey                  ||
-            cachedFilterSortDir    != sortDir                  ||
-            cachedFilterKind       != filterKind;
+                cachedFilterGeneration != appliedRefreshGeneration ||
+                cachedFilterSearch != searchText ||
+                cachedFilterSortKey != sortKey ||
+                cachedFilterSortDir != sortDir ||
+                cachedFilterKind != filterKind;
 
         if (!dirty) return cachedFilteredEntries;
 
-        // ── rebuild ──────────────────────────────────────────────────────────
-        cachedFilteredEntries = raw;  // copy once
+        cachedFilteredEntries = raw;
 
-        // Filter
-        // OPT: use pre-lowercased nameLower — no per-entry string allocation
         const std::string query = lower(searchText);
         cachedFilteredEntries.erase(
             std::remove_if(cachedFilteredEntries.begin(), cachedFilteredEntries.end(),
-                [&](const AssetEntry &e) {
-                    if (!e.directory && !matchesFilter(e.kind, filterKind)) return true;
-                    if (!query.empty() && e.nameLower.find(query) == std::string::npos) return true;
-                    return false;
-                }),
+                           [&](const AssetEntry &e) {
+                               if (!e.directory && !matchesFilter(e.kind, filterKind)) return true;
+                               if (!query.empty() && e.nameLower.find(query) == std::string::npos) return true;
+                               return false;
+                           }),
             cachedFilteredEntries.end());
 
-        // Sort: folders first, then files by sort key
-        // OPT: comparator uses nameLower — O(N log N) comparisons without allocations
-        std::stable_sort(cachedFilteredEntries.begin(), cachedFilteredEntries.end(),
-            [&](const AssetEntry &a, const AssetEntry &b) {
-                if (a.directory != b.directory) return a.directory > b.directory;
-                if (a.directory) return a.nameLower < b.nameLower;
 
-                int r = 0;
-                switch (sortKey) {
-                    case SortKey::Name: r = a.nameLower.compare(b.nameLower); break;
-                    case SortKey::Type: r = static_cast<int>(a.kind) - static_cast<int>(b.kind); break;
-                    case SortKey::Size: r = (a.bytes < b.bytes) ? -1 : (a.bytes > b.bytes) ? 1 : 0; break;
-                    case SortKey::Date: r = (a.lastWriteTime < b.lastWriteTime) ? -1 : 1; break;
-                }
-                return r * sortDir < 0;
-            });
+        std::ranges::stable_sort(cachedFilteredEntries,
+                                 [&](const AssetEntry &a, const AssetEntry &b) {
+                                     if (a.directory != b.directory) return a.directory > b.directory;
+                                     if (a.directory) return a.nameLower < b.nameLower;
+
+                                     int r = 0;
+                                     switch (sortKey) {
+                                         case SortKey::Name: r = a.nameLower.compare(b.nameLower);
+                                             break;
+                                         case SortKey::Type: r = static_cast<int>(a.kind) - static_cast<int>(b.kind);
+                                             break;
+                                         case SortKey::Size: r = (a.bytes < b.bytes) ? -1 : (a.bytes > b.bytes) ? 1 : 0;
+                                             break;
+                                         case SortKey::Date: r = (a.lastWriteTime < b.lastWriteTime) ? -1 : 1;
+                                             break;
+                                     }
+                                     return r * sortDir < 0;
+                                 });
 
         // Update cache keys
         cachedFilterGeneration = appliedRefreshGeneration;
-        cachedFilterSearch     = searchText;
-        cachedFilterSortKey    = sortKey;
-        cachedFilterSortDir    = sortDir;
-        cachedFilterKind       = filterKind;
+        cachedFilterSearch = searchText;
+        cachedFilterSortKey = sortKey;
+        cachedFilterSortDir = sortDir;
+        cachedFilterKind = filterKind;
 
         return cachedFilteredEntries;
     }
@@ -1465,11 +1400,9 @@ namespace Atlas::Editor {
         return EditorTheme::colorU32(EditorTheme::Color::AssetOther);
     }
 
-    // OPT: pre-computed table — replaces per-call float conversion round-trip.
-    //      Built once on first use; EditorTheme colors are stable after init.
     ImU32 AssetExplorerPanel::kindColorBg(AssetKind kind) {
         static ImU32 cache[11] = {};
-        static bool  built     = false;
+        static bool built = false;
         if (!built) {
             for (int i = 0; i <= static_cast<int>(AssetKind::Other); ++i) {
                 ImVec4 v = ImGui::ColorConvertU32ToFloat4(kindColor(static_cast<AssetKind>(i)));
@@ -1481,8 +1414,6 @@ namespace Atlas::Editor {
         const int idx = static_cast<int>(kind);
         return (idx >= 0 && idx <= static_cast<int>(AssetKind::Other)) ? cache[idx] : cache[static_cast<int>(AssetKind::Other)];
     }
-
-    // ── formatting ────────────────────────────────────────────────────────────
 
     std::string AssetExplorerPanel::extensionBadge(const std::filesystem::path &path) {
         std::string ext = path.extension().string();

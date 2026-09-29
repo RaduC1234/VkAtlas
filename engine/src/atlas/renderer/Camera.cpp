@@ -105,7 +105,6 @@ namespace Atlas {
             data.frustumPlanes[i] = planes[i];
         }
 
-        // Camera position and direction in world space
         glm::mat4 invView = glm::inverse(viewMatrix);
         data.position = glm::vec3(invView[3]); // translation column
         data.direction = glm::normalize(glm::vec3(invView * glm::vec4(0.0f, 0.0f, -1.0f, 0.0f)));

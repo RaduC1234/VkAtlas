@@ -5,6 +5,7 @@ struct GPUObjectData {
     uvec4 textureIndices;
     vec4  baseColor;
     vec4  materialFactors;
+    vec4  uvScalePad;
 };
 
 struct Light {

@@ -7,35 +7,16 @@
 #include "core/Log.hpp"
 #include "renderer/Renderer.hpp"
 #include "scene/LevelScene.hpp"
-#include "utils/OSUtils.hpp"
 
 namespace Atlas {
     std::filesystem::path ProjectInstance::absolutePath(const std::filesystem::path &path) {
-        if (path.is_absolute()) {
-            return path.lexically_normal();
-        }
-
+        if (path.is_absolute()) return path.lexically_normal();
         return std::filesystem::absolute(path).lexically_normal();
     }
 
-    std::filesystem::path ProjectInstance::projectRelativePath(const std::filesystem::path &projectRoot, const std::filesystem::path &path) {
-        if (path.is_absolute()) {
-            return path.lexically_normal();
-        }
-
-        return (projectRoot / path).lexically_normal();
-    }
-
-    void *ProjectInstance::openLibrary(const std::filesystem::path &path) {
-        return OSUtils::openDynamicLibrary(path);
-    }
-
-    void ProjectInstance::closeLibrary(void *library) {
-        OSUtils::closeDynamicLibrary(library);
-    }
-
-    void *ProjectInstance::loadSymbol(void *library, const char *symbolName, const std::filesystem::path &libraryPath) {
-        return OSUtils::loadSymbol(library, symbolName, libraryPath);
+    std::filesystem::path ProjectInstance::projectRelativePath(const std::filesystem::path &root, const std::filesystem::path &path) {
+        if (path.is_absolute()) return path.lexically_normal();
+        return (root / path).lexically_normal();
     }
 
     ProjectInstance::~ProjectInstance() {
@@ -75,22 +56,16 @@ namespace Atlas {
             assets.overwriteRootPath(assetRoot);
 
             projectContext = std::make_unique<ProjectContext>(ProjectContext{
-                renderer,
-                assets,
-                projectManifest,
-                projectRoot,
-                assetRoot
+                renderer, assets, projectManifest, projectRoot, assetRoot
             });
 
             if (!projectModulePath.empty()) {
-                projectLibrary = openLibrary(projectModulePath);
-                const auto createProjectModule = reinterpret_cast<CreateProjectModuleFn>(loadSymbol(projectLibrary, CREATE_PROJECT_MODULE_SYMBOL, projectModulePath));
-                destroyProjectModule = reinterpret_cast<DestroyProjectModuleFn>(loadSymbol(projectLibrary, DESTROY_PROJECT_MODULE_SYMBOL, projectModulePath));
+                projectLibrary.emplace(projectModulePath);
+                const auto createProjectModule = projectLibrary->getSymbol<CreateProjectModuleFn>(CREATE_PROJECT_MODULE_SYMBOL);
+                destroyProjectModule = projectLibrary->getSymbol<DestroyProjectModuleFn>(DESTROY_PROJECT_MODULE_SYMBOL);
 
                 projectModule = createProjectModule();
-                if (!projectModule) {
-                    throw std::runtime_error("Project module factory returned null: " + projectModulePath.string());
-                }
+                if (!projectModule) throw std::runtime_error("Project module factory returned null: " + projectModulePath.string());
 
                 projectModule->onProjectLoaded(*projectContext);
                 currentScene = projectModule->createScene(*projectContext, startupLevel);
@@ -100,7 +75,7 @@ namespace Atlas {
             }
 
             if (!currentScene) {
-                const std::string source = projectModulePath.empty() ? std::string("built-in level scene") : projectModulePath.string();
+                const std::string source = projectModulePath.empty() ? "built-in level scene" : projectModulePath.string();
                 throw std::runtime_error("Project returned null level '" + startupLevel + "' from " + source + " loaded by manifest " + manifestAbsolutePath.string());
             }
 
@@ -114,35 +89,21 @@ namespace Atlas {
     void ProjectInstance::unload() {
         if (currentScene) {
             currentScene->onDelete();
-
             if (projectModule) {
                 projectModule->destroyScene(currentScene);
             } else {
                 delete currentScene;
             }
-
             currentScene = nullptr;
         }
 
-        if (projectModule && projectContext) {
-            projectModule->onProjectUnloaded(*projectContext);
-        }
-
-        if (destroyProjectModule && projectModule) {
-            destroyProjectModule(projectModule);
-        }
-
-        if (projectContext) {
-            projectContext->assets.clearCaches();
-        }
+        if (projectModule && projectContext) projectModule->onProjectUnloaded(*projectContext);
+        if (destroyProjectModule && projectModule) destroyProjectModule(projectModule);
+        if (projectContext) projectContext->assets.clearCaches();
 
         projectModule = nullptr;
         destroyProjectModule = nullptr;
         projectContext.reset();
-
-        if (projectLibrary) {
-            closeLibrary(projectLibrary);
-            projectLibrary = nullptr;
-        }
+        projectLibrary.reset();
     }
 }

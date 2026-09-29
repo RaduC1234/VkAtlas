@@ -29,7 +29,8 @@ namespace Atlas {
             postColorSource->view(0),
             sourceLayout,
             postColorSource->format(),
-            postColorSource->extent());
+            postColorSource->extent()
+        );
     }
 
     void OutputStage::record(VkCommandBuffer cmd, VkDescriptorSet /*globalSet*/) {
@@ -40,7 +41,8 @@ namespace Atlas {
             postColorSource->view(0),
             sourceLayout,
             postColorSource->format(),
-            postColorSource->extent());
+            postColorSource->extent()
+        );
 
         if (renderer.createInfo.sceneOutputTarget == Renderer::SceneOutputTarget::Texture) {
             recordToTexture(cmd);
@@ -49,7 +51,7 @@ namespace Atlas {
         }
     }
 
-    void OutputStage::recordToSwapChain(VkCommandBuffer cmd) {
+    void OutputStage::recordToSwapChain(VkCommandBuffer cmd) const {
         ATLAS_PROFILE_SCOPE("OutputStage::recordToSwapChain");
         ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "OutputStage::SwapChainBlit");
         VkImage swapImage = renderer.getCurrentSwapchainImage();
@@ -57,11 +59,11 @@ namespace Atlas {
         // sourceLayout is GENERAL for ray tracing / compute writers.
         // Use the broadest safe srcStage — covers compute, ray tracing, and raster.
         const VkPipelineStageFlags srcStage = (sourceLayout == VK_IMAGE_LAYOUT_GENERAL)
-            ? (VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
-            : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+                                                  ? (VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+                                                  : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         const VkAccessFlags srcAccess = (sourceLayout == VK_IMAGE_LAYOUT_GENERAL)
-            ? VK_ACCESS_SHADER_WRITE_BIT
-            : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+                                            ? VK_ACCESS_SHADER_WRITE_BIT
+                                            : VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
         VkImageMemoryBarrier pre[2]{};
         pre[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -93,16 +95,15 @@ namespace Atlas {
         const VkExtent2D dst = renderer.getSwapchainExtent();
         VkImageBlit region{};
         region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.srcOffsets[1] = {(int32_t) src.width, (int32_t) src.height, 1};
+        region.srcOffsets[1] = {static_cast<int32_t>(src.width), static_cast<int32_t>(src.height), 1};
         region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.dstOffsets[1] = {(int32_t) dst.width, (int32_t) dst.height, 1};
+        region.dstOffsets[1] = {static_cast<int32_t>(dst.width), static_cast<int32_t>(dst.height), 1};
 
         vkCmdBlitImage(cmd,
                        postColorSource->image(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                        swapImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                        1, &region, VK_FILTER_LINEAR);
 
-        // Post-blit: present the swapchain image and restore post_color for any later sampling.
         VkImageMemoryBarrier post[2]{};
         uint32_t postCount = 0;
 
@@ -142,7 +143,7 @@ namespace Atlas {
                              0, 0, nullptr, 0, nullptr, postCount, post);
     }
 
-    void OutputStage::recordToTexture(VkCommandBuffer cmd) {
+    void OutputStage::recordToTexture(VkCommandBuffer cmd) const {
         ATLAS_PROFILE_SCOPE("OutputStage::recordToTexture");
         ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "OutputStage::TextureOutputBarrier");
         const bool sourceIsShaderWrite = sourceLayout == VK_IMAGE_LAYOUT_GENERAL;

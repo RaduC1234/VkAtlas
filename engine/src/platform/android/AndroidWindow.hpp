@@ -11,6 +11,7 @@ namespace Atlas {
     public:
         AndroidWindow(const WindowSpecification& properties);
 
+        uint32_t getProperties() const override;
         bool shouldClose() override;
         void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const override;
         void pollEvents() override;

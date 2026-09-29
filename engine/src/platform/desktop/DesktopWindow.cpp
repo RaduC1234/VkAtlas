@@ -20,9 +20,8 @@
 #endif
 
 namespace Atlas {
-
     DesktopWindow::DesktopWindow(const CreateInfo &properties) {
-        width  = properties.width;
+        width = properties.width;
         height = properties.height;
 
 #ifdef ATLAS_PLATFORM_LINUX
@@ -33,9 +32,9 @@ namespace Atlas {
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
         assert(!(properties.properties & Decorated && properties.properties & Undecorated) &&
-               "A window cannot be decorated and undecorated at the same time");
+            "A window cannot be decorated and undecorated at the same time");
         assert(!(properties.properties & Resizeable && properties.properties & NonResizeable) &&
-               "A window cannot be resizable and non-resizable at the same time");
+            "A window cannot be resizable and non-resizable at the same time");
 
         bool wantDecorated = !(properties.properties & Undecorated);
         glfwWindowHint(GLFW_DECORATED, wantDecorated ? GLFW_TRUE : GLFW_FALSE);
@@ -64,6 +63,31 @@ namespace Atlas {
         }
 
         setTheme(Theme::Dark);
+    }
+
+    uint32_t DesktopWindow::getProperties() const {
+        uint32_t props = 0;
+        if (glfwGetWindowAttrib(glfwWindow, GLFW_ICONIFIED)) {
+            props |= Minimized;
+        }
+
+        if (glfwGetWindowAttrib(glfwWindow, GLFW_MAXIMIZED)) {
+            props |= Maximized;
+        }
+
+        if (glfwGetWindowAttrib(glfwWindow, GLFW_DECORATED)) {
+            props |= Decorated;
+        } else {
+            props |= Undecorated;
+        }
+
+        if (glfwGetWindowAttrib(glfwWindow, GLFW_RESIZABLE)) {
+            props |= Resizeable;
+        } else {
+            props |= NonResizeable;
+        }
+
+        return props;
     }
 
     bool DesktopWindow::shouldClose() {

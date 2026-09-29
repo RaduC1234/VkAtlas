@@ -4,6 +4,7 @@ project("atlas_desktop")
 
 add_library(atlas_desktop_runtime_module STATIC
         src/core/DesktopRuntimeModule.cpp
+        src/core/DesktopRuntimeDebugLayer.cpp
 )
 atlas_set_output_dirs(atlas_desktop_runtime_module)
 
@@ -18,6 +19,10 @@ atlas_set_output_dirs(atlas_desktop)
 
 target_link_libraries(atlas_desktop PRIVATE
         atlas_desktop_runtime_module
+)
+
+target_include_directories(atlas_desktop_runtime_module PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 if (TARGET atlas_office_project)

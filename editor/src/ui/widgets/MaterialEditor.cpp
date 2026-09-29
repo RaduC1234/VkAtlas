@@ -79,6 +79,16 @@ namespace Atlas::Editor {
         }
         finished |= ImGui::IsItemDeactivatedAfterEdit();
 
+        itemChanged = ImGui::DragFloat2("UV Scale", glm::value_ptr(material->uvScale), 0.1f, 0.01f, 100.0f);
+        changed |= itemChanged;
+        if (ImGui::IsItemActivated()) {
+            beginEdit();
+        }
+        if (itemChanged) {
+            beginEdit();
+        }
+        finished |= ImGui::IsItemDeactivatedAfterEdit();
+
         if (standardPbr) {
             itemChanged = ImGui::DragFloat("Metallic", &material->metallic, 0.01f, 0.0f, 1.0f);
             changed |= itemChanged;

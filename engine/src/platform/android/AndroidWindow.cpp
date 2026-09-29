@@ -54,6 +54,10 @@ namespace Atlas {
         return app->destroyRequested != 0;
     }
 
+    uint32_t AndroidWindow::getProperties() const {
+        return app->window ? 0u : static_cast<uint32_t>(Minimized);
+    }
+
     void AndroidWindow::createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const {
         VkAndroidSurfaceCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;

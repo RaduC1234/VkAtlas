@@ -188,8 +188,6 @@ namespace Atlas::Editor {
         return snapshots;
     }
 
-    // ── Construction / destruction ────────────────────────────────────────
-
     ViewportPanel::ViewportPanel(
         ProjectLayer &projectLayer,
         entt::entity &selectedEntity,
@@ -210,8 +208,6 @@ namespace Atlas::Editor {
     void ViewportPanel::onDetach() {
         destroyViewportTexture();
     }
-
-    // ── Main render entry ─────────────────────────────────────────────────
 
     void ViewportPanel::onImGuiRender() {
         if (!visible) return;
@@ -389,8 +385,7 @@ namespace Atlas::Editor {
 
         ImVec2 originScreen{};
         ImVec2 targetScreen{};
-        if (!ViewportGizmo::projectPoint(cameraData, origin, imageMin, imageSize, originScreen)
-            || !ViewportGizmo::projectPoint(cameraData, target, imageMin, imageSize, targetScreen)) {
+        if (!ViewportGizmo::projectPoint(cameraData, origin, imageMin, imageSize, originScreen) || !ViewportGizmo::projectPoint(cameraData, target, imageMin, imageSize, targetScreen)) {
             return;
         }
 
@@ -473,8 +468,6 @@ namespace Atlas::Editor {
         ImGui::Dummy({0, 0});
     }
 
-    // ── Toolbar ───────────────────────────────────────────────────────────
-
     void ViewportPanel::renderToolbar(const ImVec2 imageMin, const ImVec2 imageSize) {
         const ImVec2 restoreCursor = ImGui::GetCursorScreenPos();
 
@@ -489,9 +482,6 @@ namespace Atlas::Editor {
             }
         }
 
-        // ── Islands ───────────────────────────────────────────────────────
-        // Each island is a self-contained component: declare, chain props, render.
-
         ToolbarIsland transformIsland(imageMin, imageSize);
         transformIsland
                 .anchor(ToolbarIsland::Anchor::TopLeft)
@@ -505,7 +495,6 @@ namespace Atlas::Editor {
                         objectGizmoMode = ObjectGizmoMode::Scale;
                 });
 
-        // Space island sits to the right of the transform island
         const ImVec2 spaceAnchor(transformIsland.max().x + ToolbarStyle::defaults().islandMargin,imageMin.y);
         ToolbarIsland spaceIsland(spaceAnchor, imageSize);
         spaceIsland
@@ -518,7 +507,6 @@ namespace Atlas::Editor {
                         objectGizmoSpace = ObjectGizmoSpace::World;
                 });
 
-        // Gizmo settings popup — small "⚙" button right of the space island
         {
             const ToolbarStyle ts = ToolbarStyle::defaults();
             const float margin = ts.islandMargin;
@@ -736,8 +724,6 @@ namespace Atlas::Editor {
         ImGui::EndPopup();
     }
 
-    // ── Light billboards ──────────────────────────────────────────────────
-
     void ViewportPanel::renderLightBillboards(const ImVec2 imageMin, const ImVec2 imageSize) {
         auto *scene = projectLayer.project().scene();
         if (!scene) return;
@@ -942,8 +928,6 @@ namespace Atlas::Editor {
         ImGui::Dummy({0, 0});
     }
 
-    // ── Object gizmo ─────────────────────────────────────────────────────
-
     void ViewportPanel::renderObjectGizmo(const ImVec2 imageMin, const ImVec2 imageSize, const bool) {
         auto *scene = projectLayer.project().scene();
         if (!scene) return;
@@ -1055,8 +1039,6 @@ namespace Atlas::Editor {
         }
     }
 
-    // ── View gizmo ────────────────────────────────────────────────────────
-
     void ViewportPanel::renderViewGizmo(const ImVec2 imageMin, const ImVec2 imageSize) {
         auto *scene = projectLayer.project().scene();
         if (!scene || imageSize.x < 160.0f || imageSize.y < 160.0f) return;
@@ -1131,8 +1113,6 @@ namespace Atlas::Editor {
         if (ImViewGuizmo::IsOver() || ImViewGuizmo::IsUsing())
             ImGui::SetNextFrameWantCaptureMouse(true);
     }
-
-    // ── Scene helpers ─────────────────────────────────────────────────────
 
     void ViewportPanel::addPrimitive(const ViewportPrimitive primitive) {
         auto *scene = projectLayer.project().scene();
@@ -1295,13 +1275,12 @@ namespace Atlas::Editor {
     }
 
     entt::entity ViewportPanel::activeCamera(entt::registry &registry) const {
-        // Prefer scene cameras (non-transient)
         for (const entt::entity e: registry.view<TransformComponent, CameraComponent>()) {
             if (registry.all_of<TransientComponent>(e)) continue;
             if (const auto *n = registry.try_get<SceneNodeComponent>(e); n && (n->deleted || !n->visible)) continue;
             return e;
         }
-        // Fall back to editor camera
+
         for (const entt::entity e: registry.view<TransformComponent, CameraComponent, EditorCameraComponent>()) {
             if (const auto *n = registry.try_get<SceneNodeComponent>(e); n && (n->deleted || !n->visible)) continue;
             return e;

@@ -199,7 +199,7 @@ namespace Atlas {
                 }
 
                 VkImageLayout srcLayout = layoutIt->second;
-                auto resType = resIt->second.type(); // no more resourceTypes_ lookup
+                auto resType = resIt->second.type();
 
                 VkImageLayout dstLayout = readLayoutFor(resType);
                 if (srcLayout == dstLayout) { continue; }

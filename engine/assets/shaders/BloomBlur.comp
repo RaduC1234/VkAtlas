@@ -14,8 +14,6 @@ layout(push_constant) uniform PC {
     float texelSizeY;
 } pc;
 
-// Gaussian weights — precomputed for radius up to 8
-// w(x) = exp(-x*x / (2 * sigma^2)),  sigma = radius / 2.0
 float gaussWeight(int x, float sigma) {
     return exp(-float(x * x) / (2.0 * sigma * sigma));
 }

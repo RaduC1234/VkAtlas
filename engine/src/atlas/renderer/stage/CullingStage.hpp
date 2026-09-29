@@ -48,6 +48,7 @@ namespace Atlas {
             glm::uvec4 textureIndices{0};
             glm::vec4 baseColor{1.0f};
             glm::vec4 materialFactors{0.0f, 0.5f, 0.5f, 0.0f};
+            glm::vec4 uvScalePad{1.0f, 1.0f, 0.0f, 0.0f};
         };
 
         struct Light {

@@ -10,7 +10,7 @@
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
-layout(location = 2) in vec2 fragTexCoord;
+layout(location = 2) in vec2 uv;
 layout(location = 3) in vec4 fragTangent;
 layout(location = 4) flat in uint fragObjectIndex;
 layout(location = 5) in vec3 fragColor;
@@ -128,9 +128,11 @@ vec3 perturbNormal(vec3 N, vec4 tangent, vec2 uv, uint texIdx) {
 void main() {
     GPUObjectData obj = objectData.objects[fragObjectIndex];
 
+    vec2 uv = uv * obj.uvScalePad.xy;
+
     vec4 albedoSample = obj.textureIndices.x == 0u
         ? vec4(1.0)
-        : texture(textures[nonuniformEXT(obj.textureIndices.x)], fragTexCoord);
+        : texture(textures[nonuniformEXT(obj.textureIndices.x)], uv);
     vec3  albedo = albedoSample.rgb * obj.baseColor.rgb * fragColor;
     float alpha  = albedoSample.a * obj.baseColor.a;
 
@@ -142,13 +144,13 @@ void main() {
     vec3 V = normalize(ubo.cameraData.position - fragWorldPos);
 
     vec3 baseNormal = normalize(fragNormal);
-    vec3 N = perturbNormal(baseNormal, fragTangent, fragTexCoord, obj.textureIndices.y);
+    vec3 N = perturbNormal(baseNormal, fragTangent, uv, obj.textureIndices.y);
     N = faceforward(N, -V, N);
 
     float metallic  = obj.materialFactors.x;
     float roughness = obj.materialFactors.y;
     if (obj.textureIndices.z != 0u) {
-        vec4 mr   = texture(textures[nonuniformEXT(obj.textureIndices.z)], fragTexCoord);
+        vec4 mr   = texture(textures[nonuniformEXT(obj.textureIndices.z)], uv);
         roughness *= mr.g;
         metallic  *= mr.b;
     }
@@ -156,7 +158,7 @@ void main() {
 
     float ao = 1.0;
     if (obj.textureIndices.w != 0u)
-        ao = texture(textures[nonuniformEXT(obj.textureIndices.w)], fragTexCoord).r;
+        ao = texture(textures[nonuniformEXT(obj.textureIndices.w)], uv).r;
 
     if (ubo.debugData.viewMode == VIEWMODE_CLAY) {
         const vec3  clayAlbedo    = vec3(0.8);

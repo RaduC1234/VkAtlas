@@ -27,15 +27,10 @@ namespace Atlas {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // allocateBLAS — Phase 1, pure CPU + device queries, no cmd recording
-    // -------------------------------------------------------------------------
-
     AccelerationStructure AccelerationStructure::allocateBLAS(Device &device, VkDeviceAddress vertexBufferAddress, VkDeviceAddress indexBufferAddress, uint32_t vertexCount, uint32_t indexCount, VkDeviceSize vertexStride) {
         AccelerationStructure as;
         as.device_ = &device;
 
-        // Store geometry — pGeometries pointer must remain valid until recordBuild()
         as.geometry_.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
         as.geometry_.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
         as.geometry_.flags = 0;
@@ -64,7 +59,6 @@ namespace Atlas {
         as.rangeInfo_.firstVertex = 0;
         as.rangeInfo_.transformOffset = 0;
 
-        // Query AS and scratch sizes — device query, no cmds
         VkAccelerationStructureBuildSizesInfoKHR sizeInfo{};
         sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
         vkGetAccelerationStructureBuildSizesKHR(
@@ -72,12 +66,12 @@ namespace Atlas {
             VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
             &as.buildInfo_, &primitiveCount, &sizeInfo);
 
-        // Allocate AS backing buffer + handle — no cmds
         as.handle_ = createHandle(
             device,
             VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR,
             sizeInfo.accelerationStructureSize,
-            as.buffer_);
+            as.buffer_
+        );
 
         VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
         addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
@@ -86,14 +80,14 @@ namespace Atlas {
 
         as.buildInfo_.dstAccelerationStructure = as.handle_;
 
-        // Allocate scratch buffer — no cmds
         as.scratchBuffer_ = std::make_unique<GPUBuffer>(
             GPUBuffer::simple(device)
             .setSize(scratchAllocationSize(device, sizeInfo.buildScratchSize))
             .setUsage(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
             .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
-            .build());
+            .build()
+        );
 
         as.buildInfo_.scratchData.deviceAddress = alignedScratchAddress(device, as.scratchBuffer_->get());
 
@@ -102,18 +96,10 @@ namespace Atlas {
         return as;
     }
 
-    // -------------------------------------------------------------------------
-    // recordBuild — Phase 2, records into shared cmd buffer
-    // -------------------------------------------------------------------------
-
     void AccelerationStructure::recordBuild(VkCommandBuffer cmd) {
         const VkAccelerationStructureBuildRangeInfoKHR *pRange = &rangeInfo_;
         vkCmdBuildAccelerationStructuresKHR(cmd, 1, &buildInfo_, &pRange);
     }
-
-    // -------------------------------------------------------------------------
-    // onBuildComplete — Phase 3, free scratch buffer
-    // -------------------------------------------------------------------------
 
     void AccelerationStructure::onBuildComplete() {
         scratchBuffer_.reset();
@@ -121,10 +107,6 @@ namespace Atlas {
         geometry_ = {};
         rangeInfo_ = {};
     }
-
-    // -------------------------------------------------------------------------
-    // buildTLAS — synchronous, rebuilt every frame
-    // -------------------------------------------------------------------------
 
     AccelerationStructure AccelerationStructure::buildTLAS(
         Device &device,
@@ -138,10 +120,11 @@ namespace Atlas {
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VMA_MEMORY_USAGE_AUTO,
             VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-            VMA_ALLOCATION_CREATE_MAPPED_BIT);
+            VMA_ALLOCATION_CREATE_MAPPED_BIT
+        );
 
         instanceStaging.map();
-        std::memcpy(instanceStaging.getMapped(),instances.data(),sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
+        std::memcpy(instanceStaging.getMapped(), instances.data(), sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
         instanceStaging.flush(sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
         instanceStaging.unmap();
 
@@ -153,13 +136,12 @@ namespace Atlas {
                 .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
                 .build();
 
-        GPUBuffer::copy(device,instanceStaging.get(), instanceBuffer.get(), sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
+        GPUBuffer::copy(device, instanceStaging.get(), instanceBuffer.get(), sizeof(VkAccelerationStructureInstanceKHR) * instanceCount);
 
         VkBufferDeviceAddressInfo instAddrInfo{};
         instAddrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
         instAddrInfo.buffer = instanceBuffer.get();
-        const VkDeviceAddress instanceBufferAddress =
-                vkGetBufferDeviceAddress(device.device(), &instAddrInfo);
+        const VkDeviceAddress instanceBufferAddress = vkGetBufferDeviceAddress(device.device(), &instAddrInfo);
 
         VkAccelerationStructureGeometryInstancesDataKHR instancesData{};
         instancesData.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
@@ -213,10 +195,6 @@ namespace Atlas {
         AT_INFO("TLAS built: {} instances, {} bytes", instanceCount, sizeInfo.accelerationStructureSize);
         return as;
     }
-
-    // -------------------------------------------------------------------------
-    // buildSync — synchronous build, used by TLAS only
-    // -------------------------------------------------------------------------
 
     void AccelerationStructure::updateTLAS(Device &device, const std::vector<VkAccelerationStructureInstanceKHR> &instances, AccelerationStructure &tlas) {
         const auto instanceCount = static_cast<uint32_t>(instances.size());
@@ -280,10 +258,6 @@ namespace Atlas {
         device.endGraphicsCommands(cmd);
     }
 
-    // -------------------------------------------------------------------------
-    // createHandle — allocates AS backing buffer + vkCreateAccelerationStructureKHR
-    // -------------------------------------------------------------------------
-
     VkAccelerationStructureKHR AccelerationStructure::createHandle(
         Device &device,
         VkAccelerationStructureTypeKHR type,
@@ -295,7 +269,8 @@ namespace Atlas {
             .setUsage(VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR |
                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
             .setMemoryUsage(VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE)
-            .build());
+            .build()
+        );
 
         VkAccelerationStructureCreateInfoKHR asCI{};
         asCI.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
@@ -309,10 +284,6 @@ namespace Atlas {
 
         return handle;
     }
-
-    // -------------------------------------------------------------------------
-    // Lifetime management
-    // -------------------------------------------------------------------------
 
     AccelerationStructure::~AccelerationStructure() {
         destroy();
@@ -333,7 +304,7 @@ namespace Atlas {
         other.buildInfo_ = {};
         other.rangeInfo_ = {};
         other.geometry_ = {};
-        // Fix up pGeometries pointer — it was pointing into other.geometry_
+      
         if (handle_ != VK_NULL_HANDLE)
             buildInfo_.pGeometries = &geometry_;
     }
@@ -357,9 +328,9 @@ namespace Atlas {
             other.rangeInfo_ = {};
             other.geometry_ = {};
 
-            // Fix up pGeometries pointer — it was pointing into other.geometry_
-            if (handle_ != VK_NULL_HANDLE)
+            if (handle_ != VK_NULL_HANDLE) {
                 buildInfo_.pGeometries = &geometry_;
+            }
         }
         return *this;
     }

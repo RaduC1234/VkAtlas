@@ -1,5 +1,5 @@
 
-float luminance(vec3 c) {
+float luminance(vec3 c) { // Rec.709
     return dot(c, vec3(0.2126, 0.7152, 0.0722));
 }
 

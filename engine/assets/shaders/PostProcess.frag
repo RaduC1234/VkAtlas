@@ -34,8 +34,7 @@ const uint FLAG_ACES     = 1u << 2u;
 void main() {
     vec3 hdr = texture(hdrInput, inUV).rgb;
 
-    if (ubo.debugData.viewMode == VIEWMODE_CLAY ||
-        ubo.debugData.viewMode == VIEWMODE_UNLIT) {
+    if (ubo.debugData.viewMode == VIEWMODE_CLAY || ubo.debugData.viewMode == VIEWMODE_UNLIT) {
         outColor = vec4(hdr, 1.0);
         return;
     }

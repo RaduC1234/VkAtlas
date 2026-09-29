@@ -13,6 +13,7 @@ namespace Atlas {
         explicit DesktopWindow(const CreateInfo &properties);
         ~DesktopWindow() override = default;
 
+        uint32_t getProperties() const override;
         bool shouldClose() override;
         void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const override;
         void pollEvents() override;

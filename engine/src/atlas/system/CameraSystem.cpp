@@ -52,7 +52,6 @@ namespace Atlas {
             return true;
         };
 
-        // Prefer scene cameras; fall back to editor camera if none exist
         bool hasSceneCamera = false;
         for (const entt::entity entity: registry.view<TransformComponent, CameraComponent>()) {
             if (registry.all_of<TransientComponent>(entity)) continue;

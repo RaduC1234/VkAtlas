@@ -55,14 +55,14 @@ namespace Atlas {
         GPUImage &operator=(GPUImage &&) noexcept;
 
         VkImage image() const { return image_; }
-        VkImageView view(uint32_t i) const { return views_.at(i); } // invalid vector subscript
+        VkImageView view(uint32_t i) const { return views_.at(i); }
         uint32_t viewCount() const { return static_cast<uint32_t>(views_.size()); }
         VkFormat format() const { return format_; }
         VkExtent2D extent() const { return extent_; }
         uint32_t mipLevels() const { return mipLevels_; }
         bool valid() const { return image_ != VK_NULL_HANDLE; }
 
-        void destroy(); // explicit early release if needed
+        void destroy();
 
     private:
         friend class Builder;

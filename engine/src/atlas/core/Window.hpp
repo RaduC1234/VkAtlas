@@ -19,6 +19,8 @@ namespace Atlas {
             Decorated = BIT(1),
             Resizeable = BIT(2),
             NonResizeable = BIT(3),
+            Minimized = BIT(4),
+            Maximized = BIT(5),
         };
 
         enum class CursorMode {
@@ -45,6 +47,7 @@ namespace Atlas {
         virtual ~Window() = default;
         Window &operator=(const Window &) = delete;
 
+        virtual uint32_t getProperties() const = 0;
         virtual bool shouldClose() = 0;
         virtual void createWindowSurface(VkInstance instance, VkSurfaceKHR *surface) const = 0;
         virtual void pollEvents() = 0;

@@ -24,7 +24,8 @@ namespace Atlas {
 
         static std::shared_ptr<Cubemap> fromFile(const std::string &path, uint32_t equirectFaceSize = 512);
         static std::shared_ptr<Cubemap> fromFaces(const std::array<std::vector<std::byte>, 6> &faceData,VkFormat format = VK_FORMAT_R8G8B8A8_SRGB);
-        /* Single equirectangular image (LDR or HDR) — converted to 6-face layout on the CPU.
+        /*
+         * Single equirectangular image (LDR or HDR) — converted to 6-face layout on the CPU.
          * Format is auto-detected from the image data; pass VK_FORMAT_UNDEFINED to let it decide.
          */
         static std::shared_ptr<Cubemap> fromEquirectangular(const std::vector<std::byte> &imageData,uint32_t faceSize = 512,VkFormat format = VK_FORMAT_UNDEFINED);

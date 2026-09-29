@@ -551,14 +551,8 @@ namespace Atlas {
         const bool prefilterReady = skybox.prefilterHandle.valid() && skybox.prefilterHandle.isReady();
         const bool skyboxReady = skybox.skyboxHandle.valid() && skybox.skyboxHandle.isReady();
 
-        const bool updateEnvironment =
-                skybox.irradianceHandle != boundIrradianceHandle ||
-                irradianceReady != boundIrradianceReady ||
-                skybox.prefilterHandle != boundPrefilterHandle ||
-                prefilterReady != boundPrefilterReady;
-        const bool updateSkybox =
-                skybox.skyboxHandle != boundSkyboxHandle ||
-                skyboxReady != boundSkyboxReady;
+        const bool updateEnvironment = skybox.irradianceHandle != boundIrradianceHandle || irradianceReady != boundIrradianceReady || skybox.prefilterHandle != boundPrefilterHandle || prefilterReady != boundPrefilterReady;
+        const bool updateSkybox = skybox.skyboxHandle != boundSkyboxHandle || skyboxReady != boundSkyboxReady;
 
         VkDescriptorImageInfo irradianceInfo{};
         VkDescriptorImageInfo prefilterInfo{};

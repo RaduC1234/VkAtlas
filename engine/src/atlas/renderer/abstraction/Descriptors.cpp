@@ -2,8 +2,6 @@
 
 
 namespace Atlas {
-    // *************** Descriptor Set Layout Builder *********************
-
     DescriptorSetLayout::Builder &DescriptorSetLayout::Builder::addBinding(
         uint32_t binding,
         VkDescriptorType descriptorType,
@@ -42,7 +40,6 @@ namespace Atlas {
 
         for (auto kv: bindings) {
             setLayoutBindings.push_back(kv.second);
-            // Add flags for this binding (0 if not specified)
             auto it = bindingFlags.find(kv.first);
             flags.push_back(it != bindingFlags.end() ? it->second : 0);
         }
@@ -56,9 +53,8 @@ namespace Atlas {
         descriptorSetLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         descriptorSetLayoutInfo.bindingCount = static_cast<uint32_t>(setLayoutBindings.size());
         descriptorSetLayoutInfo.pBindings = setLayoutBindings.data();
-        descriptorSetLayoutInfo.flags = layoutFlags; // Set the layout flags
+        descriptorSetLayoutInfo.flags = layoutFlags;
 
-        // Only set pNext if we have binding flags
         if (!bindingFlags.empty()) {
             descriptorSetLayoutInfo.pNext = &bindingFlagsInfo;
         }
@@ -75,8 +71,6 @@ namespace Atlas {
     DescriptorSetLayout::~DescriptorSetLayout() {
         vkDestroyDescriptorSetLayout(Device.device(), descriptorSetLayout, nullptr);
     }
-
-    // *************** Descriptor Pool Builder *********************
 
     DescriptorPool::Builder &DescriptorPool::Builder::addPoolSize(
         VkDescriptorType descriptorType, uint32_t count) {
@@ -98,8 +92,6 @@ namespace Atlas {
     std::unique_ptr<DescriptorPool> DescriptorPool::Builder::build() const {
         return std::make_unique<DescriptorPool>(Device, maxSets, poolFlags, poolSizes);
     }
-
-    // *************** Descriptor Pool *********************
 
     DescriptorPool::DescriptorPool(
         class Device &Device,
@@ -133,7 +125,7 @@ namespace Atlas {
         allocInfo.descriptorSetCount = 1;
 
         // Might want to create a "DescriptorPoolManager" class that handles this case, and builds
-        // a new pool whenever an old pool fills up. But this is beyond our current scope
+        // a new pool whenever an old pool fills up.
         if (vkAllocateDescriptorSets(Device.device(), &allocInfo, &descriptor) != VK_SUCCESS) {
             return false;
         }
@@ -151,8 +143,6 @@ namespace Atlas {
     void DescriptorPool::resetPool() {
         vkResetDescriptorPool(Device.device(), descriptorPool, 0);
     }
-
-    // *************** Descriptor Writer *********************
 
     DescriptorWriter::DescriptorWriter(DescriptorSetLayout &setLayout, DescriptorPool &pool)
         : setLayout{setLayout}, pool{pool} {
@@ -219,8 +209,6 @@ namespace Atlas {
     DescriptorWriter &DescriptorWriter::writeAccelerationStructure(uint32_t binding, VkWriteDescriptorSetAccelerationStructureKHR *asInfo) {
         assert(setLayout.bindings.count(binding) == 1 && "Layout does not contain specified binding");
 
-        // Copy asInfo into stable storage — the caller's copy may be on the stack and
-        // vkUpdateDescriptorSets is called later in overwrite(), so pNext must remain valid.
         asInfos.push_back(*asInfo);
 
         VkWriteDescriptorSet write{};

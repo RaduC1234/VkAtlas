@@ -104,7 +104,6 @@ namespace Atlas {
     }
 
     entt::entity LevelScene::activeCamera() {
-        // Prefer scene cameras (non-transient, non-editor)
         for (const entt::entity entity: registry.view<CameraComponent>()) {
             if (registry.all_of<TransientComponent>(entity)) continue;
             if (registry.all_of<EditorCameraComponent>(entity)) continue;
@@ -112,7 +111,6 @@ namespace Atlas {
             return entity;
         }
 
-        // Fall back to editor camera
         for (const entt::entity entity: registry.view<CameraComponent, EditorCameraComponent>()) {
             if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) continue;
             return entity;

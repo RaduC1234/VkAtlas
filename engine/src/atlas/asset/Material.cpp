@@ -132,6 +132,7 @@ namespace Atlas {
         material->metallic = MaterialSerialization::readFloat(data, "metallic", material->metallic);
         material->roughness = MaterialSerialization::readFloat(data, "roughness", material->roughness);
         material->alphaCutoff = MaterialSerialization::readFloat(data, "alphaCutoff", material->alphaCutoff);
+        material->uvScale = MaterialSerialization::readVector(data, "uvScale", material->uvScale);
         material->sheenStrength = MaterialSerialization::readFloat(data, "sheenStrength", material->sheenStrength);
         material->sheenColor = MaterialSerialization::readVector(data, "sheenColor", material->sheenColor);
         material->emissiveColor = MaterialSerialization::readVector(data, "emissiveColor", material->emissiveColor);
@@ -162,6 +163,7 @@ namespace Atlas {
         data["metallic"] = material.metallic;
         data["roughness"] = material.roughness;
         data["alphaCutoff"] = material.alphaCutoff;
+        data["uvScale"] = material.uvScale;
         data["sheenStrength"] = material.sheenStrength;
         data["sheenColor"] = material.sheenColor;
         data["emissiveColor"] = material.emissiveColor;

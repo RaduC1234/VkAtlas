@@ -27,22 +27,13 @@ namespace Atlas {
         GPUResource::destroyDefaults();
     }
 
-    // -------------------------------------------------------------------------
-    // createDefaults — synchronous, called once at construction
-    // -------------------------------------------------------------------------
-
     void ResourceManager::createDefaults() {
         ATLAS_PROFILE_FUNCTION();
 
-        // Defaults are blocking startup uploads.
         GPUResource::createDefault<GPUTexture>(device_);
         GPUResource::createDefault<GPUCubemap>(device_);
         GPUResource::createDefault<GPUMesh>(device_);
     }
-
-    // -------------------------------------------------------------------------
-    // remove() — AssetManager thread
-    // -------------------------------------------------------------------------
 
     void ResourceManager::remove(std::shared_ptr<IGPUResource> resource) {
         ATLAS_PROFILE_FUNCTION();
@@ -51,28 +42,21 @@ namespace Atlas {
 
         resource->setStatus(IGPUResource::Status::PENDING_DESTROY);
 
-        // Still in upload queue — erase before recordUpload() ever runs.
-        // VkImage/VkImageView/VkSampler exist, but no commands were submitted.
         auto it = std::ranges::find_if(uploadQueue_,
-                                       [&](const UploadEntry &e) { return e.resource == resource; });
+                                       [&](const UploadEntry &e) {
+                                           return e.resource == resource;
+                                       });
 
         if (it != uploadQueue_.end()) {
             uploadQueue_.erase(it);
-            // capturedAsset drops here — CPU memory freed if no other holders
-            // shared_ptr<GpuResource> drops — ~GPUTexture frees VkImage etc.
             return;
         }
 
-        // READY or in-flight — defer destruction until update() retires it.
         destroyQueue_.push_back({
             std::move(resource),
             device_.currentTransferTimelineValue()
         });
     }
-
-    // -------------------------------------------------------------------------
-    // update() — AssetManager thread
-    // -------------------------------------------------------------------------
 
     void ResourceManager::update() {
         ATLAS_PROFILE_FUNCTION();

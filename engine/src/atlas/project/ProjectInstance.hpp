@@ -2,9 +2,11 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 #include "project/ProjectManifest.hpp"
 #include "project/ProjectModule.hpp"
+#include "utils/DynamicLibrary.hpp"
 
 namespace Atlas {
     class AssetManager;
@@ -34,9 +36,6 @@ namespace Atlas {
     private:
         static std::filesystem::path absolutePath(const std::filesystem::path &path);
         static std::filesystem::path projectRelativePath(const std::filesystem::path &projectRoot, const std::filesystem::path &path);
-        static void *openLibrary(const std::filesystem::path &path);
-        static void closeLibrary(void *library);
-        static void *loadSymbol(void *library, const char *symbolName, const std::filesystem::path &libraryPath);
 
         ProjectManifest projectManifest;
         std::filesystem::path projectRoot;
@@ -44,7 +43,7 @@ namespace Atlas {
         std::filesystem::path projectModulePath;
         std::unique_ptr<ProjectContext> projectContext;
 
-        void *projectLibrary = nullptr;
+        std::optional<DynamicLibrary> projectLibrary;
         IProjectModule *projectModule = nullptr;
         DestroyProjectModuleFn destroyProjectModule = nullptr;
         IScene *currentScene = nullptr;

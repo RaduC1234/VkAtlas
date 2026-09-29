@@ -237,7 +237,7 @@ namespace Atlas {
             shaderStages.push_back(ahitStage);
         }
 
-        // ---- Shader groups ----
+        // Shader groups
         // SBT layout:
         //   group 0 — raygen       (general,   shader index 0)
         //   group 1 — primary miss (general,   shader index 1)

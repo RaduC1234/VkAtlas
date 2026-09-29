@@ -286,15 +286,13 @@ namespace Atlas::Editor {
             registry.emplace<SkyboxComponent>(selectedEntity);
         }
 
-        if (registry.view<PostProcessingVolumeComponent>().begin() == registry.view<PostProcessingVolumeComponent>().end()
-            && ImGui::MenuItem("Post Processing")) {
+        if (!registry.all_of<PostProcessingVolumeComponent>(selectedEntity) && ImGui::MenuItem("Post Processing")) {
             registry.emplace<PostProcessingVolumeComponent>(selectedEntity);
         }
 
         const bool skyboxTaken = registry.view<SkyboxComponent>().begin() != registry.view<SkyboxComponent>().end();
-        const bool ppTaken     = registry.view<PostProcessingVolumeComponent>().begin() != registry.view<PostProcessingVolumeComponent>().end();
-        if (registry.all_of<TransformComponent, ModelComponent, MaterialComponent, LightComponent, CameraComponent>(selectedEntity)
-            && skyboxTaken && ppTaken) {
+        if (registry.all_of<TransformComponent, ModelComponent, MaterialComponent, LightComponent, CameraComponent, PostProcessingVolumeComponent>(selectedEntity)
+            && skyboxTaken) {
             ImGui::BeginDisabled();
             ImGui::MenuItem("No components available");
             ImGui::EndDisabled();
@@ -304,13 +302,14 @@ namespace Atlas::Editor {
     }
 
     bool InspectorPanel::beginComponent(const char *label, bool *removeRequested) {
-        constexpr ImGuiTreeNodeFlags flags =
+        ImGuiTreeNodeFlags flags =
                 ImGuiTreeNodeFlags_DefaultOpen |
                 ImGuiTreeNodeFlags_Framed |
                 ImGuiTreeNodeFlags_SpanAvailWidth |
                 ImGuiTreeNodeFlags_FramePadding;
 
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 4));
+        if (removeRequested) ImGui::SetNextItemAllowOverlap();
         bool open = ImGui::TreeNodeEx(label, flags);
         ImGui::PopStyleVar();
 

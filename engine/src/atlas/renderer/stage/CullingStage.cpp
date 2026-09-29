@@ -121,6 +121,7 @@ namespace Atlas {
                 .textureIndices = glm::uvec4(albedoIdx, normalIdx, mrIdx, aoIdx),
                 .baseColor = material->baseColor,
                 .materialFactors = glm::vec4(material->metallic, material->roughness, material->alphaCutoff, 0.0f),
+                .uvScalePad = glm::vec4(material->uvScale, 0.0f, 0.0f),
             };
 
             if (material->baseColor.w >= 1.0f && material->alphaMode != AlphaMode::BLEND) {

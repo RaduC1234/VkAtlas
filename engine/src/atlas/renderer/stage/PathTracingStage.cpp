@@ -148,6 +148,8 @@ namespace Atlas {
         std::vector<Mesh::Vertex> allVertices;
         std::vector<uint32_t> allIndices;
 
+        {
+        ATLAS_PROFILE_SCOPE("PathTracingStage::gatherScene");
         for (auto entity: registry.view<TransformComponent, ModelComponent, MaterialComponent>()) {
             if (const auto *node = registry.try_get<SceneNodeComponent>(entity); node && (node->deleted || !node->visible)) continue;
             if (cpuObjects.size() >= MAX_OBJECTS) {
@@ -198,6 +200,7 @@ namespace Atlas {
                     .baseColor = material->baseColor,
                     .materialFactors = glm::vec4(material->metallic, material->roughness, material->alphaCutoff, 0.0f),
                     .sheenColorStrength = glm::vec4(material->sheenColor, material->sheenStrength),
+                    .uvScalePad = glm::vec4(material->uvScale, 0.0f, 0.0f),
                     .firstIndex = firstIndex,
                     .indexCount = static_cast<uint32_t>(model.meshHandle->indices().size()),
                     .firstVertex = firstVertex,
@@ -237,16 +240,22 @@ namespace Atlas {
             });
         }
 
+        } // gatherScene
+
         objectCount = static_cast<uint32_t>(cpuObjects.size());
         lightCount = static_cast<uint32_t>(cpuLights.size());
 
         if (geometryChanged) {
             ATLAS_PROFILE_SCOPE("PathTracingStage::fullRebuild");
 
-            if (!tlasInstances.empty()) tlas_ = AccelerationStructure::buildTLAS(device, tlasInstances);
-            else tlas_ = AccelerationStructure{};
+            {
+                ATLAS_PROFILE_SCOPE("PathTracingStage::buildTLAS");
+                if (!tlasInstances.empty()) tlas_ = AccelerationStructure::buildTLAS(device, tlasInstances);
+                else tlas_ = AccelerationStructure{};
+            }
 
             if (!allVertices.empty()) {
+                ATLAS_PROFILE_SCOPE("PathTracingStage::uploadVertices");
                 const VkDeviceSize vSize = allVertices.size() * sizeof(Mesh::Vertex);
                 GPUBuffer vStaging(device, vSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
                 vStaging.uploadData(allVertices.data(), vSize);
@@ -255,6 +264,7 @@ namespace Atlas {
             }
 
             if (!allIndices.empty()) {
+                ATLAS_PROFILE_SCOPE("PathTracingStage::uploadIndices");
                 const VkDeviceSize iSize = allIndices.size() * sizeof(uint32_t);
                 GPUBuffer iStaging(device, iSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_AUTO, VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT);
                 iStaging.uploadData(allIndices.data(), iSize);
@@ -262,11 +272,18 @@ namespace Atlas {
                 GPUBuffer::copy(device, iStaging.get(), indexBuffer->get(), iSize, 0, 0);
             }
 
-            if (!cpuObjects.empty()) objectBuffer->uploadData(cpuObjects.data(), cpuObjects.size() * sizeof(PTObjectData));
-            if (!cpuLights.empty()) lightBuffer->uploadData(cpuLights.data(), cpuLights.size() * sizeof(PTLight));
+            {
+                ATLAS_PROFILE_SCOPE("PathTracingStage::uploadObjectsAndLights");
+                if (!cpuObjects.empty()) objectBuffer->uploadData(cpuObjects.data(), cpuObjects.size() * sizeof(PTObjectData));
+                if (!cpuLights.empty()) lightBuffer->uploadData(cpuLights.data(), cpuLights.size() * sizeof(PTLight));
+            }
 
-            cachedObjects_ = cpuObjects;
-            updateDescriptorSet();
+            {
+                ATLAS_PROFILE_SCOPE("PathTracingStage::updateDescriptors");
+                cachedObjects_ = cpuObjects;
+                updateDescriptorSet();
+            }
+
             geometryBuilt = true;
             lastGeometrySignature = geoSig;
             lastTransformSignature = xfSig;
@@ -275,10 +292,16 @@ namespace Atlas {
         } else if (transformChanged) {
             ATLAS_PROFILE_SCOPE("PathTracingStage::transformUpdate");
 
-            if (tlas_.isValid() && !tlasInstances.empty()) AccelerationStructure::updateTLAS(device, tlasInstances, tlas_);
+            {
+                ATLAS_PROFILE_SCOPE("PathTracingStage::updateTLAS");
+                if (tlas_.isValid() && !tlasInstances.empty()) AccelerationStructure::updateTLAS(device, tlasInstances, tlas_);
+            }
 
-            if (!cpuObjects.empty()) objectBuffer->uploadData(cpuObjects.data(), cpuObjects.size() * sizeof(PTObjectData));
-            if (!cpuLights.empty()) lightBuffer->uploadData(cpuLights.data(), cpuLights.size() * sizeof(PTLight));
+            {
+                ATLAS_PROFILE_SCOPE("PathTracingStage::uploadObjectsAndLights");
+                if (!cpuObjects.empty()) objectBuffer->uploadData(cpuObjects.data(), cpuObjects.size() * sizeof(PTObjectData));
+                if (!cpuLights.empty()) lightBuffer->uploadData(cpuLights.data(), cpuLights.size() * sizeof(PTLight));
+            }
 
             lastTransformSignature = xfSig;
         } else {
@@ -293,7 +316,8 @@ namespace Atlas {
         ATLAS_PROFILE_SCOPE("PathTracingStage::record");
         ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PathTracingStage");
         if (!outputImage || !accumulationImage) return; {
-            ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PathTracingStage::PrepareImages");
+            ATLAS_PROFILE_SCOPE("PathTracingStage::record::barriers");
+            ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PathTracingStage::Barriers");
             const bool preserveAccumulation = currentSample > 0;
 
             std::array<VkImageMemoryBarrier, 2> barriers{};
@@ -317,6 +341,7 @@ namespace Atlas {
         }
 
         if (!active || !tlas_.isValid()) return; {
+            ATLAS_PROFILE_SCOPE("PathTracingStage::record::traceRays");
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PathTracingStage::TraceRays");
             pipeline->bind(cmd);
 
@@ -329,6 +354,7 @@ namespace Atlas {
             const auto extent = outputImage->extent();
             vkCmdTraceRaysKHR(cmd, &sbtRaygen, &sbtMiss, &sbtHit, &sbtCallable, extent.width, extent.height, 1);
         } {
+            ATLAS_PROFILE_SCOPE("PathTracingStage::record::clearDepth");
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PathTracingStage::ClearDepth");
             VkImageMemoryBarrier pre[2]{};
 

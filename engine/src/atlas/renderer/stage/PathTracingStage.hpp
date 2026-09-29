@@ -22,6 +22,7 @@ namespace Atlas {
         glm::vec4 baseColor;
         glm::vec4 materialFactors;
         glm::vec4 sheenColorStrength;
+        glm::vec4 uvScalePad;
         uint32_t firstIndex;
         uint32_t indexCount;
         uint32_t firstVertex;

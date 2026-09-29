@@ -73,8 +73,7 @@ namespace Atlas {
                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                 VMA_MEMORY_USAGE_AUTO,
                 device.properties.limits.minUniformBufferOffsetAlignment,
-                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                VMA_ALLOCATION_CREATE_MAPPED_BIT
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT
             );
             globalUboBuffers[i]->map();
 

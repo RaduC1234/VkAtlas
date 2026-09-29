@@ -119,14 +119,13 @@ namespace Atlas {
             }
         }
 
-        // ---- Allocate output ------------------------------------------------
         const uint32_t bytesPerPixel = isHDR ? 16u : 4u; // RGBA32F or RGBA8
         const size_t faceBytes = static_cast<size_t>(faceSize) * faceSize * bytesPerPixel;
         std::vector<std::byte> combined(faceBytes * 6);
         std::vector<VkBufferImageCopy> regions;
         regions.reserve(6);
 
-        // ---- Face bases: +X -X +Y -Y +Z -Z ----------------------------------
+        // +X -X +Y -Y +Z -Z
         struct FaceBasis {
             glm::vec3 right, up, forward;
         };
@@ -254,12 +253,10 @@ namespace Atlas {
         const uint32_t mipLevels = ktx->numLevels;
         const auto format = static_cast<VkFormat>(ktx->vkFormat);
 
-        // Copy all pixel data into a single contiguous buffer
         const size_t totalBytes = ktxTexture_GetDataSize(ktxTexture(ktx));
         std::vector<std::byte> pixels(totalBytes);
         std::memcpy(pixels.data(), ktxTexture_GetData(ktxTexture(ktx)), totalBytes);
 
-        // Build one copy region per (mip level, face)
         std::vector<VkBufferImageCopy> regions;
         regions.reserve(mipLevels * 6);
 

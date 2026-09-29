@@ -459,7 +459,7 @@ namespace Atlas::Editor {
             if (entry.hasSkybox && registry.view<SkyboxComponent>().empty()) {
                 registry.emplace<SkyboxComponent>(entity, entry.skybox);
             }
-            if (entry.hasPostProcessing) {
+            if (entry.hasPostProcessing && registry.view<PostProcessingVolumeComponent>().empty()) {
                 registry.emplace<PostProcessingVolumeComponent>(entity, entry.postProcessing);
                 registry.patch<PostProcessingVolumeComponent>(entity);
             }

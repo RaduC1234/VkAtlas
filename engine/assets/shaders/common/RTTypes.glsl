@@ -23,6 +23,7 @@ struct ObjectData {
     vec4  baseColor;
     vec4  materialFactors;
     vec4  sheenColorStrength;
+    vec4  uvScalePad;
     uint  firstIndex;
     uint  indexCount;
     uint  firstVertex;

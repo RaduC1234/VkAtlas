@@ -151,13 +151,6 @@ namespace Atlas {
             throw std::runtime_error("PostProcessingStage: failed to create stencilSampler");
     }
 
-    // -------------------------------------------------------------------------
-    // Render pass — single LDR colour attachment, no depth.
-    // finalLayout = SHADER_READ_ONLY so RenderGraph layout tracking matches
-    // writeLayoutFor(ATTACHMENT_COLOR) and no extra barrier is inserted before
-    // OutputPass reads it.
-    // -------------------------------------------------------------------------
-
     void PostProcessingStage::createRenderPass(VkFormat colorFmt) {
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = colorFmt;
@@ -179,18 +172,13 @@ namespace Atlas {
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &colorRef;
-
-        // Subpass dependency: ensure geometry writes are visible to the fragment
-        // shader that samples geometry_color/depth.
+        
         VkSubpassDependency dep{};
         dep.srcSubpass = VK_SUBPASS_EXTERNAL;
         dep.dstSubpass = 0;
-        dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                           VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                           VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         dep.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-        dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        dep.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         dep.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
         VkRenderPassCreateInfo rpInfo{};
@@ -448,7 +436,10 @@ namespace Atlas {
         viewport.maxDepth = 1.0f;
         VkRect2D scissor{{0, 0}, extent};
         vkCmdSetViewport(cmd, 0, 1, &viewport);
-        vkCmdSetScissor(cmd, 0, 1, &scissor); {
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        {
+            ATLAS_PROFILE_SCOPE("PostProcessingStage::record::fullscreenComposite");
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "PostProcessingStage::FullscreenComposite");
             pipeline->bind(cmd);
 
@@ -485,7 +476,10 @@ namespace Atlas {
         const uint32_t groupX = (bloomExtent.width + 15) / 16;
         const uint32_t groupY = (bloomExtent.height + 15) / 16;
 
-        ensureBloomImagesInitialized(cmd); {
+        ensureBloomImagesInitialized(cmd);
+
+        {
+            ATLAS_PROFILE_SCOPE("PostProcessingStage::bloom::extract");
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "Bloom::Extract");
 
             pc.horizontal = 0;
@@ -501,8 +495,12 @@ namespace Atlas {
             vkCmdDispatch(cmd, groupX, groupY, 1);
         }
 
-        barrierGeneralToGeneral(cmd, bloomBright->image()); {
+        barrierGeneralToGeneral(cmd, bloomBright->image());
+
+        {
+            ATLAS_PROFILE_SCOPE("PostProcessingStage::bloom::blurHorizontal");
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "Bloom::BlurHorizontal");
+
             pc.horizontal = 1;
             bloomBlurHPipeline->bind(cmd);
             const VkDescriptorSet blurHSets[] = {globalSet, bloomBlurHSet};
@@ -511,7 +509,10 @@ namespace Atlas {
             vkCmdDispatch(cmd, groupX, groupY, 1);
         }
 
-        barrierGeneralToGeneral(cmd, bloomBlurH->image()); {
+        barrierGeneralToGeneral(cmd, bloomBlurH->image());
+
+        {
+            ATLAS_PROFILE_SCOPE("PostProcessingStage::bloom::blurVertical");
             ATLAS_PROFILE_GPU_ZONE(device.gpuProfilerContext(), cmd, "Bloom::BlurVertical");
             pc.horizontal = 0;
             bloomBlurVPipeline->bind(cmd);

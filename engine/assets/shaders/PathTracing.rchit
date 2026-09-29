@@ -67,7 +67,7 @@ void main() {
     vec3 N           = safeNormalize((obj.normalMatrix * vec4(localNormal, 0.0)).xyz, geometricNormal);
     if (dot(N, geometricNormal) < 0.0) N = -N;
 
-    vec2 uv          = v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z;
+    vec2 uv          = (v0.uv * bary.x + v1.uv * bary.y + v2.uv * bary.z) * obj.uvScalePad.xy;
     vec3 vertexColor = v0.color * bary.x + v1.color * bary.y + v2.color * bary.z;
 
     vec4 albedoSample = obj.textureIndices.x == 0u

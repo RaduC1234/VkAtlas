@@ -20,8 +20,8 @@ namespace Atlas {
         void record(VkCommandBuffer cmd, VkDescriptorSet globalSet) override;
 
     private:
-        void recordToSwapChain(VkCommandBuffer cmd);
-        void recordToTexture(VkCommandBuffer cmd);
+        void recordToSwapChain(VkCommandBuffer cmd) const;
+        void recordToTexture(VkCommandBuffer cmd) const;
 
         Device &device;
         Renderer &renderer;

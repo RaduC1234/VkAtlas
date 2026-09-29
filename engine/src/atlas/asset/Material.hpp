@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
 
@@ -35,6 +36,7 @@ namespace Atlas {
         float metallic{0.0f};
         float roughness{0.5f};
         float alphaCutoff{0.5f};
+        glm::vec2 uvScale{1.0f};
 
         float sheenStrength{0.0f};
         glm::vec3 sheenColor{1.0f};
@@ -64,6 +66,8 @@ namespace Atlas {
             hashCombine(seed, metallic);
             hashCombine(seed, roughness);
             hashCombine(seed, alphaCutoff);
+            hashCombine(seed, uvScale.x);
+            hashCombine(seed, uvScale.y);
             hashCombine(seed, sheenStrength);
             hashCombine(seed, sheenColor.x);
             hashCombine(seed, sheenColor.y);
